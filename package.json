@@ -1,0 +1,24 @@
+{
+  "name": "bot_sum_saleproduct",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@larksuiteoapi/node-sdk": "^1.45.0",
+    "axios": "^1.8.4",
+    "dotenv": "^16.4.7",
+    "express": "^5.1.0",
+    "mongodb": "^6.15.0",
+    "node-schedule": "^2.1.1",
+    "nodemon": "^3.1.9",
+    "openssl": "^2.0.0"
+  }
+}
