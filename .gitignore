@@ -1,2 +1,5 @@
 /node_modules
 .env
+lastOrders.json
+lastInvoices.json
+sentInvoices.json
