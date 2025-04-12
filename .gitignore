@@ -3,3 +3,6 @@
 lastOrders.json
 lastInvoices.json
 sentInvoices.json
+invoiceStatus.json
+user-mappings.json
+all-lark-users.json

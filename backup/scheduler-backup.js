@@ -1,5 +1,4 @@
 const axios = require("axios");
-const schedule = require("node-schedule");
 const kiotviet = require("./kiotviet");
 const lark = require("./lark");
 const fs = require("fs");

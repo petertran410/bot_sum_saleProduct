@@ -1,0 +1,103 @@
+{
+  "lastProcessedDays": {
+    "2025-04-11": {
+      "processed": true,
+      "count": 18,
+      "validCount": 18,
+      "originalCount": 20,
+      "lastUpdate": "2025-04-12T02:27:03.764Z"
+    },
+    "2025-04-12": {
+      "processed": true,
+      "count": 18,
+      "validCount": 18,
+      "originalCount": 20,
+      "lastUpdate": "2025-04-12T02:26:52.848Z"
+    },
+    "2025-04-10": {
+      "processed": true,
+      "count": 18,
+      "validCount": 18,
+      "originalCount": 20,
+      "lastUpdate": "2025-04-12T02:27:11.734Z"
+    },
+    "2025-04-09": {
+      "processed": true,
+      "count": 18,
+      "validCount": 18,
+      "originalCount": 20,
+      "lastUpdate": "2025-04-12T02:27:19.949Z"
+    },
+    "2025-04-08": {
+      "processed": true,
+      "count": 18,
+      "validCount": 18,
+      "originalCount": 20,
+      "lastUpdate": "2025-04-12T02:27:27.939Z"
+    },
+    "2025-04-07": {
+      "processed": true,
+      "count": 18,
+      "validCount": 18,
+      "originalCount": 20,
+      "lastUpdate": "2025-04-12T02:27:36.301Z"
+    },
+    "2025-04-06": {
+      "processed": true,
+      "count": 18,
+      "validCount": 18,
+      "originalCount": 20,
+      "lastUpdate": "2025-04-12T02:27:43.962Z"
+    },
+    "2025-04-05": {
+      "processed": true,
+      "count": 18,
+      "validCount": 18,
+      "originalCount": 20,
+      "lastUpdate": "2025-04-12T02:27:51.716Z"
+    },
+    "2025-04-04": {
+      "processed": true,
+      "count": 18,
+      "validCount": 18,
+      "originalCount": 20,
+      "lastUpdate": "2025-04-12T02:27:59.547Z"
+    },
+    "2025-04-03": {
+      "processed": true,
+      "count": 18,
+      "validCount": 18,
+      "originalCount": 20,
+      "lastUpdate": "2025-04-12T02:28:07.399Z"
+    },
+    "2025-04-02": {
+      "processed": true,
+      "count": 18,
+      "validCount": 18,
+      "originalCount": 20,
+      "lastUpdate": "2025-04-12T02:28:15.778Z"
+    },
+    "2025-04-01": {
+      "processed": true,
+      "count": 18,
+      "validCount": 18,
+      "originalCount": 20,
+      "lastUpdate": "2025-04-12T02:28:24.888Z"
+    },
+    "2025-03-31": {
+      "processed": true,
+      "count": 18,
+      "validCount": 18,
+      "originalCount": 20,
+      "lastUpdate": "2025-04-12T02:28:32.714Z"
+    },
+    "2025-03-30": {
+      "processed": true,
+      "count": 18,
+      "validCount": 18,
+      "originalCount": 20,
+      "lastUpdate": "2025-04-12T02:28:40.587Z"
+    }
+  },
+  "lastUpdate": "2025-04-12T02:28:40.587Z"
+}

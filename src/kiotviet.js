@@ -1,7 +1,7 @@
 const axios = require("axios");
 
 const KIOTVIET_BASE_URL = process.env.KIOT_BASE_URL;
-const TOKEN_URL = "https://id.kiotviet.vn/connect/token";
+const TOKEN_URL = process.env.KIOT_TOKEN;
 
 async function getToken() {
   try {
