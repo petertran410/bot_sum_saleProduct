@@ -1,8 +1,12 @@
 /node_modules
 .env
-lastOrders.json
-lastInvoices.json
-sentInvoices.json
-invoiceStatus.json
+/exports
 user-mappings.json
 all-lark-users.json
+scan_progress.json
+orders.json
+invoices.json
+products.json
+orders.xlsx
+invoices.xlsx
+products.xlsx

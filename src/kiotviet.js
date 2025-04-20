@@ -22,47 +22,100 @@ async function getToken() {
 
     return response.data.access_token;
   } catch (error) {
-    console.error("Error getting KiotViet token:", error.message);
+    console.error("Lỗi khi lấy KiotViet token:", error.message);
     throw error;
   }
 }
 
-async function getPendingOrders() {
+const getOrders = async () => {
   try {
     const token = await getToken();
+    const pageSize = 200;
 
     const response = await axios.get(`${KIOTVIET_BASE_URL}/orders?{}`, {
       params: {
-        status: 1,
-        pageSize: 1,
+        pageSize: pageSize,
         orderBy: "createdDate",
         orderDirection: "DESC",
+        createdDate: "2025-02-20",
+        includePayment: true,
+        includeOrderDelivery: true,
       },
       headers: {
         Retailer: process.env.KIOT_SHOP_NAME,
         Authorization: `Bearer ${token}`,
       },
     });
-
-    return response.data.data || [];
+    return response.data;
   } catch (error) {
-    console.error("Error getting pending orders:", error.message);
-    throw error;
+    console.log(error);
   }
-}
+};
 
-async function getModifiedOrders() {
+const getOrdersByDate = async (date) => {
   try {
     const token = await getToken();
+    const pageSize = 200;
 
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const formattedDate = yesterday.toISOString().split("T")[0];
-
-    const response = await axios.get(`${KIOTVIET_BASE_URL}/orders`, {
+    const response = await axios.get(`${KIOTVIET_BASE_URL}/orders?{}`, {
       params: {
-        lastModifiedFrom: formattedDate,
-        pageSize: 100,
+        pageSize: pageSize,
+        orderBy: "createdDate",
+        orderDirection: "DESC",
+        createdDate: date,
+        includePayment: true,
+        includeOrderDelivery: true,
+      },
+      headers: {
+        Retailer: process.env.KIOT_SHOP_NAME,
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return response.data;
+  } catch (error) {
+    console.error(`Error getting orders for date ${date}:`, error.message);
+    throw error;
+  }
+};
+
+const getInvoices = async () => {
+  try {
+    const token = await getToken();
+    const pageSize = 200;
+
+    const response = await axios.get(`${KIOTVIET_BASE_URL}/invoices?{}`, {
+      params: {
+        pageSize: pageSize,
+        orderBy: "createdDate",
+        orderDirection: "DESC",
+        createdDate: "2025-02-19",
+        includePayment: true,
+        includeInvoiceDelivery: true,
+      },
+      headers: {
+        Retailer: process.env.KIOT_SHOP_NAME,
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return response.data;
+  } catch (error) {
+    console.log(error);
+  }
+};
+
+const getInvoicesByDate = async (date) => {
+  try {
+    const token = await getToken();
+    const pageSize = 200;
+
+    const response = await axios.get(`${KIOTVIET_BASE_URL}/invoices?{}`, {
+      params: {
+        pageSize: pageSize,
+        orderBy: "createdDate",
+        orderDirection: "DESC",
+        createdDate: date,
+        includePayment: true,
+        includeInvoiceDelivery: true,
       },
       headers: {
         Retailer: process.env.KIOT_SHOP_NAME,
@@ -70,21 +123,76 @@ async function getModifiedOrders() {
       },
     });
 
-    const orders = response.data.data || [];
-    return orders.filter((order) => {
-      return (
-        order.description &&
-        order.description.toLowerCase().includes("thiếu hàng")
-      );
-    });
+    return response.data;
   } catch (error) {
-    console.error("Error getting modified orders:", error.message);
+    console.log(`Error getting invoices for date ${date}:`, error.message);
     throw error;
   }
-}
+};
+
+const getProducts = async () => {
+  try {
+    const token = await getToken();
+    const pageSize = 100;
+
+    const response = await axios.get(`${KIOTVIET_BASE_URL}/products`, {
+      params: {
+        pageSize: pageSize,
+        includeInventory: true,
+        includePricebook: true,
+        includeQuantity: true,
+        // productType: 1 | 2 | 3,
+        // includeMaterial: true,
+        includeSerials: true,
+        IncludeBatchExpires: true,
+        includeWarranties: true,
+        orderBy: "name",
+      },
+      headers: {
+        Retailer: process.env.KIOT_SHOP_NAME,
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    return response.data;
+  } catch (error) {
+    console.error("Error getting products:", error.message);
+    throw error;
+  }
+};
+
+const getProductsByDate = async (date) => {
+  try {
+    const token = await getToken();
+    const pageSize = 100;
+
+    const response = await axios.get(`${KIOTVIET_BASE_URL}/products`, {
+      params: {
+        lastModifiedFrom: date,
+        pageSize: pageSize,
+        includeInventory: true,
+        includePricebook: true,
+        orderBy: "name",
+      },
+      headers: {
+        Retailer: process.env.KIOT_SHOP_NAME,
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    return response.data;
+  } catch (error) {
+    console.error(`Error getting products for date ${date}:`, error.message);
+    return { data: [] };
+  }
+};
 
 module.exports = {
   getToken,
-  getPendingOrders,
-  getModifiedOrders,
+  getOrders,
+  getOrdersByDate,
+  getInvoices,
+  getInvoicesByDate,
+  getProducts,
+  getProductsByDate,
 };

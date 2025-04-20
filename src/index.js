@@ -1,146 +1,117 @@
 require("dotenv").config();
 const express = require("express");
-const lark = require("./lark");
-const orderScanner = require("./orderScanner.js");
-const invoiceScanner = require("./invoiceScanner");
-const db = require("../db-mongo.js");
-const axios = require("axios");
-const kiotviet = require("./kiotviet.js");
+const path = require("path");
+const fs = require("fs");
+const kiotviet = require("./kiotviet");
+const scheduler = require("./scheduler");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
-async function checkTokenMiddleware(req, res, next) {
+app.get("/get-orders", async (req, res) => {
   try {
-    // Lấy token từ header Authorization
-    const authHeader = req.headers.authorization;
-    if (!authHeader) {
-      return res.status(401).json({
-        error: "Thiếu token xác thực",
-        message: "Vui lòng cung cấp token trong header Authorization",
-      });
-    }
-
-    // Loại bỏ tiền tố "Bearer " nếu có
-    const token = authHeader.startsWith("Bearer ")
-      ? authHeader.slice(7)
-      : authHeader;
-
-    // Kiểm tra token Lark
-    const larkToken = await lark.getLarkToken();
-
-    // Kiểm tra token KiotViet
-    const kiotvietToken = await kiotviet.getToken();
-
-    // Nếu cả hai token đều hợp lệ
-    if (larkToken && kiotvietToken) {
-      // Lưu token vào request để sử dụng sau này nếu cần
-      req.larkToken = larkToken;
-      req.kiotvietToken = kiotvietToken;
-      next();
-    } else {
-      return res.status(401).json({
-        error: "Xác thực token thất bại",
-        details: {
-          larkToken: larkToken ? "Hợp lệ" : "Không hợp lệ",
-          kiotvietToken: kiotvietToken ? "Hợp lệ" : "Không hợp lệ",
-        },
-      });
-    }
+    const getOrders = await kiotviet.getOrders();
+    res.json(getOrders);
   } catch (error) {
-    console.error("Lỗi xác thực token:", error);
-    return res.status(500).json({
-      error: "Lỗi nội bộ trong quá trình xác thực",
-      message: error.message,
-    });
+    console.log("Cannot get orders", error);
+    res.status(500).json({ error: "Failed to fetch orders" });
   }
-}
-
-app.get("/", (req, res) => {
-  res.send("KiotViet-Lark Integration Server is running!");
 });
 
-app.get("/test-orders", checkTokenMiddleware, async (req, res) => {
+app.get("/get-invoices", async (req, res) => {
   try {
-    const orders = await orderScanner.getRecentOrders();
+    const getInvoices = await kiotviet.getInvoices();
+    res.json(getInvoices);
+  } catch (error) {
+    console.log("Cannot get invoices", error);
+  }
+});
+
+app.get("/stored-orders", (req, res) => {
+  try {
+    const ordersFilePath = path.join(__dirname, "orders.json");
+    if (fs.existsSync(ordersFilePath)) {
+      const ordersData = fs.readFileSync(ordersFilePath, "utf8");
+      res.json(JSON.parse(ordersData));
+    } else {
+      res.json({ orders: [], total: 0, lastUpdated: null });
+    }
+  } catch (error) {
+    console.error("Error reading stored orders:", error);
+    res.status(500).json({ error: "Failed to read stored orders" });
+  }
+});
+
+app.get("/scan-orders/:days", async (req, res) => {
+  try {
+    const days = parseInt(req.params.days) || 30;
+    res.json({ message: `Started scanning orders for the last ${days} days` });
+
+    scheduler.scanOrdersForDays(days);
+  } catch (error) {
+    console.error("Error triggering order scan:", error);
+    res.status(500).json({ error: "Failed to trigger order scan" });
+  }
+});
+
+app.get("/stored-invoices", (req, res) => {
+  try {
+    const invoicesFilePath = path.join(__dirname, "invoices.json");
+    if (fs.existsSync(invoicesFilePath)) {
+      const invoicesData = fs.readFileSync(invoicesFilePath, "utf8");
+      res.json(JSON.parse(invoicesData));
+    } else {
+      res.json({ invoices: [], total: 0, lastUpdated: null });
+    }
+  } catch (error) {
+    console.error("Error reading stored invoices:", error);
+    res.status(500).json({ error: "Failed to read stored invoices" });
+  }
+});
+
+app.get("/scan-invoices/:days", async (req, res) => {
+  try {
+    const days = parseInt(req.params.days) || 30;
     res.json({
-      total: orders.length,
-      kiotvietToken: req.kiotvietToken ? "Đã xác thực" : "Chưa xác thực",
-      orders: orders,
+      message: `Started scanning invoices for the last ${days} days`,
     });
+
+    scheduler.scanInvoicesForDays(days);
   } catch (error) {
+    console.error("Error triggering invoices scan:", error);
+    res.status(500).json({ error: "Failed to trigger invoice scan" });
+  }
+});
+
+app.get("/get-products", async (req, res) => {
+  try {
+    const getProducts = await kiotviet.getProducts();
+    res.json(getProducts);
+  } catch (error) {
+    console.error("Cannot get products", error);
     res.status(500).json({
-      error: error.message,
-      details: error.response ? error.response.data : null,
+      error: "Failed to fetch products",
     });
   }
 });
 
-app.get("/get-kiotviet-token", async (req, res) => {
+app.get("/convert-to-excel", (req, res) => {
   try {
-    const token = await kiotviet.getToken();
-    res.json({ token });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.get("/test-saved-orders", (req, res) => {
-  try {
-    const savedOrders = orderScanner.getSavedOrders();
-    res.json(savedOrders);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.get("/get-my-open-id", async (req, res) => {
-  try {
-    const token = await lark.getLarkToken();
-
-    const response = await axios({
-      method: "GET",
-      url: "https://open.larksuite.com/open-apis/contact/v3/users/me",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json; charset=utf-8",
-      },
+    const result = scheduler.convertAllToExcel();
+    res.json({
+      message: "Conversion to Excel started",
+      result: result,
     });
-
-    console.log("API Response:", JSON.stringify(response.data, null, 2));
-
-    if (response.data && response.data.data) {
-      res.json({
-        open_id: response.data.data.user_id,
-        message:
-          "This is your open_id. Add it to your .env file as LARK_USER_ID.",
-      });
-    } else {
-      res
-        .status(500)
-        .json({ error: "Could not retrieve open_id from response" });
-    }
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("Error triggering Excel conversion:", error);
+    res.status(500).json({ error: "Failed to convert to Excel" });
   }
 });
 
-app.listen(PORT, async () => {
-  console.log(`Server is running on port ${PORT}`);
-
-  try {
-    // await db.connectToDatabase();
-    // orderScanner.setupOrderScanner();
-    // invoiceScanner.setupInvoiceScanner();
-  } catch (error) {
-    console.error("Error initializing application:", error.message);
-  }
-});
-
-process.on("SIGINT", async () => {
-  console.log("Shutting down...");
-  await db.closeConnection();
-  process.exit(0);
+// Khởi động server
+app.listen(PORT, () => {
+  scheduler.startScheduler(15, 0);
+  // scheduler.scheduleExcelConversion(60);
 });
