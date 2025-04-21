@@ -112,6 +112,6 @@ app.get("/convert-to-excel", (req, res) => {
 
 // Khởi động server
 app.listen(PORT, () => {
-  scheduler.startScheduler(15, 0);
+  scheduler.startScheduler(15, 1);
   // scheduler.scheduleExcelConversion(60);
 });

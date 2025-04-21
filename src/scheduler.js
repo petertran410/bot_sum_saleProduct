@@ -204,7 +204,7 @@ async function fetchInvoicesForDate(date) {
   }
 }
 
-async function scanOrdersForDays(days = 0) {
+async function scanOrdersForDays(days = 1) {
   const today = new Date();
   const startDate = getStartDateFromDaysAgo(days);
   const endDate = today;
@@ -259,7 +259,7 @@ async function scanOrdersForDays(days = 0) {
   return existingData;
 }
 
-async function scanInvoicesForDays(days = 0) {
+async function scanInvoicesForDays(days = 1) {
   const today = new Date();
   const startDate = getStartDateFromDaysAgo(days);
   const endDate = today;
@@ -371,7 +371,7 @@ async function scanProductsForDays(days = 160) {
   return existingData;
 }
 
-async function scanRecentOrders(hoursBack = 0) {
+async function scanRecentOrders(hoursBack = 24) {
   const now = new Date();
   const startTime = new Date(now);
   startTime.setHours(now.getHours() - hoursBack);
@@ -412,7 +412,7 @@ async function scanRecentOrders(hoursBack = 0) {
   return existingData;
 }
 
-async function scanRecentInvoices(hoursBack = 0) {
+async function scanRecentInvoices(hoursBack = 24) {
   const now = new Date();
   const startTime = new Date(now);
   startTime.setHours(now.getHours() - hoursBack);
@@ -455,7 +455,7 @@ async function scanRecentInvoices(hoursBack = 0) {
   return existingData;
 }
 
-async function scanRecentProducts(hoursBack = 12) {
+async function scanRecentProducts(hoursBack = 24) {
   const now = new Date();
   const startTime = new Date(now);
   startTime.setHours(now.getHours() - hoursBack);
