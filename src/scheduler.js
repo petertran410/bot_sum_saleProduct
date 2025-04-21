@@ -371,7 +371,7 @@ async function scanProductsForDays(days = 160) {
   return existingData;
 }
 
-async function scanRecentOrders(hoursBack = 24) {
+async function scanRecentOrders(hoursBack = 0) {
   const now = new Date();
   const startTime = new Date(now);
   startTime.setHours(now.getHours() - hoursBack);
@@ -412,7 +412,7 @@ async function scanRecentOrders(hoursBack = 24) {
   return existingData;
 }
 
-async function scanRecentInvoices(hoursBack = 24) {
+async function scanRecentInvoices(hoursBack = 0) {
   const now = new Date();
   const startTime = new Date(now);
   startTime.setHours(now.getHours() - hoursBack);
@@ -455,7 +455,7 @@ async function scanRecentInvoices(hoursBack = 24) {
   return existingData;
 }
 
-async function scanRecentProducts(hoursBack = 24) {
+async function scanRecentProducts(hoursBack = 0) {
   const now = new Date();
   const startTime = new Date(now);
   startTime.setHours(now.getHours() - hoursBack);
@@ -1405,30 +1405,30 @@ function startScheduler(intervalSeconds = 15, initialScanDays = 1) {
 
       setInterval(() => {
         scanRecentInvoices();
-      }, intervalSeconds * 1500);
+      }, intervalSeconds * 1000);
     });
 
-    scanProductsForDays(initialScanDays).then(() => {
-      console.log(
-        "Initial scan for products completed, switching to incremental updates"
-      );
+    // scanProductsForDays(initialScanDays).then(() => {
+    //   console.log(
+    //     "Initial scan for products completed, switching to incremental updates"
+    //   );
 
-      setInterval(() => {
-        scanRecentProducts();
-      }, intervalSeconds * 1800);
-    });
+    //   setInterval(() => {
+    //     scanRecentProducts();
+    //   }, intervalSeconds * 1500);
+    // });
   } else {
     console.log(
       "Historical data already scanned, starting incremental updates"
     );
     scanRecentOrders();
     scanRecentInvoices();
-    scanRecentProducts();
+    // scanRecentProducts();
 
     setInterval(() => {
       scanRecentOrders();
       scanRecentInvoices();
-      scanRecentProducts();
+      // scanRecentProducts();
     }, intervalSeconds * 1000);
   }
 }
