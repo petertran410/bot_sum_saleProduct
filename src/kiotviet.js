@@ -26,7 +26,6 @@ async function getToken() {
     throw error;
   }
 }
-
 const getOrders = async () => {
   try {
     const token = await getToken();
@@ -37,7 +36,6 @@ const getOrders = async () => {
         pageSize: pageSize,
         orderBy: "createdDate",
         orderDirection: "DESC",
-        createdDate: "2025-02-20",
         includePayment: true,
         includeOrderDelivery: true,
       },
@@ -52,28 +50,49 @@ const getOrders = async () => {
   }
 };
 
-const getOrdersByDate = async (date) => {
+const getOrdersByDate = async (daysAgo) => {
   try {
-    const token = await getToken();
-    const pageSize = 200;
+    const results = [];
 
-    const response = await axios.get(`${KIOTVIET_BASE_URL}/orders?{}`, {
-      params: {
-        pageSize: pageSize,
-        orderBy: "createdDate",
-        orderDirection: "DESC",
-        createdDate: date,
-        includePayment: true,
-        includeOrderDelivery: true,
-      },
-      headers: {
-        Retailer: process.env.KIOT_SHOP_NAME,
-        Authorization: `Bearer ${token}`,
-      },
-    });
-    return response.data;
+    for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() - currentDaysAgo);
+
+      const formattedDate = targetDate.toISOString().split("T")[0];
+
+      const token = await getToken();
+      const pageSize = 200;
+
+      const response = await axios.get(`${KIOTVIET_BASE_URL}/orders?{}`, {
+        params: {
+          pageSize: pageSize,
+          orderBy: "createdDate",
+          orderDirection: "DESC",
+          createdDate: formattedDate,
+          includePayment: true,
+          includeOrderDelivery: true,
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      results.push({
+        date: formattedDate,
+        daysAgo: currentDaysAgo,
+        data: response.data,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+
+    return results;
   } catch (error) {
-    console.error(`Error getting orders for date ${date}:`, error.message);
+    console.error(
+      `Error getting orders for ${daysAgo} days ago:`,
+      error.message
+    );
     throw error;
   }
 };
@@ -188,11 +207,6 @@ const getProductsByDate = async (date) => {
 };
 
 module.exports = {
-  getToken,
   getOrders,
   getOrdersByDate,
-  getInvoices,
-  getInvoicesByDate,
-  getProducts,
-  getProductsByDate,
 };

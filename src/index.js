@@ -1,117 +1,121 @@
 require("dotenv").config();
 const express = require("express");
-const path = require("path");
+const {
+  orderScheduler,
+  orderSchedulerCurrent,
+} = require("../scheduler/orderScheduler");
 const fs = require("fs");
-const kiotviet = require("./kiotviet");
-const scheduler = require("./scheduler");
+const path = require("path");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(express.json());
+const checkHistoricalDataStatus = () => {
+  const folderName = "saveJson";
+  const fileName = "historical_status.json";
+  const filePath = path.join(
+    path.resolve(__dirname, ".."),
+    folderName,
+    fileName
+  );
 
-app.get("/get-orders", async (req, res) => {
   try {
-    const getOrders = await kiotviet.getOrders();
-    res.json(getOrders);
+    if (fs.existsSync(filePath)) {
+      const status = JSON.parse(fs.readFileSync(filePath, "utf8"));
+      return status.completed || false;
+    }
+    return false;
   } catch (error) {
-    console.log("Cannot get orders", error);
-    res.status(500).json({ error: "Failed to fetch orders" });
+    return false;
   }
-});
+};
 
-app.get("/get-invoices", async (req, res) => {
+const markHistoricalDataCompleted = () => {
+  const folderName = "saveJson";
+  const fileName = "historical_status.json";
+  const filePath = path.join(
+    path.resolve(__dirname, ".."),
+    folderName,
+    fileName
+  );
+
   try {
-    const getInvoices = await kiotviet.getInvoices();
-    res.json(getInvoices);
+    if (!fs.existsSync(path.join(path.resolve(__dirname, ".."), folderName))) {
+      fs.mkdirSync(path.join(path.resolve(__dirname, ".."), folderName), {
+        recursive: true,
+      });
+    }
+
+    fs.writeFileSync(
+      filePath,
+      JSON.stringify({ completed: true }, null, 2),
+      "utf8"
+    );
   } catch (error) {
-    console.log("Cannot get invoices", error);
+    console.error("Không thể đánh dấu trạng thái:", error);
   }
-});
+};
 
-app.get("/stored-orders", (req, res) => {
+const runOrderSync = async () => {
   try {
-    const ordersFilePath = path.join(__dirname, "orders.json");
-    if (fs.existsSync(ordersFilePath)) {
-      const ordersData = fs.readFileSync(ordersFilePath, "utf8");
-      res.json(JSON.parse(ordersData));
+    const historicalDataCompleted = checkHistoricalDataStatus();
+
+    if (!historicalDataCompleted) {
+      const result = await orderScheduler(160);
+
+      if (result.success) {
+        markHistoricalDataCompleted();
+
+        console.log("Historical orders data has been saved");
+      } else {
+        console.error("Error when saving historical data:", result.error);
+      }
     } else {
-      res.json({ orders: [], total: 0, lastUpdated: null });
+      const currentResult = await orderSchedulerCurrent();
+
+      if (currentResult.success) {
+        console.log(
+          `Current orders data has been added: ${currentResult.data.length} orders`
+        );
+      } else {
+        console.error("Error when adding current orders:", currentResult.error);
+      }
     }
   } catch (error) {
-    console.error("Error reading stored orders:", error);
-    res.status(500).json({ error: "Failed to read stored orders" });
+    console.error("Cannot get and save data orders:", error);
   }
+};
+
+app.get("/", (req, res) => {
+  res.send("Order Synchronization Service is running");
 });
 
-app.get("/scan-orders/:days", async (req, res) => {
+app.get("/save-order", async (req, res) => {
   try {
-    const days = parseInt(req.params.days) || 30;
-    res.json({ message: `Started scanning orders for the last ${days} days` });
-
-    scheduler.scanOrdersForDays(days);
-  } catch (error) {
-    console.error("Error triggering order scan:", error);
-    res.status(500).json({ error: "Failed to trigger order scan" });
-  }
-});
-
-app.get("/stored-invoices", (req, res) => {
-  try {
-    const invoicesFilePath = path.join(__dirname, "invoices.json");
-    if (fs.existsSync(invoicesFilePath)) {
-      const invoicesData = fs.readFileSync(invoicesFilePath, "utf8");
-      res.json(JSON.parse(invoicesData));
-    } else {
-      res.json({ invoices: [], total: 0, lastUpdated: null });
-    }
-  } catch (error) {
-    console.error("Error reading stored invoices:", error);
-    res.status(500).json({ error: "Failed to read stored invoices" });
-  }
-});
-
-app.get("/scan-invoices/:days", async (req, res) => {
-  try {
-    const days = parseInt(req.params.days) || 30;
+    await runOrderSync();
     res.json({
-      message: `Started scanning invoices for the last ${days} days`,
+      success: true,
+      message: "Order synchronization completed",
     });
-
-    scheduler.scanInvoicesForDays(days);
   } catch (error) {
-    console.error("Error triggering invoices scan:", error);
-    res.status(500).json({ error: "Failed to trigger invoice scan" });
-  }
-});
-
-app.get("/get-products", async (req, res) => {
-  try {
-    const getProducts = await kiotviet.getProducts();
-    res.json(getProducts);
-  } catch (error) {
-    console.error("Cannot get products", error);
     res.status(500).json({
-      error: "Failed to fetch products",
+      success: false,
+      message: "Error during order synchronization",
+      error: error.message,
     });
   }
 });
 
-app.get("/convert-to-excel", (req, res) => {
-  try {
-    const result = scheduler.convertAllToExcel();
-    res.json({
-      message: "Conversion to Excel started",
-      result: result,
-    });
-  } catch (error) {
-    console.error("Error triggering Excel conversion:", error);
-    res.status(500).json({ error: "Failed to convert to Excel" });
-  }
-});
+const server = app.listen(PORT, async () => {
+  await runOrderSync();
 
-// Khởi động server
-app.listen(PORT, () => {
-  scheduler.startScheduler(15, 160);
-  // scheduler.scheduleExcelConversion(60);
+  const syncInterval = setInterval(runOrderSync, 60 * 3000);
+
+  process.on("SIGINT", () => {
+    clearInterval(syncInterval);
+    server.close(() => {
+      console.log("Server stopped");
+      process.exit(0);
+    });
+  });
 });
