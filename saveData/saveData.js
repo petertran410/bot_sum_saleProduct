@@ -67,7 +67,7 @@ const appendJsonDataToFile = (newData, folderName, fileName) => {
       );
     };
 
-    const uniqueNewOrders = newDataArray.filter((newOrderItem) => {
+    const uniqueNew = newDataArray.filter((newOrderItem) => {
       const isDuplicate = existingData.some((existingDateEntry) =>
         isOrderDuplicate(existingDateEntry, newOrderItem)
       );
@@ -75,12 +75,12 @@ const appendJsonDataToFile = (newData, folderName, fileName) => {
       return !isDuplicate;
     });
 
-    if (uniqueNewOrders.length > 0) {
+    if (uniqueNew.length > 0) {
       if (newData.date) {
         existingData.push({
           date: newData.date,
           daysAgo: newData.daysAgo || 0,
-          data: uniqueNewOrders,
+          data: uniqueNew,
         });
       } else {
         const currentDate = new Date().toISOString().split("T")[0];
@@ -90,11 +90,11 @@ const appendJsonDataToFile = (newData, folderName, fileName) => {
 
         if (currentDateEntry) {
           currentDateEntry.data = currentDateEntry.data || [];
-          currentDateEntry.data.push(...uniqueNewOrders);
+          currentDateEntry.data.push(...uniqueNew);
         } else {
           existingData.push({
             date: currentDate,
-            data: uniqueNewOrders,
+            data: uniqueNew,
           });
         }
       }
@@ -102,16 +102,16 @@ const appendJsonDataToFile = (newData, folderName, fileName) => {
       fs.writeFileSync(filePath, JSON.stringify(existingData, null, 2), "utf8");
 
       console.log(
-        `Đã thêm ${uniqueNewOrders.length} đơn hàng mới không trùng lặp vào ${filePath}`
+        `Đã thêm ${uniqueNew.length} data mới không trùng lặp vào ${filePath}`
       );
 
       return {
         success: true,
         filePath: filePath,
-        data: uniqueNewOrders,
+        data: uniqueNew,
       };
     } else {
-      console.log("Không có đơn hàng mới để thêm.");
+      console.log("Không có data mới để thêm.");
       return {
         success: true,
         filePath: filePath,

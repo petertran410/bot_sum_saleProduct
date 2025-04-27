@@ -107,7 +107,6 @@ const getInvoices = async () => {
         pageSize: pageSize,
         orderBy: "createdDate",
         orderDirection: "DESC",
-        createdDate: "2025-02-19",
         includePayment: true,
         includeInvoiceDelivery: true,
       },
@@ -122,29 +121,50 @@ const getInvoices = async () => {
   }
 };
 
-const getInvoicesByDate = async (date) => {
+const getInvoicesByDate = async (daysAgo) => {
   try {
-    const token = await getToken();
-    const pageSize = 200;
+    const results = [];
 
-    const response = await axios.get(`${KIOTVIET_BASE_URL}/invoices?{}`, {
-      params: {
-        pageSize: pageSize,
-        orderBy: "createdDate",
-        orderDirection: "DESC",
-        createdDate: date,
-        includePayment: true,
-        includeInvoiceDelivery: true,
-      },
-      headers: {
-        Retailer: process.env.KIOT_SHOP_NAME,
-        Authorization: `Bearer ${token}`,
-      },
-    });
+    for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
+      const targetDate = new Date();
 
-    return response.data;
+      targetDate.setDate(targetDate.getDate() - currentDaysAgo);
+
+      const formattedDate = targetDate.toISOString().split("T")[0];
+
+      const token = await getToken();
+      const pageSize = 200;
+
+      const response = await axios.get(`${KIOTVIET_BASE_URL}/invoices?{}`, {
+        params: {
+          pageSize: pageSize,
+          orderBy: "createdDate",
+          orderDirection: "DESC",
+          createdDate: formattedDate,
+          includePayment: true,
+          includeInvoiceDelivery: true,
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      results.push({
+        date: formattedDate,
+        daysAgo: currentDaysAgo,
+        date: response.data,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+
+    return results;
   } catch (error) {
-    console.log(`Error getting invoices for date ${date}:`, error.message);
+    console.log(
+      `Error getting invoices for ${daysAgo} days ago: `,
+      error.message
+    );
     throw error;
   }
 };
@@ -209,4 +229,8 @@ const getProductsByDate = async (date) => {
 module.exports = {
   getOrders,
   getOrdersByDate,
+  getInvoices,
+  getInvoicesByDate,
+  getProducts,
+  getProductsByDate,
 };
