@@ -180,12 +180,11 @@ const getProducts = async () => {
         includeInventory: true,
         includePricebook: true,
         includeQuantity: true,
-        // productType: 1 | 2 | 3,
-        // includeMaterial: true,
         includeSerials: true,
         IncludeBatchExpires: true,
         includeWarranties: true,
         orderBy: "name",
+        createdDate: "2025-01-01",
       },
       headers: {
         Retailer: process.env.KIOT_SHOP_NAME,
@@ -200,28 +199,53 @@ const getProducts = async () => {
   }
 };
 
-const getProductsByDate = async (date) => {
+const getProductsByDate = async (daysAgo) => {
   try {
-    const token = await getToken();
-    const pageSize = 100;
+    const results = [];
 
-    const response = await axios.get(`${KIOTVIET_BASE_URL}/products`, {
-      params: {
-        lastModifiedFrom: date,
-        pageSize: pageSize,
-        includeInventory: true,
-        includePricebook: true,
-        orderBy: "name",
-      },
-      headers: {
-        Retailer: process.env.KIOT_SHOP_NAME,
-        Authorization: `Bearer ${token}`,
-      },
-    });
+    for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
+      const targetDate = new Date();
 
-    return response.data;
+      targetDate.setDate(targetDate.getDate() - currentDaysAgo);
+
+      const formattedDate = targetDate.toISOString().split("T")[0];
+
+      const token = await getToken();
+      const pageSize = 100;
+
+      const response = await axios.get(`${KIOTVIET_BASE_URL}/products`, {
+        params: {
+          lastModifiedFrom: formattedDate,
+          pageSize: pageSize,
+          includeInventory: true,
+          includePricebook: true,
+          includeQuantity: true,
+          includeSerials: true,
+          IncludeBatchExpires: true,
+          includeWarranties: true,
+          orderBy: "name",
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      results.push({
+        date: formattedDate,
+        daysAgo: currentDaysAgo,
+        data: response.data,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+
+    return results;
   } catch (error) {
-    console.error(`Error getting products for date ${date}:`, error.message);
+    console.error(
+      `Error getting products for ${daysAgo} days ago:`,
+      error.message
+    );
     return { data: [] };
   }
 };

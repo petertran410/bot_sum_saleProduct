@@ -89,7 +89,9 @@ const appendJsonDataToFile = (newData, folderName, fileName) => {
         );
 
         if (currentDateEntry) {
-          currentDateEntry.data = currentDateEntry.data || [];
+          if (!Array.isArray(currentDateEntry.data)) {
+            currentDateEntry.data = [];
+          }
           currentDateEntry.data.push(...uniqueNew);
         } else {
           existingData.push({

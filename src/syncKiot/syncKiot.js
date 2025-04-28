@@ -1,8 +1,10 @@
 const {
   checkHistoricalDataStatus,
   checkInvoicesHistoricalDataStatus,
+  checkProductsHistoricalDataStatus,
   markHistoricalDataCompleted,
   markInvoicesHistoricalDataCompleted,
+  markProductsHistoricalDataCompleted,
 } = require("../checkHistoryData/checkData");
 
 const {
@@ -14,6 +16,11 @@ const {
   invoiceScheduler,
   invoiceSchedulerCurrent,
 } = require("../../scheduler/invoiceScheduler");
+
+const {
+  productScheduler,
+  productSchedulerCurrent,
+} = require("../../scheduler/productScheduler");
 
 const runOrderSync = async () => {
   try {
@@ -75,7 +82,37 @@ const runInvoiceSync = async () => {
   }
 };
 
+const runProductSync = async () => {
+  try {
+    const historicalProductDataCompleted = checkProductsHistoricalDataStatus();
+    if (!historicalProductDataCompleted) {
+      const result = await productScheduler(160);
+
+      if (result.success) {
+        markProductsHistoricalDataCompleted();
+
+        console.log("Historical products data has been saved");
+      } else {
+        console.log("Error when saving historical data:", result.error);
+      }
+    } else {
+      const currentResult = await productSchedulerCurrent();
+
+      if (currentResult.success) {
+        console.log(
+          `Current products data has been added: ${currentResult.data.length} products`
+        );
+      } else {
+        console.log(`Error when adding current products:`, currentResult.error);
+      }
+    }
+  } catch (error) {
+    console.log("Cannot get and save data products:", error);
+  }
+};
+
 module.exports = {
   runOrderSync,
   runInvoiceSync,
+  runProductSync,
 };
