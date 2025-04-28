@@ -6,7 +6,12 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js"
+    "dev": "nodemon src/index.js",
+    "pm2:start": "pm2 start npm --name ,\"bot_sum_saleProduct\" -- run start",
+    "pm2:dev": "pm2 start npm --name \"bot_sum_saleProduct\" -- run dev",
+    "pm2:stop": "pm2 stop bot_sum_saleProduct",
+    "pm2:restart": "pm2 restart bot_sum_saleProduct",
+    "pm2:logs": "pm2 logs bot_sum_saleProduct"
   },
   "keywords": [],
   "author": "",
