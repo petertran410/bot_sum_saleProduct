@@ -1,6 +1,13 @@
 const path = require("path");
 const fs = require("fs");
 
+/**
+ * Save JSON data to a file
+ * @param {Object} jsonData - The data to save
+ * @param {string} folderName - The folder name to save to
+ * @param {string} fileName - The file name to save as
+ * @returns {Object} Result object with success status
+ */
 const saveJsonDataToFile = (jsonData, folderName, fileName) => {
   try {
     const parentDir = path.resolve(__dirname, "..");
@@ -8,7 +15,7 @@ const saveJsonDataToFile = (jsonData, folderName, fileName) => {
 
     if (!fs.existsSync(targetDir)) {
       fs.mkdirSync(targetDir, { recursive: true });
-      console.log(`Đã tạo thư mục: ${targetDir}`);
+      console.log(`Created directory: ${targetDir}`);
     }
     const filePath = path.join(targetDir, fileName);
 
@@ -16,14 +23,14 @@ const saveJsonDataToFile = (jsonData, folderName, fileName) => {
 
     fs.writeFileSync(filePath, jsonString, "utf8");
 
-    console.log(`Dữ liệu đã được lưu thành công vào ${filePath}`);
+    console.log(`Data successfully saved to ${filePath}`);
     return {
       success: true,
       filePath: filePath,
       data: jsonData,
     };
   } catch (error) {
-    console.error("Đã xảy ra lỗi khi lưu dữ liệu:", error);
+    console.error("Error occurred while saving data:", error);
     return {
       success: false,
       error: error.message,
@@ -31,6 +38,13 @@ const saveJsonDataToFile = (jsonData, folderName, fileName) => {
   }
 };
 
+/**
+ * Append JSON data to an existing file, avoiding duplicates
+ * @param {Object} newData - The new data to append
+ * @param {string} folderName - The folder name where the file is stored
+ * @param {string} fileName - The file name to append to
+ * @returns {Object} Result object with success status and data
+ */
 const appendJsonDataToFile = (newData, folderName, fileName) => {
   try {
     const parentDir = path.resolve(__dirname, "..");
@@ -48,28 +62,27 @@ const appendJsonDataToFile = (newData, folderName, fileName) => {
       ? [newData.data]
       : [newData];
 
-    const isOrderDuplicate = (existingDateEntry, newOrder) => {
+    const isItemDuplicate = (existingDateEntry, newItem) => {
       if (!existingDateEntry || typeof existingDateEntry !== "object") {
         return false;
       }
 
-      const ordersArray = Array.isArray(existingDateEntry.data)
+      const itemsArray = Array.isArray(existingDateEntry.data)
         ? existingDateEntry.data
         : Array.isArray(existingDateEntry)
         ? existingDateEntry
         : [];
 
-      return ordersArray.some(
-        (existingOrder) =>
-          existingOrder &&
-          (existingOrder.id === newOrder.id ||
-            existingOrder.code === newOrder.code)
+      return itemsArray.some(
+        (existingItem) =>
+          existingItem &&
+          (existingItem.id === newItem.id || existingItem.code === newItem.code)
       );
     };
 
-    const uniqueNew = newDataArray.filter((newOrderItem) => {
+    const uniqueNew = newDataArray.filter((newItem) => {
       const isDuplicate = existingData.some((existingDateEntry) =>
-        isOrderDuplicate(existingDateEntry, newOrderItem)
+        isItemDuplicate(existingDateEntry, newItem)
       );
 
       return !isDuplicate;
@@ -104,7 +117,7 @@ const appendJsonDataToFile = (newData, folderName, fileName) => {
       fs.writeFileSync(filePath, JSON.stringify(existingData, null, 2), "utf8");
 
       console.log(
-        `Đã thêm ${uniqueNew.length} data mới không trùng lặp vào ${filePath}`
+        `Added ${uniqueNew.length} new non-duplicate items to ${filePath}`
       );
 
       return {
@@ -113,7 +126,7 @@ const appendJsonDataToFile = (newData, folderName, fileName) => {
         data: uniqueNew,
       };
     } else {
-      console.log("Không có data mới để thêm.");
+      console.log("No new data to add.");
       return {
         success: true,
         filePath: filePath,
@@ -121,7 +134,50 @@ const appendJsonDataToFile = (newData, folderName, fileName) => {
       };
     }
   } catch (error) {
-    console.error("Đã xảy ra lỗi khi nối dữ liệu:", error);
+    console.error("Error occurred while appending data:", error);
+    return {
+      success: false,
+      error: error.message,
+    };
+  }
+};
+
+/**
+ * Save data to both JSON file and MySQL database
+ * @param {Object} data - The data to save
+ * @param {Function} dbSaveFunction - The database saving function
+ * @param {string} folderName - The folder name to save JSON to
+ * @param {string} fileName - The file name to save JSON as
+ * @returns {Object} Result object with success status and stats
+ */
+const saveBothJsonAndMySQL = async (
+  data,
+  dbSaveFunction,
+  folderName,
+  fileName
+) => {
+  try {
+    // Save to MySQL database
+    const dbResult = await dbSaveFunction(data);
+
+    // Save to JSON file
+    const jsonResult = await appendJsonDataToFile(
+      { date: new Date().toISOString().split("T")[0], data: data },
+      folderName,
+      fileName
+    );
+
+    return {
+      success: dbResult.success && jsonResult.success,
+      stats: {
+        total: (dbResult.stats && dbResult.stats.total) || 0,
+        success: (dbResult.stats && dbResult.stats.success) || 0,
+        newRecords: (dbResult.stats && dbResult.stats.newRecords) || 0,
+        savedToJson: jsonResult.data.length,
+      },
+    };
+  } catch (error) {
+    console.error("Error saving data to both JSON and MySQL:", error);
     return {
       success: false,
       error: error.message,
@@ -132,4 +188,5 @@ const appendJsonDataToFile = (newData, folderName, fileName) => {
 module.exports = {
   saveJsonDataToFile,
   appendJsonDataToFile,
+  saveBothJsonAndMySQL,
 };

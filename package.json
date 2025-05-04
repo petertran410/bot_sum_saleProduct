@@ -11,7 +11,8 @@
     "pm2:dev": "pm2 start npm --name \"bot_sum_saleProduct\" -- run dev",
     "pm2:stop": "pm2 stop bot_sum_saleProduct",
     "pm2:restart": "pm2 restart bot_sum_saleProduct",
-    "pm2:logs": "pm2 logs bot_sum_saleProduct"
+    "pm2:logs": "pm2 logs bot_sum_saleProduct",
+    "db:setup": "node src/db/init.js"
   },
   "keywords": [],
   "author": "",
@@ -28,6 +29,7 @@
     "lodash": "^4.17.21",
     "moment": "^2.30.1",
     "mongodb": "^6.15.0",
+    "mysql2": "^3.14.1",
     "node-cron": "^3.0.3",
     "node-forge": "^1.3.1",
     "node-schedule": "^2.1.1",

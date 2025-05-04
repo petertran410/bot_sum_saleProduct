@@ -3,3 +3,4 @@
 /saveJson
 .dockerignore
 dockerfile
+docker-compose.yml

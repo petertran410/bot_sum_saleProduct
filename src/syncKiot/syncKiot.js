@@ -1,11 +1,7 @@
-const {
-  checkHistoricalDataStatus,
-  checkInvoicesHistoricalDataStatus,
-  checkProductsHistoricalDataStatus,
-  markHistoricalDataCompleted,
-  markInvoicesHistoricalDataCompleted,
-  markProductsHistoricalDataCompleted,
-} = require("../checkHistoryData/checkData");
+const orderService = require("../db/orderService");
+const invoiceService = require("../db/invoiceService");
+const productService = require("../db/productService");
+const customerService = require("../db/customerService");
 
 const {
   orderScheduler,
@@ -22,26 +18,34 @@ const {
   productSchedulerCurrent,
 } = require("../../scheduler/productScheduler");
 
+const {
+  customerScheduler,
+  customerSchedulerCurrent,
+} = require("../../scheduler/customerScheduler");
+
 const runOrderSync = async () => {
   try {
-    const historicalDataCompleted = checkHistoricalDataStatus();
+    const syncStatus = await orderService.getSyncStatus();
 
-    if (!historicalDataCompleted) {
+    if (!syncStatus.historicalCompleted) {
+      console.log("Starting historical orders data sync...");
       const result = await orderScheduler(160);
 
       if (result.success) {
-        markHistoricalDataCompleted();
-
-        console.log("Historical orders data has been saved");
+        console.log("Historical orders data has been saved to database");
       } else {
-        console.error("Error when saving historical data:", result.error);
+        console.error(
+          "Error when saving historical orders data:",
+          result.error
+        );
       }
     } else {
+      console.log("Running current orders sync...");
       const currentResult = await orderSchedulerCurrent();
 
       if (currentResult.success) {
         console.log(
-          `Current orders data has been added: ${currentResult.data.length} orders`
+          `Current orders data has been added: ${currentResult.savedCount} orders`
         );
       } else {
         console.error("Error when adding current orders:", currentResult.error);
@@ -54,53 +58,57 @@ const runOrderSync = async () => {
 
 const runInvoiceSync = async () => {
   try {
-    const historicalInvoicesDataCompleted = checkInvoicesHistoricalDataStatus();
+    const syncStatus = await invoiceService.getSyncStatus();
 
-    if (!historicalInvoicesDataCompleted) {
+    if (!syncStatus.historicalCompleted) {
+      console.log("Starting historical invoices data sync...");
       const result = await invoiceScheduler(160);
 
       if (result.success) {
-        markInvoicesHistoricalDataCompleted();
-
-        console.log("Historical invoices data has been saved");
+        console.log("Historical invoices data has been saved to database");
       } else {
         console.error("Error when saving historical data:", result.error);
       }
     } else {
+      console.log("Running current invoices sync...");
       const currentResult = await invoiceSchedulerCurrent();
 
       if (currentResult.success) {
         console.log(
-          `Current invoices data has been added: ${currentResult.data.length} orders`
+          `Current invoices data has been added: ${currentResult.savedCount} invoices`
         );
       } else {
-        console.error("Error when adding current orders:", currentResult.error);
+        console.error(
+          "Error when adding current invoices:",
+          currentResult.error
+        );
       }
     }
   } catch (error) {
-    console.error("Cannot get and save data orders:", error);
+    console.error("Cannot get and save data invoices:", error);
   }
 };
 
 const runProductSync = async () => {
   try {
-    const historicalProductDataCompleted = checkProductsHistoricalDataStatus();
-    if (!historicalProductDataCompleted) {
+    const syncStatus = await productService.getSyncStatus();
+
+    if (!syncStatus.historicalCompleted) {
+      console.log("Starting historical products data sync...");
       const result = await productScheduler(160);
 
       if (result.success) {
-        markProductsHistoricalDataCompleted();
-
-        console.log("Historical products data has been saved");
+        console.log("Historical products data has been saved to database");
       } else {
         console.log("Error when saving historical data:", result.error);
       }
     } else {
+      console.log("Running current products sync...");
       const currentResult = await productSchedulerCurrent();
 
       if (currentResult.success) {
         console.log(
-          `Current products data has been added: ${currentResult.data.length} products`
+          `Current products data has been added: ${currentResult.savedCount} products`
         );
       } else {
         console.log(`Error when adding current products:`, currentResult.error);
@@ -111,8 +119,45 @@ const runProductSync = async () => {
   }
 };
 
+const runCustomerSync = async () => {
+  try {
+    const syncStatus = await customerService.getSyncStatus();
+
+    if (!syncStatus.historicalCompleted) {
+      console.log("Starting historical customers data sync...");
+      const result = await customerScheduler(160);
+
+      if (result.success) {
+        console.log("Historical customers data has been saved to database");
+      } else {
+        console.error(
+          "Error when saving historical customers data:",
+          result.error
+        );
+      }
+    } else {
+      console.log("Running current customers sync...");
+      const currentResult = await customerSchedulerCurrent();
+
+      if (currentResult.success) {
+        console.log(
+          `Current customers data has been added: ${currentResult.savedCount} customers`
+        );
+      } else {
+        console.error(
+          "Error when adding current customers:",
+          currentResult.error
+        );
+      }
+    }
+  } catch (error) {
+    console.error("Cannot get and save data customers:", error);
+  }
+};
+
 module.exports = {
   runOrderSync,
   runInvoiceSync,
   runProductSync,
+  runCustomerSync,
 };

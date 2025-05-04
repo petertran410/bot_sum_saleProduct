@@ -1,4 +1,5 @@
 const axios = require("axios");
+const { orderBy } = require("lodash");
 
 const KIOTVIET_BASE_URL = process.env.KIOT_BASE_URL;
 const TOKEN_URL = process.env.KIOT_TOKEN;
@@ -53,8 +54,9 @@ const getOrders = async () => {
 const getOrdersByDate = async (daysAgo) => {
   try {
     const results = [];
+    let currentDaysAgo = daysAgo;
 
-    for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
+    for (currentDaysAgo >= 0; currentDaysAgo--; ) {
       const targetDate = new Date();
       targetDate.setDate(targetDate.getDate() - currentDaysAgo);
 
@@ -124,8 +126,9 @@ const getInvoices = async () => {
 const getInvoicesByDate = async (daysAgo) => {
   try {
     const results = [];
+    let currentDaysAgo = daysAgo;
 
-    for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
+    for (currentDaysAgo >= 0; currentDaysAgo--; ) {
       const targetDate = new Date();
 
       targetDate.setDate(targetDate.getDate() - currentDaysAgo);
@@ -250,6 +253,89 @@ const getProductsByDate = async (daysAgo) => {
   }
 };
 
+const getCustomers = async (pageSize = 200, currentItem = 0) => {
+  try {
+    const token = await getToken();
+
+    pageSize = Math.min(pageSize, 200);
+
+    const response = await axios.get(`${KIOTVIET_BASE_URL}/customers`, {
+      params: {
+        pageSize: pageSize,
+        orderBy: "createdDate",
+        orderDirection: "DESC",
+        includeTotal: true,
+        includeCustomerGroup: true,
+        includeCustomerSocial: true,
+      },
+      headers: {
+        Retailer: process.env.KIOT_SHOP_NAME,
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    console.log(
+      `Fetched ${response.data.data.length} customers, total: ${response.data.total}, currentItem: ${currentItem}`
+    );
+
+    return response.data;
+  } catch (error) {
+    console.log("Error fetching customers:", error.message);
+    throw error;
+  }
+};
+
+const getCustomersByDate = async (daysAgo) => {
+  try {
+    const results = [];
+    let currentDaysAgo = daysAgo;
+
+    for (currentDaysAgo >= 0; currentDaysAgo--; ) {
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() - currentDaysAgo);
+
+      const formattedDate = targetDate.toISOString().split("T")[0];
+
+      const token = await getToken();
+      const pageSize = 200;
+
+      const response = await axios.get(`${KIOTVIET_BASE_URL}/customers?{}`, {
+        params: {
+          pageSize: pageSize,
+          orderBy: "createdDate",
+          orderDirection: "DESC",
+          includeTotal: true,
+          includeCustomerGroup: true,
+          includeCustomerSocial: true,
+          createdDate: formattedDate,
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      results.push({
+        date: formattedDate,
+        daysAgo: currentDaysAgo,
+        data: response.data,
+      });
+
+      await new Promise((resolve) => {
+        setTimeout(resolve, 500);
+      });
+    }
+
+    return results;
+  } catch (error) {
+    console.log(
+      `Error getting customers for ${daysAgo} days ago:`,
+      error.message
+    );
+    throw error;
+  }
+};
+
 module.exports = {
   getOrders,
   getOrdersByDate,
@@ -257,4 +343,6 @@ module.exports = {
   getInvoicesByDate,
   getProducts,
   getProductsByDate,
+  getCustomers,
+  getCustomersByDate,
 };
