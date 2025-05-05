@@ -274,10 +274,6 @@ const getCustomers = async (pageSize = 200, currentItem = 0) => {
       },
     });
 
-    console.log(
-      `Fetched ${response.data.data.length} customers, total: ${response.data.total}, currentItem: ${currentItem}`
-    );
-
     return response.data;
   } catch (error) {
     console.log("Error fetching customers:", error.message);

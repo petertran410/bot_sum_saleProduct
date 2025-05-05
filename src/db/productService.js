@@ -262,10 +262,6 @@ async function updateSyncStatus(completed = false, lastSync = new Date()) {
   const pool = getPool();
 
   try {
-    console.log(
-      `Updating sync status for products: completed=${completed}, lastSync=${lastSync}`
-    );
-
     const query = `
       UPDATE sync_status 
       SET 
@@ -275,8 +271,6 @@ async function updateSyncStatus(completed = false, lastSync = new Date()) {
     `;
 
     const [result] = await pool.execute(query, [lastSync, completed]);
-
-    console.log(`Sync status update result: ${JSON.stringify(result)}`);
 
     if (result.affectedRows === 0) {
       console.warn(
