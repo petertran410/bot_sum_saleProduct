@@ -50,18 +50,44 @@ const appendJsonDataToFile = (newData, folderName, fileName) => {
     const parentDir = path.resolve(__dirname, "..");
     const filePath = path.join(parentDir, folderName, fileName);
 
-    let existingData = [];
-    if (fs.existsSync(filePath)) {
-      const fileContent = fs.readFileSync(filePath, "utf8");
-      existingData = JSON.parse(fileContent);
+    // Make sure directory exists
+    if (!fs.existsSync(path.join(parentDir, folderName))) {
+      fs.mkdirSync(path.join(parentDir, folderName), { recursive: true });
+      console.log(`Created directory: ${path.join(parentDir, folderName)}`);
     }
 
+    // Initialize with empty array if file doesn't exist
+    let existingData = [];
+
+    if (fs.existsSync(filePath)) {
+      try {
+        const fileContent = fs.readFileSync(filePath, "utf8");
+        if (fileContent && fileContent.trim()) {
+          existingData = JSON.parse(fileContent);
+        }
+      } catch (parseError) {
+        console.warn(
+          `Warning: Could not parse existing JSON file ${filePath}. Creating new file.`
+        );
+        // Continue with empty array if file exists but is invalid
+      }
+    }
+
+    // Ensure existingData is an array
+    if (!Array.isArray(existingData)) {
+      existingData = [];
+    }
+
+    // Process newData correctly regardless of its format
     const newDataArray = Array.isArray(newData.data)
       ? newData.data
       : newData.data
       ? [newData.data]
+      : Array.isArray(newData)
+      ? newData
       : [newData];
 
+    // Function to check if an item is a duplicate
     const isItemDuplicate = (existingDateEntry, newItem) => {
       if (!existingDateEntry || typeof existingDateEntry !== "object") {
         return false;
@@ -80,7 +106,10 @@ const appendJsonDataToFile = (newData, folderName, fileName) => {
       );
     };
 
+    // Filter out duplicates
     const uniqueNew = newDataArray.filter((newItem) => {
+      if (!newItem) return false;
+
       const isDuplicate = existingData.some((existingDateEntry) =>
         isItemDuplicate(existingDateEntry, newItem)
       );
@@ -157,23 +186,45 @@ const saveBothJsonAndMySQL = async (
   fileName
 ) => {
   try {
+    // Check if data is valid
+    if (!data || (Array.isArray(data) && data.length === 0)) {
+      console.log("No data to save. Skipping database and JSON operations.");
+      return {
+        success: true,
+        stats: {
+          total: 0,
+          success: 0,
+          newRecords: 0,
+          savedToJson: 0,
+        },
+      };
+    }
+
     // Save to MySQL database
     const dbResult = await dbSaveFunction(data);
 
-    // Save to JSON file
-    const jsonResult = await appendJsonDataToFile(
-      { date: new Date().toISOString().split("T")[0], data: data },
-      folderName,
-      fileName
-    );
+    // Prepare data for JSON saving
+    const dataToSave = {
+      date: new Date().toISOString().split("T")[0],
+      data: data,
+    };
+
+    // Save to JSON file, but continue even if JSON saving fails
+    let jsonResult = { success: false, data: [] };
+    try {
+      jsonResult = await appendJsonDataToFile(dataToSave, folderName, fileName);
+    } catch (jsonError) {
+      console.error("Error saving to JSON:", jsonError);
+      // Continue despite JSON error - MySQL data is still saved
+    }
 
     return {
-      success: dbResult.success && jsonResult.success,
+      success: dbResult.success,
       stats: {
         total: (dbResult.stats && dbResult.stats.total) || 0,
         success: (dbResult.stats && dbResult.stats.success) || 0,
         newRecords: (dbResult.stats && dbResult.stats.newRecords) || 0,
-        savedToJson: jsonResult.data.length,
+        savedToJson: jsonResult.data ? jsonResult.data.length : 0,
       },
     };
   } catch (error) {
@@ -181,6 +232,12 @@ const saveBothJsonAndMySQL = async (
     return {
       success: false,
       error: error.message,
+      stats: {
+        total: 0,
+        success: 0,
+        newRecords: 0,
+        savedToJson: 0,
+      },
     };
   }
 };
