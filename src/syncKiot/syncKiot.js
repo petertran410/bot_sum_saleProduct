@@ -140,9 +140,7 @@ const runCustomerSync = async () => {
       const currentResult = await customerSchedulerCurrent();
 
       if (currentResult.success) {
-        console.log(
-          `Current customers data has been added: ${currentResult.savedCount} customers`
-        );
+        console.log(`Current customers data has been added`);
       } else {
         console.error(
           "Error when adding current customers:",

@@ -31,7 +31,7 @@ async function saveCustomer(customer) {
     const jsonData = JSON.stringify(customer);
 
     const query = `
-      INSERT INTO customers 
+      INSERT IGNORE INTO customers 
         (id, code, name, contactNumber, email, address, gender, birthDate, 
          locationName, wardName, organizationName, taxCode, comments, debt, 
          rewardPoint, retailerId, createdDate, modifiedDate, jsonData)
@@ -76,27 +76,22 @@ async function saveCustomer(customer) {
       jsonData,
     ]);
 
-    // First delete existing customer group details to avoid duplicates on update
     await connection.execute(
       "DELETE FROM customer_group_details WHERE customerId = ?",
       [id]
     );
 
-    // Handle customer groups if present
     if (customer.groups) {
-      // Get all existing groups for this retailer
       const [existingGroups] = await connection.execute(
         "SELECT id, name FROM customer_groups WHERE retailerId = ?",
         [retailerId]
       );
 
-      // Create a map for fast lookups
       const groupMap = new Map();
       for (const group of existingGroups) {
         groupMap.set(group.name.toLowerCase(), group.id);
       }
 
-      // Parse group names
       let groupNames = [];
       if (typeof customer.groups === "string") {
         groupNames = customer.groups
@@ -113,14 +108,12 @@ async function saveCustomer(customer) {
         }
       }
 
-      // Process each group and link to customer
       for (const groupName of groupNames) {
         if (!groupName) continue;
 
         let groupId = groupMap.get(groupName.toLowerCase());
 
         if (!groupId) {
-          // Group doesn't exist, create it
           const [maxIdResult] = await connection.execute(
             "SELECT COALESCE(MAX(id), 0) + 1 as nextId FROM customer_groups"
           );
@@ -136,7 +129,6 @@ async function saveCustomer(customer) {
           groupMap.set(groupName.toLowerCase(), groupId);
         }
 
-        // Link customer to group
         try {
           const detailQuery = `
             INSERT INTO customer_group_details 
@@ -149,7 +141,6 @@ async function saveCustomer(customer) {
           console.warn(
             `Warning: Could not link customer ${id} to group ${groupId}: ${detailError.message}`
           );
-          // Continue with other groups
         }
       }
     }
@@ -174,36 +165,58 @@ async function saveCustomers(customers) {
   let newCount = 0;
   let existingCount = 0;
 
+  // Get existing IDs all at once for faster lookup
   const [existingCustomers] = await pool.execute("SELECT id FROM customers");
-
-  // Create a Set for fast lookups
   const existingIds = new Set();
   existingCustomers.forEach((row) => existingIds.add(row.id));
 
-  for (const customer of customers) {
-    try {
-      const isNew = !existingIds.has(customer.id);
+  // Process in batches to prevent memory issues
+  const BATCH_SIZE = 50; // Smaller batch size for more reliable processing
+  console.log(
+    `Processing ${customers.length} customers in batches of ${BATCH_SIZE}`
+  );
 
-      const result = await saveCustomer(customer);
-      if (result.success) {
-        successCount++;
-        if (isNew) {
-          newCount++;
-          existingIds.add(customer.id);
+  for (let i = 0; i < customers.length; i += BATCH_SIZE) {
+    const batch = customers.slice(i, i + BATCH_SIZE);
+    console.log(
+      `Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(
+        customers.length / BATCH_SIZE
+      )}`
+    );
+
+    // Process each customer in the batch
+    for (const customer of batch) {
+      try {
+        const isNew = !existingIds.has(customer.id);
+
+        const result = await saveCustomer(customer);
+        if (result.success) {
+          successCount++;
+          if (isNew) {
+            newCount++;
+            existingIds.add(customer.id); // Update our tracking set
+          } else {
+            existingCount++;
+          }
         } else {
-          existingCount++;
+          failCount++;
         }
-      } else {
+      } catch (error) {
+        console.error(
+          `Error processing customer ${customer.code || customer.id}:`,
+          error
+        );
         failCount++;
       }
-    } catch (error) {
-      console.error(
-        `Error processing customer ${customer.code || customer.id}:`,
-        error
-      );
-      failCount++;
     }
+
+    // Give the database a moment to breathe
+    await new Promise((resolve) => setTimeout(resolve, 200));
   }
+
+  console.log(
+    `Batch processing complete: ${successCount} successful, ${newCount} new, ${failCount} failed`
+  );
 
   return {
     success: failCount === 0,

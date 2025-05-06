@@ -131,7 +131,6 @@ async function startServer() {
       const productSyncStatus =
         await require("../src/db/productService").getSyncStatus();
 
-      // Sync historical data if needed
       if (!orderSyncStatus.historicalCompleted) {
         console.log(
           `Syncing ${historicalDaysAgo} days of historical order data...`

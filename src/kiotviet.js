@@ -1,5 +1,4 @@
 const axios = require("axios");
-const { orderBy } = require("lodash");
 
 const KIOTVIET_BASE_URL = process.env.KIOT_BASE_URL;
 const TOKEN_URL = process.env.KIOT_TOKEN;
@@ -253,17 +252,24 @@ const getProductsByDate = async (daysAgo) => {
   }
 };
 
-const getCustomers = async (pageSize = 200, currentItem = 0) => {
+// In kiotviet.js
+const getCustomers = async () => {
   try {
     const token = await getToken();
+    const pageSize = 200;
 
-    pageSize = Math.min(pageSize, 200);
+    // Get only recent data - last 24 hours
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const fromDate = yesterday.toISOString().split("T")[0];
 
     const response = await axios.get(`${KIOTVIET_BASE_URL}/customers`, {
       params: {
         pageSize: pageSize,
         orderBy: "createdDate",
         orderDirection: "DESC",
+        // Add this to only get recent customers like your other syncs
+        lastModifiedFrom: fromDate,
         includeTotal: true,
         includeCustomerGroup: true,
         includeCustomerSocial: true,
@@ -276,58 +282,199 @@ const getCustomers = async (pageSize = 200, currentItem = 0) => {
 
     return response.data;
   } catch (error) {
-    console.log("Error fetching customers:", error.message);
+    console.error("Error fetching customers:", error.message);
     throw error;
   }
 };
 
-const getCustomersByDate = async (daysAgo) => {
+// Same pagination fix for getCustomersByDate
+const getCustomersByDate = async (daysAgo, specificDate = null) => {
   try {
     const results = [];
-    let currentDaysAgo = daysAgo;
 
-    for (currentDaysAgo >= 0; currentDaysAgo--; ) {
-      const targetDate = new Date();
-      targetDate.setDate(targetDate.getDate() - currentDaysAgo);
+    // If targeting specific date like 22/12/2024
+    if (specificDate) {
+      // Format date to API's expected format (YYYY-MM-DD)
+      const dateParts = specificDate.split("/");
+      const formattedDate = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`;
+      console.log(`Targeting specific date: ${formattedDate}`);
 
-      const formattedDate = targetDate.toISOString().split("T")[0];
+      let token = await getToken();
+      const allCustomersForDate = { data: [] };
+      let hasMoreData = true;
+      let currentItem = 0;
+      const pageSize = 100; // Smaller page size for stability
 
-      const token = await getToken();
-      const pageSize = 200;
+      while (hasMoreData) {
+        console.log(
+          `Fetching page at offset ${currentItem} for ${formattedDate}`
+        );
+        try {
+          const response = await axios.get(`${KIOTVIET_BASE_URL}/customers`, {
+            params: {
+              pageSize,
+              currentItem,
+              orderBy: "id", // Use id for consistent pagination
+              orderDirection: "ASC", // Ascending order to not miss records
+              includeTotal: true,
+              includeCustomerGroup: true,
+              includeCustomerSocial: true,
+              createdDate: formattedDate,
+            },
+            headers: {
+              Retailer: process.env.KIOT_SHOP_NAME,
+              Authorization: `Bearer ${token}`,
+            },
+          });
 
-      const response = await axios.get(`${KIOTVIET_BASE_URL}/customers?{}`, {
-        params: {
-          pageSize: pageSize,
-          orderBy: "createdDate",
-          orderDirection: "DESC",
-          includeTotal: true,
-          includeCustomerGroup: true,
-          includeCustomerSocial: true,
-          createdDate: formattedDate,
-        },
-        headers: {
-          Retailer: process.env.KIOT_SHOP_NAME,
-          Authorization: `Bearer ${token}`,
-        },
-      });
+          if (
+            response.data &&
+            response.data.data &&
+            response.data.data.length > 0
+          ) {
+            allCustomersForDate.data = allCustomersForDate.data.concat(
+              response.data.data
+            );
+            currentItem += response.data.data.length;
+            console.log(
+              `Fetched ${response.data.data.length} customers, total: ${allCustomersForDate.data.length}`
+            );
+            hasMoreData = response.data.data.length === pageSize;
+          } else {
+            hasMoreData = false;
+          }
+
+          // Refresh token if needed (every 5000 records)
+          if (currentItem % 5000 === 0 && hasMoreData) {
+            token = await getToken();
+          }
+
+          // Prevent rate limiting
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        } catch (pageError) {
+          console.error(
+            `Error fetching page at offset ${currentItem}:`,
+            pageError.message
+          );
+          // Try to refresh token and retry once
+          if (pageError.response && pageError.response.status === 401) {
+            token = await getToken();
+            // Continue with next iteration (retry)
+            continue;
+          }
+          // If not an auth error or retry failed, wait longer and try again
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+          continue;
+        }
+      }
 
       results.push({
         date: formattedDate,
-        daysAgo: currentDaysAgo,
-        data: response.data,
+        daysAgo: 0,
+        data: {
+          data: allCustomersForDate.data,
+        },
       });
 
-      await new Promise((resolve) => {
-        setTimeout(resolve, 500);
+      return results;
+    }
+
+    // Regular behavior for date range
+    for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() - currentDaysAgo);
+      const formattedDate = targetDate.toISOString().split("T")[0];
+      console.log(`Processing date: ${formattedDate}`);
+
+      let token = await getToken();
+
+      // For each date, fetch all pages
+      const allCustomersForDate = { data: [] };
+      let hasMoreData = true;
+      let currentItem = 0;
+      const pageSize = 100; // Smaller page size for stability
+
+      while (hasMoreData) {
+        console.log(
+          `Fetching page at offset ${currentItem} for ${formattedDate}`
+        );
+        try {
+          const response = await axios.get(`${KIOTVIET_BASE_URL}/customers`, {
+            params: {
+              pageSize,
+              currentItem,
+              orderBy: "id", // Use id for consistent pagination
+              orderDirection: "ASC", // Ascending order to not miss records
+              includeTotal: true,
+              includeCustomerGroup: true,
+              includeCustomerSocial: true,
+              createdDate: formattedDate,
+            },
+            headers: {
+              Retailer: process.env.KIOT_SHOP_NAME,
+              Authorization: `Bearer ${token}`,
+            },
+          });
+
+          if (
+            response.data &&
+            response.data.data &&
+            response.data.data.length > 0
+          ) {
+            allCustomersForDate.data = allCustomersForDate.data.concat(
+              response.data.data
+            );
+            currentItem += response.data.data.length;
+            console.log(
+              `Fetched ${response.data.data.length} customers, total: ${allCustomersForDate.data.length}`
+            );
+            hasMoreData = response.data.data.length === pageSize;
+          } else {
+            hasMoreData = false;
+          }
+
+          // Refresh token if needed (every 5000 records)
+          if (currentItem % 5000 === 0 && hasMoreData) {
+            token = await getToken();
+          }
+
+          // Prevent rate limiting
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        } catch (pageError) {
+          console.error(
+            `Error fetching page at offset ${currentItem}:`,
+            pageError.message
+          );
+          // Try to refresh token and retry once
+          if (pageError.response && pageError.response.status === 401) {
+            token = await getToken();
+            // Continue with next iteration (retry)
+            continue;
+          }
+          // If not an auth error or retry failed, wait longer and try again
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+          continue;
+        }
+      }
+
+      console.log(
+        `Found ${allCustomersForDate.data.length} customers for ${formattedDate}`
+      );
+      results.push({
+        date: formattedDate,
+        daysAgo: currentDaysAgo,
+        data: {
+          data: allCustomersForDate.data,
+        },
       });
+
+      // Allow system to breathe between dates
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     }
 
     return results;
   } catch (error) {
-    console.log(
-      `Error getting customers for ${daysAgo} days ago:`,
-      error.message
-    );
+    console.error(`Error getting customers:`, error.message);
     throw error;
   }
 };
