@@ -38,7 +38,7 @@ require("dotenv").config();
 
 // Cập nhật thông tin kết nối đến MariaDB trên NAS Synology
 const dbConfig = {
-  host: process.env.DB_HOST || "192.168.1.200",
+  host: process.env.DB_HOST || "14.224.212.102",
   port: process.env.DB_PORT || 3306,
   user: process.env.DB_USER || "root",
   password: process.env.DB_PASSWORD || "Dieptra@123",
