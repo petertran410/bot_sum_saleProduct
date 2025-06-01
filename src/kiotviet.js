@@ -3,8 +3,22 @@ const axios = require("axios");
 const KIOTVIET_BASE_URL = process.env.KIOT_BASE_URL;
 const TOKEN_URL = process.env.KIOT_TOKEN;
 
+// Token caching
+let currentToken = null;
+let tokenExpiresAt = null;
+
+// Rate limiting
+let requestCount = 0;
+let hourStartTime = Date.now();
+const maxRequestsPerHour = 4900;
+
 async function getToken() {
   try {
+    // Check if token is still valid
+    if (currentToken && tokenExpiresAt && new Date() < tokenExpiresAt) {
+      return currentToken;
+    }
+
     const response = await axios.post(
       TOKEN_URL,
       new URLSearchParams({
@@ -20,56 +34,80 @@ async function getToken() {
       }
     );
 
-    return response.data.access_token;
+    // Cache token with expiration (subtract 5 minutes for safety)
+    currentToken = response.data.access_token;
+    const expiresIn = response.data.expires_in || 3600;
+    tokenExpiresAt = new Date(Date.now() + (expiresIn - 300) * 1000);
+
+    console.log(`Token cached, expires at: ${tokenExpiresAt.toISOString()}`);
+    return currentToken;
   } catch (error) {
-    console.error("Lỗi khi lấy KiotViet token:", error.message);
+    console.error("Error getting KiotViet token:", error.message);
     throw error;
   }
 }
+
+async function checkRateLimit() {
+  const currentTime = Date.now();
+  const hourElapsed = currentTime - hourStartTime;
+
+  if (hourElapsed >= 3600000) {
+    requestCount = 0;
+    hourStartTime = currentTime;
+    console.log("Rate limit counter reset");
+  }
+
+  if (requestCount >= maxRequestsPerHour) {
+    const waitTime = 3600000 - hourElapsed;
+    console.log(
+      `Rate limit reached. Waiting ${Math.ceil(waitTime / 1000)} seconds`
+    );
+    await new Promise((resolve) => setTimeout(resolve, waitTime));
+    requestCount = 0;
+    hourStartTime = Date.now();
+  }
+}
+
+async function makeApiRequest(config) {
+  await checkRateLimit();
+  requestCount++;
+
+  try {
+    return await axios(config);
+  } catch (error) {
+    if (error.response?.status === 401 && currentToken) {
+      // Token expired, clear cache and retry
+      console.log("Token expired, refreshing...");
+      currentToken = null;
+      tokenExpiresAt = null;
+      const newToken = await getToken();
+      config.headers.Authorization = `Bearer ${newToken}`;
+      return await axios(config);
+    }
+    throw error;
+  }
+}
+
+// ORDERS with pagination
 const getOrders = async () => {
   try {
     const token = await getToken();
-    const pageSize = 200;
+    const pageSize = 100;
+    const allOrders = [];
+    let currentItem = 0;
+    let hasMoreData = true;
 
-    const response = await axios.get(`${KIOTVIET_BASE_URL}/orders?{}`, {
-      params: {
-        pageSize: pageSize,
-        orderBy: "createdDate",
-        orderDirection: "DESC",
-        includePayment: true,
-        includeOrderDelivery: true,
-      },
-      headers: {
-        Retailer: process.env.KIOT_SHOP_NAME,
-        Authorization: `Bearer ${token}`,
-      },
-    });
-    return response.data;
-  } catch (error) {
-    console.log(error);
-  }
-};
+    console.log("Fetching current orders...");
 
-const getOrdersByDate = async (daysAgo) => {
-  try {
-    const results = [];
-    let currentDaysAgo = daysAgo;
-
-    for (currentDaysAgo >= 0; currentDaysAgo--; ) {
-      const targetDate = new Date();
-      targetDate.setDate(targetDate.getDate() - currentDaysAgo);
-
-      const formattedDate = targetDate.toISOString().split("T")[0];
-
-      const token = await getToken();
-      const pageSize = 200;
-
-      const response = await axios.get(`${KIOTVIET_BASE_URL}/orders?{}`, {
+    while (hasMoreData) {
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/orders`,
         params: {
           pageSize: pageSize,
+          currentItem: currentItem,
           orderBy: "createdDate",
           orderDirection: "DESC",
-          createdDate: formattedDate,
           includePayment: true,
           includeOrderDelivery: true,
         },
@@ -79,10 +117,89 @@ const getOrdersByDate = async (daysAgo) => {
         },
       });
 
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allOrders.push(...response.data.data);
+        currentItem += response.data.data.length;
+        hasMoreData = response.data.data.length === pageSize;
+
+        console.log(
+          `Fetched ${response.data.data.length} orders, total: ${allOrders.length}`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        hasMoreData = false;
+      }
+    }
+
+    return { data: allOrders, total: allOrders.length };
+  } catch (error) {
+    console.error("Error getting orders:", error.message);
+    throw error;
+  }
+};
+
+const getOrdersByDate = async (daysAgo) => {
+  try {
+    const results = [];
+
+    for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() - currentDaysAgo);
+      const formattedDate = targetDate.toISOString().split("T")[0];
+
+      const token = await getToken();
+      const pageSize = 100;
+      const allOrdersForDate = [];
+      let currentItem = 0;
+      let hasMoreData = true;
+
+      console.log(`Fetching orders for ${formattedDate}...`);
+
+      while (hasMoreData) {
+        const response = await makeApiRequest({
+          method: "GET",
+          url: `${KIOTVIET_BASE_URL}/orders`,
+          params: {
+            pageSize: pageSize,
+            currentItem: currentItem,
+            orderBy: "createdDate",
+            orderDirection: "DESC",
+            createdDate: formattedDate,
+            includePayment: true,
+            includeOrderDelivery: true,
+          },
+          headers: {
+            Retailer: process.env.KIOT_SHOP_NAME,
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (
+          response.data &&
+          response.data.data &&
+          response.data.data.length > 0
+        ) {
+          allOrdersForDate.push(...response.data.data);
+          currentItem += response.data.data.length;
+          hasMoreData = response.data.data.length === pageSize;
+
+          console.log(
+            `Date ${formattedDate}: Fetched ${response.data.data.length} orders, total: ${allOrdersForDate.length}`
+          );
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        } else {
+          hasMoreData = false;
+        }
+      }
+
       results.push({
         date: formattedDate,
         daysAgo: currentDaysAgo,
-        data: response.data,
+        data: { data: allOrdersForDate },
       });
 
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -90,59 +207,31 @@ const getOrdersByDate = async (daysAgo) => {
 
     return results;
   } catch (error) {
-    console.error(
-      `Error getting orders for ${daysAgo} days ago:`,
-      error.message
-    );
+    console.error(`Error getting orders by date:`, error.message);
     throw error;
   }
 };
 
+// INVOICES with pagination
 const getInvoices = async () => {
   try {
     const token = await getToken();
-    const pageSize = 200;
+    const pageSize = 100;
+    const allInvoices = [];
+    let currentItem = 0;
+    let hasMoreData = true;
 
-    const response = await axios.get(`${KIOTVIET_BASE_URL}/invoices?{}`, {
-      params: {
-        pageSize: pageSize,
-        orderBy: "createdDate",
-        orderDirection: "DESC",
-        includePayment: true,
-        includeInvoiceDelivery: true,
-      },
-      headers: {
-        Retailer: process.env.KIOT_SHOP_NAME,
-        Authorization: `Bearer ${token}`,
-      },
-    });
-    return response.data;
-  } catch (error) {
-    console.log(error);
-  }
-};
+    console.log("Fetching current invoices...");
 
-const getInvoicesByDate = async (daysAgo) => {
-  try {
-    const results = [];
-    let currentDaysAgo = daysAgo;
-
-    for (currentDaysAgo >= 0; currentDaysAgo--; ) {
-      const targetDate = new Date();
-
-      targetDate.setDate(targetDate.getDate() - currentDaysAgo);
-
-      const formattedDate = targetDate.toISOString().split("T")[0];
-
-      const token = await getToken();
-      const pageSize = 200;
-
-      const response = await axios.get(`${KIOTVIET_BASE_URL}/invoices?{}`, {
+    while (hasMoreData) {
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/invoices`,
         params: {
           pageSize: pageSize,
+          currentItem: currentItem,
           orderBy: "createdDate",
           orderDirection: "DESC",
-          createdDate: formattedDate,
           includePayment: true,
           includeInvoiceDelivery: true,
         },
@@ -152,10 +241,89 @@ const getInvoicesByDate = async (daysAgo) => {
         },
       });
 
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allInvoices.push(...response.data.data);
+        currentItem += response.data.data.length;
+        hasMoreData = response.data.data.length === pageSize;
+
+        console.log(
+          `Fetched ${response.data.data.length} invoices, total: ${allInvoices.length}`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        hasMoreData = false;
+      }
+    }
+
+    return { data: allInvoices, total: allInvoices.length };
+  } catch (error) {
+    console.error("Error getting invoices:", error.message);
+    throw error;
+  }
+};
+
+const getInvoicesByDate = async (daysAgo) => {
+  try {
+    const results = [];
+
+    for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() - currentDaysAgo);
+      const formattedDate = targetDate.toISOString().split("T")[0];
+
+      const token = await getToken();
+      const pageSize = 100;
+      const allInvoicesForDate = [];
+      let currentItem = 0;
+      let hasMoreData = true;
+
+      console.log(`Fetching invoices for ${formattedDate}...`);
+
+      while (hasMoreData) {
+        const response = await makeApiRequest({
+          method: "GET",
+          url: `${KIOTVIET_BASE_URL}/invoices`,
+          params: {
+            pageSize: pageSize,
+            currentItem: currentItem,
+            orderBy: "createdDate",
+            orderDirection: "DESC",
+            createdDate: formattedDate,
+            includePayment: true,
+            includeInvoiceDelivery: true,
+          },
+          headers: {
+            Retailer: process.env.KIOT_SHOP_NAME,
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (
+          response.data &&
+          response.data.data &&
+          response.data.data.length > 0
+        ) {
+          allInvoicesForDate.push(...response.data.data);
+          currentItem += response.data.data.length;
+          hasMoreData = response.data.data.length === pageSize;
+
+          console.log(
+            `Date ${formattedDate}: Fetched ${response.data.data.length} invoices, total: ${allInvoicesForDate.length}`
+          );
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        } else {
+          hasMoreData = false;
+        }
+      }
+
       results.push({
         date: formattedDate,
         daysAgo: currentDaysAgo,
-        date: response.data,
+        data: { data: allInvoicesForDate },
       });
 
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -163,38 +331,69 @@ const getInvoicesByDate = async (daysAgo) => {
 
     return results;
   } catch (error) {
-    console.log(
-      `Error getting invoices for ${daysAgo} days ago: `,
-      error.message
-    );
+    console.error(`Error getting invoices by date:`, error.message);
     throw error;
   }
 };
 
+// PRODUCTS with pagination
 const getProducts = async () => {
   try {
     const token = await getToken();
     const pageSize = 100;
+    const allProducts = [];
+    let currentItem = 0;
+    let hasMoreData = true;
 
-    const response = await axios.get(`${KIOTVIET_BASE_URL}/products`, {
-      params: {
-        pageSize: pageSize,
-        includeInventory: true,
-        includePricebook: true,
-        includeQuantity: true,
-        includeSerials: true,
-        IncludeBatchExpires: true,
-        includeWarranties: true,
-        orderBy: "name",
-        createdDate: "2025-01-01",
-      },
-      headers: {
-        Retailer: process.env.KIOT_SHOP_NAME,
-        Authorization: `Bearer ${token}`,
-      },
-    });
+    console.log("Fetching current products...");
 
-    return response.data;
+    // Get only recent products (last 24 hours) for current sync
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const fromDate = yesterday.toISOString().split("T")[0];
+
+    while (hasMoreData) {
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/products`,
+        params: {
+          pageSize: pageSize,
+          currentItem: currentItem,
+          includeInventory: true,
+          includePricebook: true,
+          includeQuantity: true,
+          includeSerials: true,
+          IncludeBatchExpires: true,
+          includeWarranties: true,
+          orderBy: "modifiedDate",
+          orderDirection: "DESC",
+          lastModifiedFrom: fromDate,
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allProducts.push(...response.data.data);
+        currentItem += response.data.data.length;
+        hasMoreData = response.data.data.length === pageSize;
+
+        console.log(
+          `Fetched ${response.data.data.length} products, total: ${allProducts.length}`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        hasMoreData = false;
+      }
+    }
+
+    return { data: allProducts, total: allProducts.length };
   } catch (error) {
     console.error("Error getting products:", error.message);
     throw error;
@@ -207,36 +406,62 @@ const getProductsByDate = async (daysAgo) => {
 
     for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
       const targetDate = new Date();
-
       targetDate.setDate(targetDate.getDate() - currentDaysAgo);
-
       const formattedDate = targetDate.toISOString().split("T")[0];
 
       const token = await getToken();
       const pageSize = 100;
+      const allProductsForDate = [];
+      let currentItem = 0;
+      let hasMoreData = true;
 
-      const response = await axios.get(`${KIOTVIET_BASE_URL}/products`, {
-        params: {
-          lastModifiedFrom: formattedDate,
-          pageSize: pageSize,
-          includeInventory: true,
-          includePricebook: true,
-          includeQuantity: true,
-          includeSerials: true,
-          IncludeBatchExpires: true,
-          includeWarranties: true,
-          orderBy: "name",
-        },
-        headers: {
-          Retailer: process.env.KIOT_SHOP_NAME,
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      console.log(`Fetching products modified on/after ${formattedDate}...`);
+
+      while (hasMoreData) {
+        const response = await makeApiRequest({
+          method: "GET",
+          url: `${KIOTVIET_BASE_URL}/products`,
+          params: {
+            lastModifiedFrom: formattedDate,
+            pageSize: pageSize,
+            currentItem: currentItem,
+            includeInventory: true,
+            includePricebook: true,
+            includeQuantity: true,
+            includeSerials: true,
+            IncludeBatchExpires: true,
+            includeWarranties: true,
+            orderBy: "modifiedDate",
+            orderDirection: "ASC",
+          },
+          headers: {
+            Retailer: process.env.KIOT_SHOP_NAME,
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (
+          response.data &&
+          response.data.data &&
+          response.data.data.length > 0
+        ) {
+          allProductsForDate.push(...response.data.data);
+          currentItem += response.data.data.length;
+          hasMoreData = response.data.data.length === pageSize;
+
+          console.log(
+            `Date ${formattedDate}: Fetched ${response.data.data.length} products, total: ${allProductsForDate.length}`
+          );
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        } else {
+          hasMoreData = false;
+        }
+      }
 
       results.push({
         date: formattedDate,
         daysAgo: currentDaysAgo,
-        data: response.data,
+        data: { data: allProductsForDate },
       });
 
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -244,232 +469,204 @@ const getProductsByDate = async (daysAgo) => {
 
     return results;
   } catch (error) {
-    console.error(
-      `Error getting products for ${daysAgo} days ago:`,
-      error.message
-    );
-    return { data: [] };
+    console.error(`Error getting products by date:`, error.message);
+    return results;
   }
 };
 
-// In kiotviet.js
+// CUSTOMERS with pagination
 const getCustomers = async () => {
   try {
     const token = await getToken();
-    const pageSize = 200;
+    const pageSize = 100;
+    const allCustomers = [];
+    let currentItem = 0;
+    let hasMoreData = true;
 
-    // Get only recent data - last 24 hours
+    console.log("Fetching current customers...");
+
+    // Get only recent customers (last 24 hours)
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const fromDate = yesterday.toISOString().split("T")[0];
 
-    const response = await axios.get(`${KIOTVIET_BASE_URL}/customers`, {
-      params: {
-        pageSize: pageSize,
-        orderBy: "createdDate",
-        orderDirection: "DESC",
-        // Add this to only get recent customers like your other syncs
-        lastModifiedFrom: fromDate,
-        includeTotal: true,
-        includeCustomerGroup: true,
-        includeCustomerSocial: true,
-      },
-      headers: {
-        Retailer: process.env.KIOT_SHOP_NAME,
-        Authorization: `Bearer ${token}`,
-      },
-    });
+    while (hasMoreData) {
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/customers`,
+        params: {
+          pageSize: pageSize,
+          currentItem: currentItem,
+          orderBy: "createdDate",
+          orderDirection: "DESC",
+          lastModifiedFrom: fromDate,
+          includeTotal: true,
+          includeCustomerGroup: true,
+          includeCustomerSocial: true,
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
 
-    return response.data;
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allCustomers.push(...response.data.data);
+        currentItem += response.data.data.length;
+        hasMoreData = response.data.data.length === pageSize;
+
+        console.log(
+          `Fetched ${response.data.data.length} customers, total: ${allCustomers.length}`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        hasMoreData = false;
+      }
+    }
+
+    return { data: allCustomers, total: allCustomers.length };
   } catch (error) {
     console.error("Error fetching customers:", error.message);
     throw error;
   }
 };
 
-// Same pagination fix for getCustomersByDate
 const getCustomersByDate = async (daysAgo, specificDate = null) => {
   try {
     const results = [];
 
-    // If targeting specific date like 22/12/2024
     if (specificDate) {
-      // Format date to API's expected format (YYYY-MM-DD)
+      // Handle specific date format
       const dateParts = specificDate.split("/");
       const formattedDate = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`;
       console.log(`Targeting specific date: ${formattedDate}`);
 
-      let token = await getToken();
-      const allCustomersForDate = { data: [] };
+      const token = await getToken();
+      const allCustomersForDate = [];
       let hasMoreData = true;
       let currentItem = 0;
-      const pageSize = 100; // Smaller page size for stability
+      const pageSize = 100;
 
       while (hasMoreData) {
         console.log(
           `Fetching page at offset ${currentItem} for ${formattedDate}`
         );
-        try {
-          const response = await axios.get(`${KIOTVIET_BASE_URL}/customers`, {
-            params: {
-              pageSize,
-              currentItem,
-              orderBy: "id", // Use id for consistent pagination
-              orderDirection: "ASC", // Ascending order to not miss records
-              includeTotal: true,
-              includeCustomerGroup: true,
-              includeCustomerSocial: true,
-              createdDate: formattedDate,
-            },
-            headers: {
-              Retailer: process.env.KIOT_SHOP_NAME,
-              Authorization: `Bearer ${token}`,
-            },
-          });
 
-          if (
-            response.data &&
-            response.data.data &&
-            response.data.data.length > 0
-          ) {
-            allCustomersForDate.data = allCustomersForDate.data.concat(
-              response.data.data
-            );
-            currentItem += response.data.data.length;
-            console.log(
-              `Fetched ${response.data.data.length} customers, total: ${allCustomersForDate.data.length}`
-            );
-            hasMoreData = response.data.data.length === pageSize;
-          } else {
-            hasMoreData = false;
-          }
+        const response = await makeApiRequest({
+          method: "GET",
+          url: `${KIOTVIET_BASE_URL}/customers`,
+          params: {
+            pageSize,
+            currentItem,
+            orderBy: "id",
+            orderDirection: "ASC",
+            includeTotal: true,
+            includeCustomerGroup: true,
+            includeCustomerSocial: true,
+            createdDate: formattedDate,
+          },
+          headers: {
+            Retailer: process.env.KIOT_SHOP_NAME,
+            Authorization: `Bearer ${token}`,
+          },
+        });
 
-          // Refresh token if needed (every 5000 records)
-          if (currentItem % 5000 === 0 && hasMoreData) {
-            token = await getToken();
-          }
-
-          // Prevent rate limiting
-          await new Promise((resolve) => setTimeout(resolve, 500));
-        } catch (pageError) {
-          console.error(
-            `Error fetching page at offset ${currentItem}:`,
-            pageError.message
+        if (
+          response.data &&
+          response.data.data &&
+          response.data.data.length > 0
+        ) {
+          allCustomersForDate.push(...response.data.data);
+          currentItem += response.data.data.length;
+          console.log(
+            `Fetched ${response.data.data.length} customers, total: ${allCustomersForDate.length}`
           );
-          // Try to refresh token and retry once
-          if (pageError.response && pageError.response.status === 401) {
-            token = await getToken();
-            // Continue with next iteration (retry)
-            continue;
-          }
-          // If not an auth error or retry failed, wait longer and try again
-          await new Promise((resolve) => setTimeout(resolve, 5000));
-          continue;
+          hasMoreData = response.data.data.length === pageSize;
+
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        } else {
+          hasMoreData = false;
         }
       }
 
       results.push({
         date: formattedDate,
         daysAgo: 0,
-        data: {
-          data: allCustomersForDate.data,
-        },
+        data: { data: allCustomersForDate },
       });
 
       return results;
     }
 
-    // Regular behavior for date range
+    // Regular date range processing
     for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
       const targetDate = new Date();
       targetDate.setDate(targetDate.getDate() - currentDaysAgo);
       const formattedDate = targetDate.toISOString().split("T")[0];
       console.log(`Processing date: ${formattedDate}`);
 
-      let token = await getToken();
-
-      // For each date, fetch all pages
-      const allCustomersForDate = { data: [] };
+      const token = await getToken();
+      const allCustomersForDate = [];
       let hasMoreData = true;
       let currentItem = 0;
-      const pageSize = 100; // Smaller page size for stability
+      const pageSize = 100;
 
       while (hasMoreData) {
         console.log(
           `Fetching page at offset ${currentItem} for ${formattedDate}`
         );
-        try {
-          const response = await axios.get(`${KIOTVIET_BASE_URL}/customers`, {
-            params: {
-              pageSize,
-              currentItem,
-              orderBy: "id", // Use id for consistent pagination
-              orderDirection: "ASC", // Ascending order to not miss records
-              includeTotal: true,
-              includeCustomerGroup: true,
-              includeCustomerSocial: true,
-              createdDate: formattedDate,
-            },
-            headers: {
-              Retailer: process.env.KIOT_SHOP_NAME,
-              Authorization: `Bearer ${token}`,
-            },
-          });
 
-          if (
-            response.data &&
-            response.data.data &&
-            response.data.data.length > 0
-          ) {
-            allCustomersForDate.data = allCustomersForDate.data.concat(
-              response.data.data
-            );
-            currentItem += response.data.data.length;
-            console.log(
-              `Fetched ${response.data.data.length} customers, total: ${allCustomersForDate.data.length}`
-            );
-            hasMoreData = response.data.data.length === pageSize;
-          } else {
-            hasMoreData = false;
-          }
+        const response = await makeApiRequest({
+          method: "GET",
+          url: `${KIOTVIET_BASE_URL}/customers`,
+          params: {
+            pageSize,
+            currentItem,
+            orderBy: "id",
+            orderDirection: "ASC",
+            includeTotal: true,
+            includeCustomerGroup: true,
+            includeCustomerSocial: true,
+            createdDate: formattedDate,
+          },
+          headers: {
+            Retailer: process.env.KIOT_SHOP_NAME,
+            Authorization: `Bearer ${token}`,
+          },
+        });
 
-          // Refresh token if needed (every 5000 records)
-          if (currentItem % 5000 === 0 && hasMoreData) {
-            token = await getToken();
-          }
-
-          // Prevent rate limiting
-          await new Promise((resolve) => setTimeout(resolve, 500));
-        } catch (pageError) {
-          console.error(
-            `Error fetching page at offset ${currentItem}:`,
-            pageError.message
+        if (
+          response.data &&
+          response.data.data &&
+          response.data.data.length > 0
+        ) {
+          allCustomersForDate.push(...response.data.data);
+          currentItem += response.data.data.length;
+          console.log(
+            `Fetched ${response.data.data.length} customers, total: ${allCustomersForDate.length}`
           );
-          // Try to refresh token and retry once
-          if (pageError.response && pageError.response.status === 401) {
-            token = await getToken();
-            // Continue with next iteration (retry)
-            continue;
-          }
-          // If not an auth error or retry failed, wait longer and try again
-          await new Promise((resolve) => setTimeout(resolve, 5000));
-          continue;
+          hasMoreData = response.data.data.length === pageSize;
+
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        } else {
+          hasMoreData = false;
         }
       }
 
       console.log(
-        `Found ${allCustomersForDate.data.length} customers for ${formattedDate}`
+        `Found ${allCustomersForDate.length} customers for ${formattedDate}`
       );
       results.push({
         date: formattedDate,
         daysAgo: currentDaysAgo,
-        data: {
-          data: allCustomersForDate.data,
-        },
+        data: { data: allCustomersForDate },
       });
 
-      // Allow system to breathe between dates
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
 
     return results;

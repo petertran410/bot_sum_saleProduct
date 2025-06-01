@@ -1,14 +1,119 @@
 const { getPool } = require("../db.js");
 
-async function saveProduct(product) {
+// Add data validation and sanitization
+function validateAndSanitizeProduct(product) {
+  return {
+    ...product,
+    code: product.code ? String(product.code).substring(0, 50) : "",
+    name: product.name ? String(product.name).substring(0, 255) : "",
+    fullName: product.fullName
+      ? String(product.fullName).substring(0, 255)
+      : null,
+    categoryName: product.categoryName
+      ? String(product.categoryName).substring(0, 100)
+      : null,
+    basePrice: isNaN(Number(product.basePrice)) ? 0 : Number(product.basePrice),
+    weight: isNaN(Number(product.weight)) ? 0 : Number(product.weight),
+    description: product.description
+      ? String(product.description).substring(0, 1000)
+      : "",
+  };
+}
+
+async function saveProducts(products) {
   const pool = getPool();
   const connection = await pool.getConnection();
 
+  let successCount = 0;
+  let failCount = 0;
+  let newCount = 0;
+  let updatedCount = 0;
+
+  const BATCH_SIZE = 50;
+
   try {
-    // Start a transaction
     await connection.beginTransaction();
 
-    // Extract key fields from product
+    // Process in batches
+    for (let i = 0; i < products.length; i += BATCH_SIZE) {
+      const batch = products.slice(i, i + BATCH_SIZE);
+
+      for (const product of batch) {
+        try {
+          // Validate and sanitize
+          const validatedProduct = validateAndSanitizeProduct(product);
+
+          const [existing] = await connection.execute(
+            "SELECT id, modifiedDate FROM products WHERE id = ?",
+            [validatedProduct.id]
+          );
+
+          const isNew = existing.length === 0;
+          const isUpdated =
+            !isNew &&
+            new Date(validatedProduct.modifiedDate) >
+              new Date(existing[0].modifiedDate);
+
+          if (isNew || isUpdated) {
+            const result = await saveProduct(validatedProduct, connection);
+            if (result.success) {
+              successCount++;
+              if (isNew) newCount++;
+              else updatedCount++;
+            } else {
+              failCount++;
+            }
+          }
+        } catch (error) {
+          console.error(
+            `Error processing product ${product.code}:`,
+            error.message
+          );
+          failCount++;
+        }
+      }
+
+      console.log(
+        `Processed product batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(
+          products.length / BATCH_SIZE
+        )}`
+      );
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    await connection.commit();
+    console.log(
+      `Product sync completed: ${newCount} new, ${updatedCount} updated, ${failCount} failed`
+    );
+  } catch (error) {
+    await connection.rollback();
+    console.error("Product transaction failed:", error.message);
+  } finally {
+    connection.release();
+  }
+
+  return {
+    success: failCount === 0,
+    stats: {
+      total: products.length,
+      success: successCount,
+      newRecords: newCount,
+      updated: updatedCount,
+      failed: failCount,
+    },
+  };
+}
+
+// Update saveProduct to accept connection parameter
+async function saveProduct(product, connection = null) {
+  const shouldReleaseConnection = !connection;
+
+  if (!connection) {
+    const pool = getPool();
+    connection = await pool.getConnection();
+  }
+
+  try {
     const {
       id,
       code,
@@ -36,7 +141,6 @@ async function saveProduct(product) {
       createdDate = null,
     } = product;
 
-    // Store the entire product as JSON
     const jsonData = JSON.stringify(product);
 
     const query = `
@@ -99,9 +203,8 @@ async function saveProduct(product) {
       jsonData,
     ]);
 
-    // Now handle inventory data if present
+    // Handle inventory data if present
     if (product.inventories && Array.isArray(product.inventories)) {
-      // First, delete existing inventory records for this product to avoid conflicts
       await connection.execute(
         "DELETE FROM product_inventories WHERE productId = ?",
         [id]
@@ -109,22 +212,6 @@ async function saveProduct(product) {
 
       for (const inventory of product.inventories) {
         try {
-          const {
-            productId,
-            productCode,
-            productName,
-            branchId,
-            branchName,
-            cost = 0,
-            onHand = 0,
-            reserved = 0,
-            actualReserved = 0,
-            minQuantity = 0,
-            maxQuantity = 0,
-            isActive = true,
-            onOrder = 0,
-          } = inventory;
-
           const inventoryQuery = `
             INSERT INTO product_inventories 
               (productId, productCode, productName, branchId, branchName, 
@@ -134,34 +221,30 @@ async function saveProduct(product) {
           `;
 
           await connection.execute(inventoryQuery, [
-            productId,
-            productCode,
-            productName,
-            branchId,
-            branchName,
-            cost,
-            onHand,
-            reserved,
-            actualReserved,
-            minQuantity,
-            maxQuantity,
-            isActive,
-            onOrder,
+            inventory.productId || id,
+            inventory.productCode || code,
+            inventory.productName || name,
+            inventory.branchId,
+            inventory.branchName,
+            inventory.cost || 0,
+            inventory.onHand || 0,
+            inventory.reserved || 0,
+            inventory.actualReserved || 0,
+            inventory.minQuantity || 0,
+            inventory.maxQuantity || 0,
+            inventory.isActive || true,
+            inventory.onOrder || 0,
           ]);
         } catch (invError) {
           console.warn(
-            `Warning: Could not save inventory for product ID ${
-              inventory.productId || id
-            }, branch ${inventory.branchId}: ${invError.message}`
+            `Warning: Could not save inventory for product ${id}, branch ${inventory.branchId}: ${invError.message}`
           );
-          // Continue with other inventories
         }
       }
     }
 
     // Handle price books if present
     if (product.priceBooks && Array.isArray(product.priceBooks)) {
-      // Delete existing price books for this product
       await connection.execute(
         "DELETE FROM product_price_books WHERE productId = ?",
         [id]
@@ -169,16 +252,6 @@ async function saveProduct(product) {
 
       for (const priceBook of product.priceBooks) {
         try {
-          const {
-            productId,
-            priceBookId,
-            priceBookName,
-            price = 0,
-            isActive = true,
-            startDate = null,
-            endDate = null,
-          } = priceBook;
-
           const priceBookQuery = `
             INSERT INTO product_price_books
               (productId, priceBookId, priceBookName, price, isActive, startDate, endDate)
@@ -186,78 +259,34 @@ async function saveProduct(product) {
           `;
 
           await connection.execute(priceBookQuery, [
-            productId,
-            priceBookId,
-            priceBookName,
-            price,
-            isActive,
-            startDate,
-            endDate,
+            priceBook.productId || id,
+            priceBook.priceBookId,
+            priceBook.priceBookName,
+            priceBook.price || 0,
+            priceBook.isActive || true,
+            priceBook.startDate || null,
+            priceBook.endDate || null,
           ]);
         } catch (pbError) {
           console.warn(
-            `Warning: Could not save price book for product ID ${
-              priceBook.productId || id
-            }, priceBookId ${priceBook.priceBookId}: ${pbError.message}`
+            `Warning: Could not save price book for product ${id}: ${pbError.message}`
           );
-          // Continue with other price books
         }
       }
     }
 
-    // Commit the transaction
-    await connection.commit();
     return { success: true };
   } catch (error) {
-    // Rollback the transaction on error
-    await connection.rollback();
     console.error(`Error saving product ${product.code}:`, error);
     return { success: false, error: error.message };
   } finally {
-    // Release the connection
-    connection.release();
-  }
-}
-
-async function saveProducts(products) {
-  const pool = getPool();
-
-  let successCount = 0;
-  let failCount = 0;
-  let newCount = 0;
-
-  for (const product of products) {
-    const [existing] = await pool.execute(
-      "SELECT id, code FROM products WHERE id = ?",
-      [product.id]
-    );
-
-    const isNew = existing.length === 0;
-    const isUpdated =
-      !isNew &&
-      new Date(product.createdDate) > new Date(existing[0].createdDate);
-
-    if (isNew || isUpdated) {
-      const result = await saveProduct(product);
-      if (result.success) {
-        successCount++;
-      } else {
-        failCount++;
-      }
+    if (shouldReleaseConnection) {
+      connection.release();
     }
   }
-
-  return {
-    success: failCount === 0,
-    stats: {
-      total: products.length,
-      success: successCount,
-      newRecords: newCount,
-      failed: failCount,
-    },
-  };
 }
 
+// Keep existing updateSyncStatus and getSyncStatus functions
 async function updateSyncStatus(completed = false, lastSync = new Date()) {
   const pool = getPool();
 
@@ -273,22 +302,13 @@ async function updateSyncStatus(completed = false, lastSync = new Date()) {
     const [result] = await pool.execute(query, [lastSync, completed]);
 
     if (result.affectedRows === 0) {
-      console.warn(
-        "No sync_status record was updated. Attempting to insert..."
-      );
-
-      // Try to insert instead
       const insertQuery = `
         INSERT INTO sync_status (entity_type, last_sync, historical_completed)
         VALUES ('products', ?, ?)
         ON DUPLICATE KEY UPDATE last_sync = VALUES(last_sync), historical_completed = VALUES(historical_completed)
       `;
 
-      const [insertResult] = await pool.execute(insertQuery, [
-        lastSync,
-        completed,
-      ]);
-      console.log(`Sync status insert result: ${JSON.stringify(insertResult)}`);
+      await pool.execute(insertQuery, [lastSync, completed]);
     }
 
     return { success: true };

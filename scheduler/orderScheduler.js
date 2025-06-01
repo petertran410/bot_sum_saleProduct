@@ -56,50 +56,57 @@ const orderScheduler = async (daysAgo) => {
 };
 
 const orderSchedulerCurrent = async () => {
-  try {
-    const currentOrders = await getOrders();
+  const MAX_RETRIES = 3;
+  let retryCount = 0;
 
-    if (
-      currentOrders &&
-      currentOrders.data &&
-      Array.isArray(currentOrders.data) &&
-      currentOrders.data.length > 0
-    ) {
-      const result = await saveBothJsonAndMySQL(
-        currentOrders.data,
-        orderService.saveOrders,
-        "saveJson",
-        "orders.json"
-      );
-
-      await orderService.updateSyncStatus(true, new Date());
-
+  while (retryCount < MAX_RETRIES) {
+    try {
       console.log(
-        `Current orders data saved: ${result.stats.newRecords} new orders out of ${result.stats.success} processed. ${result.stats.savedToJson} saved to JSON.`
+        `Fetching current orders (attempt ${retryCount + 1}/${MAX_RETRIES})...`
       );
+      const currentOrders = await getOrders();
 
-      return {
-        success: true,
-        data: currentOrders.data,
-        savedCount: result.stats.newRecords,
-        hasNewData: result.stats.newRecords > 0,
-      };
-    } else {
-      console.log("No new orders data to save");
-      return {
-        success: true,
-        data: [],
-        savedCount: 0,
-        hasNewData: false,
-      };
+      if (
+        currentOrders &&
+        currentOrders.data &&
+        Array.isArray(currentOrders.data)
+      ) {
+        if (currentOrders.data.length === 0) {
+          console.log("No new orders to process");
+          return { success: true, savedCount: 0, hasNewData: false };
+        }
+
+        console.log(`Processing ${currentOrders.data.length} orders...`);
+        const result = await orderService.saveOrders(currentOrders.data);
+
+        await orderService.updateSyncStatus(true, new Date());
+
+        console.log(
+          `Order sync completed: ${result.stats.success} processed, ${result.stats.newRecords} new`
+        );
+
+        return {
+          success: true,
+          savedCount: result.stats.newRecords,
+          hasNewData: result.stats.newRecords > 0,
+        };
+      }
+
+      return { success: true, savedCount: 0, hasNewData: false };
+    } catch (error) {
+      retryCount++;
+      console.error(`Order sync attempt ${retryCount} failed:`, error.message);
+
+      if (retryCount < MAX_RETRIES) {
+        // Wait before retry (exponential backoff)
+        const waitTime = Math.pow(2, retryCount) * 1000;
+        console.log(`Waiting ${waitTime}ms before retry...`);
+        await new Promise((resolve) => setTimeout(resolve, waitTime));
+      } else {
+        console.error("Max retries reached. Order sync failed.");
+        return { success: false, error: error.message, hasNewData: false };
+      }
     }
-  } catch (error) {
-    console.log("Cannot save current orders", error);
-    return {
-      success: false,
-      error: error.message,
-      hasNewData: false,
-    };
   }
 };
 

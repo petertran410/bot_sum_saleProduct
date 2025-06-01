@@ -175,19 +175,23 @@ async function startServer() {
 
       const runBothSyncs = async () => {
         try {
+          console.log(`[${new Date().toISOString()}] Starting sync cycle...`);
+
           await Promise.all([
             runOrderSync(),
             runInvoiceSync(),
             runCustomerSync(),
             runProductSync(),
           ]);
+
+          console.log(`[${new Date().toISOString()}] Sync cycle completed.`);
         } catch (error) {
           console.error("Error during simultaneous sync:", error);
         }
       };
 
-      // Run sync every 3 minutes (3 * 60 * 1000 ms)
-      const syncInterval = setInterval(runBothSyncs, 3 * 60 * 1000);
+      // Run sync every 10 minutes (10 * 60 * 1000 ms)
+      const syncInterval = setInterval(runBothSyncs, 10 * 60 * 1000);
 
       process.on("SIGINT", () => {
         clearInterval(syncInterval);

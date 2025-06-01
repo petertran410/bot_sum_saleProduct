@@ -1,8 +1,110 @@
 const { getPool } = require("../db");
 
-async function saveOrder(order) {
+// Add data validation
+function validateAndSanitizeOrder(order) {
+  return {
+    ...order,
+    code: order.code ? String(order.code).substring(0, 50) : "",
+    customerName: order.customerName
+      ? String(order.customerName).substring(0, 255)
+      : null,
+    total: isNaN(Number(order.total)) ? 0 : Number(order.total),
+    totalPayment: isNaN(Number(order.totalPayment))
+      ? 0
+      : Number(order.totalPayment),
+    // Add more validation as needed
+  };
+}
+
+async function saveOrders(orders) {
   const pool = getPool();
   const connection = await pool.getConnection();
+
+  let successCount = 0;
+  let failCount = 0;
+  let newCount = 0;
+
+  const BATCH_SIZE = 50; // Process in smaller batches
+
+  try {
+    await connection.beginTransaction();
+
+    for (let i = 0; i < orders.length; i += BATCH_SIZE) {
+      const batch = orders.slice(i, i + BATCH_SIZE);
+
+      for (const order of batch) {
+        try {
+          // Validate and sanitize data
+          const validatedOrder = validateAndSanitizeOrder(order);
+
+          const [existing] = await connection.execute(
+            "SELECT id FROM orders WHERE id = ?",
+            [validatedOrder.id]
+          );
+
+          const isNew = existing.length === 0;
+
+          if (isNew) {
+            const result = await saveOrder(validatedOrder, connection);
+            if (result.success) {
+              successCount++;
+              newCount++;
+            } else {
+              failCount++;
+            }
+          } else {
+            // Check if update is needed based on modifiedDate
+            const result = await saveOrder(validatedOrder, connection);
+            if (result.success) {
+              successCount++;
+            } else {
+              failCount++;
+            }
+          }
+        } catch (error) {
+          console.error(`Error processing order ${order.code}:`, error.message);
+          failCount++;
+        }
+      }
+
+      // Progress log
+      console.log(
+        `Processed batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(
+          orders.length / BATCH_SIZE
+        )}`
+      );
+
+      // Small delay between batches
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    console.error("Transaction failed:", error.message);
+  } finally {
+    connection.release();
+  }
+
+  return {
+    success: failCount === 0,
+    stats: {
+      total: orders.length,
+      success: successCount,
+      newRecords: newCount,
+      failed: failCount,
+    },
+  };
+}
+
+// Update saveOrder to accept connection parameter for transaction
+async function saveOrder(order, connection = null) {
+  const shouldReleaseConnection = !connection;
+
+  if (!connection) {
+    const pool = getPool();
+    connection = await pool.getConnection();
+  }
 
   try {
     await connection.beginTransaction();
@@ -248,52 +350,13 @@ async function saveOrder(order) {
     await connection.commit();
     return { success: true };
   } catch (error) {
-    await connection.rollback();
     console.error(`Error saving order ${order.code}:`, error);
     return { success: false, error: error.message };
   } finally {
-    connection.release();
-  }
-}
-
-async function saveOrders(orders) {
-  const pool = getPool();
-
-  let successCount = 0;
-  let failCount = 0;
-  let newCount = 0;
-
-  for (const order of orders) {
-    // Check if order already exists
-    const [existing] = await pool.execute(
-      "SELECT id FROM orders WHERE id = ?",
-      [order.id]
-    );
-
-    const isNew = existing.length === 0;
-    const isUpdated =
-      !isNew && new Date(order.createdDate) > new Date(existing[0].createdDate);
-
-    if (isNew || isUpdated) {
-      const result = await saveOrder(order);
-      if (result.success) {
-        successCount++;
-        if (isNew) newCount++;
-      } else {
-        failCount++;
-      }
+    if (shouldReleaseConnection) {
+      connection.release();
     }
   }
-
-  return {
-    success: failCount === 0,
-    stats: {
-      total: orders.length,
-      success: successCount,
-      newRecords: newCount,
-      failed: failCount,
-    },
-  };
 }
 
 async function updateSyncStatus(completed = false, lastSync = new Date()) {

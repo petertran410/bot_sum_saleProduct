@@ -1,12 +1,125 @@
 const { getPool } = require("../db");
 
-async function saveCustomer(customer) {
+// Add data validation and sanitization
+function validateAndSanitizeCustomer(customer) {
+  return {
+    ...customer,
+    code: customer.code ? String(customer.code).substring(0, 50) : "",
+    name: customer.name ? String(customer.name).substring(0, 255) : "",
+    contactNumber: customer.contactNumber
+      ? String(customer.contactNumber).substring(0, 50)
+      : null,
+    email: customer.email ? String(customer.email).substring(0, 100) : null,
+    address: customer.address
+      ? String(customer.address).substring(0, 500)
+      : null,
+    locationName: customer.locationName
+      ? String(customer.locationName).substring(0, 100)
+      : null,
+    comments: customer.comments
+      ? String(customer.comments).substring(0, 1000)
+      : null,
+    debt: isNaN(Number(customer.debt)) ? 0 : Number(customer.debt),
+    rewardPoint: isNaN(Number(customer.rewardPoint))
+      ? 0
+      : Number(customer.rewardPoint),
+  };
+}
+
+async function saveCustomers(customers) {
   const pool = getPool();
   const connection = await pool.getConnection();
+
+  let successCount = 0;
+  let failCount = 0;
+  let newCount = 0;
+  let existingCount = 0;
+
+  const BATCH_SIZE = 50;
+  console.log(
+    `Processing ${customers.length} customers in batches of ${BATCH_SIZE}`
+  );
 
   try {
     await connection.beginTransaction();
 
+    // Get existing IDs for faster lookup
+    const [existingCustomers] = await connection.execute(
+      "SELECT id FROM customers"
+    );
+    const existingIds = new Set(existingCustomers.map((row) => row.id));
+
+    for (let i = 0; i < customers.length; i += BATCH_SIZE) {
+      const batch = customers.slice(i, i + BATCH_SIZE);
+      console.log(
+        `Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(
+          customers.length / BATCH_SIZE
+        )}`
+      );
+
+      for (const customer of batch) {
+        try {
+          // Validate and sanitize
+          const validatedCustomer = validateAndSanitizeCustomer(customer);
+          const isNew = !existingIds.has(validatedCustomer.id);
+
+          const result = await saveCustomer(validatedCustomer, connection);
+          if (result.success) {
+            successCount++;
+            if (isNew) {
+              newCount++;
+              existingIds.add(validatedCustomer.id);
+            } else {
+              existingCount++;
+            }
+          } else {
+            failCount++;
+          }
+        } catch (error) {
+          console.error(
+            `Error processing customer ${customer.code || customer.id}:`,
+            error
+          );
+          failCount++;
+        }
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    await connection.commit();
+    console.log(
+      `Customer sync completed: ${newCount} new, ${existingCount} updated, ${failCount} failed`
+    );
+  } catch (error) {
+    await connection.rollback();
+    console.error("Customer transaction failed:", error.message);
+  } finally {
+    connection.release();
+  }
+
+  return {
+    success: failCount === 0,
+    stats: {
+      total: customers.length,
+      success: successCount,
+      newRecords: newCount,
+      existing: existingCount,
+      failed: failCount,
+    },
+  };
+}
+
+// Update saveCustomer to accept connection parameter
+async function saveCustomer(customer, connection = null) {
+  const shouldReleaseConnection = !connection;
+
+  if (!connection) {
+    const pool = getPool();
+    connection = await pool.getConnection();
+  }
+
+  try {
     const {
       id,
       code,
@@ -31,7 +144,7 @@ async function saveCustomer(customer) {
     const jsonData = JSON.stringify(customer);
 
     const query = `
-      INSERT IGNORE INTO customers 
+      INSERT INTO customers 
         (id, code, name, contactNumber, email, address, gender, birthDate, 
          locationName, wardName, organizationName, taxCode, comments, debt, 
          rewardPoint, retailerId, createdDate, modifiedDate, jsonData)
@@ -76,12 +189,13 @@ async function saveCustomer(customer) {
       jsonData,
     ]);
 
-    await connection.execute(
-      "DELETE FROM customer_group_details WHERE customerId = ?",
-      [id]
-    );
-
+    // Handle customer groups
     if (customer.groups) {
+      await connection.execute(
+        "DELETE FROM customer_group_details WHERE customerId = ?",
+        [id]
+      );
+
       const [existingGroups] = await connection.execute(
         "SELECT id, name FROM customer_groups WHERE retailerId = ?",
         [retailerId]
@@ -130,13 +244,10 @@ async function saveCustomer(customer) {
         }
 
         try {
-          const detailQuery = `
-            INSERT INTO customer_group_details 
-              (customerId, groupId)
-            VALUES (?, ?)
-          `;
-
-          await connection.execute(detailQuery, [id, groupId]);
+          await connection.execute(
+            "INSERT INTO customer_group_details (customerId, groupId) VALUES (?, ?)",
+            [id, groupId]
+          );
         } catch (detailError) {
           console.warn(
             `Warning: Could not link customer ${id} to group ${groupId}: ${detailError.message}`
@@ -145,91 +256,18 @@ async function saveCustomer(customer) {
       }
     }
 
-    await connection.commit();
     return { success: true };
   } catch (error) {
-    await connection.rollback();
     console.error(`Error saving customer ${customer.code}:`, error);
     return { success: false, error: error.message };
   } finally {
-    connection.release();
-  }
-}
-
-// Updated saveCustomers function
-async function saveCustomers(customers) {
-  const pool = getPool();
-
-  let successCount = 0;
-  let failCount = 0;
-  let newCount = 0;
-  let existingCount = 0;
-
-  // Get existing IDs all at once for faster lookup
-  const [existingCustomers] = await pool.execute("SELECT id FROM customers");
-  const existingIds = new Set();
-  existingCustomers.forEach((row) => existingIds.add(row.id));
-
-  // Process in batches to prevent memory issues
-  const BATCH_SIZE = 50; // Smaller batch size for more reliable processing
-  console.log(
-    `Processing ${customers.length} customers in batches of ${BATCH_SIZE}`
-  );
-
-  for (let i = 0; i < customers.length; i += BATCH_SIZE) {
-    const batch = customers.slice(i, i + BATCH_SIZE);
-    console.log(
-      `Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(
-        customers.length / BATCH_SIZE
-      )}`
-    );
-
-    // Process each customer in the batch
-    for (const customer of batch) {
-      try {
-        const isNew = !existingIds.has(customer.id);
-
-        const result = await saveCustomer(customer);
-        if (result.success) {
-          successCount++;
-          if (isNew) {
-            newCount++;
-            existingIds.add(customer.id); // Update our tracking set
-          } else {
-            existingCount++;
-          }
-        } else {
-          failCount++;
-        }
-      } catch (error) {
-        console.error(
-          `Error processing customer ${customer.code || customer.id}:`,
-          error
-        );
-        failCount++;
-      }
+    if (shouldReleaseConnection) {
+      connection.release();
     }
-
-    // Give the database a moment to breathe
-    await new Promise((resolve) => setTimeout(resolve, 200));
   }
-
-  console.log(
-    `Batch processing complete: ${successCount} successful, ${newCount} new, ${failCount} failed`
-  );
-
-  return {
-    success: failCount === 0,
-    stats: {
-      total: customers.length,
-      success: successCount,
-      newRecords: newCount,
-      existing: existingCount,
-      failed: failCount,
-    },
-  };
 }
 
+// Keep existing updateSyncStatus and getSyncStatus functions
 async function updateSyncStatus(completed = false, lastSync = new Date()) {
   const pool = getPool();
 
@@ -245,17 +283,13 @@ async function updateSyncStatus(completed = false, lastSync = new Date()) {
     const [result] = await pool.execute(query, [lastSync, completed]);
 
     if (result.affectedRows === 0) {
-      console.warn(
-        "No sync_status record was updated. Attempting to insert..."
-      );
+      const insertQuery = `
+        INSERT INTO sync_status (entity_type, last_sync, historical_completed)
+        VALUES ('customers', ?, ?)
+        ON DUPLICATE KEY UPDATE last_sync = VALUES(last_sync), historical_completed = VALUES(historical_completed)
+      `;
 
-      const insertQuery = `INSERT INTO sync_status (entity_type, last_sync, historical_completed) VALUES ('customers', ?, ?) ON DUPLICATE KEY UPDATE last_sync = VALUES(last_sync), historical_completed = VALUES(historical_completed)`;
-
-      const [insertResult] = await pool.execute(insertQuery, [
-        lastSync,
-        completed,
-      ]);
-      console.log(`Sync status insert result: ${JSON.stringify(insertResult)}`);
+      await pool.execute(insertQuery, [lastSync, completed]);
     }
 
     return { success: true };
@@ -291,40 +325,9 @@ async function getSyncStatus() {
   }
 }
 
-async function resetCustomerData() {
-  const pool = getPool();
-  const connection = await pool.getConnection();
-
-  try {
-    await connection.beginTransaction();
-
-    await connection.execute("DELETE FROM customer_group_details");
-
-    await connection.execute("DELETE FROM customer_groups");
-
-    await connection.execute("DELETE FROM customers");
-
-    await connection.execute(
-      "UPDATE sync_status SET last_sync = NULL, historical_completed = 0 WHERE entity_type = 'customers'"
-    );
-
-    await connection.commit();
-    console.log("Customer data reset complete");
-
-    return { success: true };
-  } catch (error) {
-    await connection.rollback();
-    console.error("Error resetting customer data:", error);
-    return { success: false, error: error.message };
-  } finally {
-    connection.release();
-  }
-}
-
 module.exports = {
   saveCustomer,
   saveCustomers,
   updateSyncStatus,
   getSyncStatus,
-  resetCustomerData,
 };
