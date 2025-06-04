@@ -21,8 +21,41 @@ console.log(PORT);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+app.use((req, res, next) => {
+  req.clientIP =
+    req.headers["x-forwarded-for"] ||
+    req.connection.remoteAddress ||
+    req.socket.remoteAddress ||
+    (req.connection.socket ? req.connection.socket.remoteAddress : null);
+  next();
+});
+
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Origin, X-Requested-With, Content-Type, Accept, Authorization"
+  );
+
+  if (req.method === "OPTIONS") {
+    console.log(`✅ CORS preflight for ${req.path}`);
+    return res.status(200).end();
+  }
+  next();
+});
+
 app.get("/", (req, res) => {
-  res.send("KiotViet API Sync Server");
+  res.json({
+    message: "KiotViet API Sync Server with CRM Integration",
+    endpoints: {
+      health: "/api/health",
+      registration: "/api/submit-registration",
+      stats: "/api/crm/stats",
+      test: "/api/test-lark",
+    },
+    timestamp: new Date().toISOString(),
+  });
 });
 
 app.use((req, res, next) => {
@@ -35,18 +68,53 @@ app.use((req, res, next) => {
 });
 
 app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "https://api.traphuonghoang.com"); // In production, replace * with your domain
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-  res.header(
+  // Allow your specific domain and common local development
+  const allowedOrigins = [
+    "https://www.traphuonghoang.com",
+    "https://traphuonghoang.com",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "file://", // For local HTML files
+  ];
+
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  }
+
+  // Essential CORS headers
+  res.setHeader(
+    "Access-Control-Allow-Methods",
+    "GET, POST, PUT, DELETE, OPTIONS"
+  );
+  res.setHeader(
     "Access-Control-Allow-Headers",
     "Origin, X-Requested-With, Content-Type, Accept, Authorization"
   );
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  res.setHeader("Access-Control-Max-Age", "86400"); // 24 hours
 
+  // Handle preflight OPTIONS requests
   if (req.method === "OPTIONS") {
-    res.sendStatus(200);
-  } else {
-    next();
+    console.log(`✅ CORS preflight handled for ${req.path}`);
+    return res.status(200).end();
   }
+
+  next();
+});
+
+app.get("/api/health", (req, res) => {
+  console.log("🏥 Health check requested");
+  res.json({
+    status: "OK",
+    timestamp: new Date().toISOString(),
+    services: {
+      database: "Connected",
+      larkSuite: "Available",
+      crm: "Ready",
+    },
+    version: "1.0.0",
+  });
 });
 
 app.post("/api/submit-registration", async (req, res) => {
@@ -65,7 +133,7 @@ app.post("/api/submit-registration", async (req, res) => {
       });
     }
 
-    // Add client IP to form data
+    // Add client info to form data
     const formDataWithIP = {
       ...req.body,
       clientIP: req.clientIP,
@@ -108,6 +176,7 @@ app.post("/api/submit-registration", async (req, res) => {
  */
 app.get("/api/crm/stats", async (req, res) => {
   try {
+    console.log("📊 CRM stats requested");
     const stats = await getCRMStats();
 
     if (stats) {
@@ -136,6 +205,7 @@ app.get("/api/crm/stats", async (req, res) => {
  */
 app.get("/api/test-lark", async (req, res) => {
   try {
+    console.log("🔧 LarkSuite test requested");
     const result = await sendTestMessage();
     res.json({
       success: true,
@@ -150,22 +220,6 @@ app.get("/api/test-lark", async (req, res) => {
       error: error.message,
     });
   }
-});
-
-/**
- * Health check endpoint for CRM integration
- */
-app.get("/api/health", (req, res) => {
-  res.json({
-    status: "OK",
-    timestamp: new Date().toISOString(),
-    services: {
-      database: "Connected", // You already have DB connection
-      larkSuite: "Available",
-      crm: "Ready",
-    },
-    version: "1.0.0",
-  });
 });
 
 /**
@@ -323,8 +377,6 @@ async function startServer() {
       process.exit(1);
     }
 
-    // AUTO-INITIALIZE DATABASE (This will create all tables including users table)
-    console.log("Initializing database schema...");
     const dbInitialized = await initializeDatabase();
 
     if (!dbInitialized) {
@@ -334,6 +386,14 @@ async function startServer() {
     console.log("Database schema initialization completed.");
 
     const server = app.listen(PORT, async () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`📊 CRM Health: http://localhost:${PORT}/api/health`);
+      console.log(
+        `📝 CRM Registration: http://localhost:${PORT}/api/submit-registration`
+      );
+      console.log(`📈 CRM Stats: http://localhost:${PORT}/api/crm/stats`);
+      console.log(`🔧 LarkSuite Test: http://localhost:${PORT}/api/test-lark`);
+
       const historicalDaysAgo = parseInt(process.env.INITIAL_SCAN_DAYS || "7");
 
       const orderSyncStatus =
