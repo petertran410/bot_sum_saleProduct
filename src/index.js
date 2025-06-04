@@ -11,13 +11,184 @@ const { getProducts } = require("./kiotviet");
 const { getCustomers } = require("./kiotviet");
 const { getUsers } = require("./kiotviet");
 const { testConnection } = require("./db");
-const { initializeDatabase } = require("./db/init"); // Add this import
+const { initializeDatabase } = require("./db/init");
+const { addRecordToCRMBase, getCRMStats, sendTestMessage } = require("./lark");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+console.log(PORT);
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 app.get("/", (req, res) => {
   res.send("KiotViet API Sync Server");
+});
+
+app.use((req, res, next) => {
+  req.clientIP =
+    req.headers["x-forwarded-for"] ||
+    req.connection.remoteAddress ||
+    req.socket.remoteAddress ||
+    (req.connection.socket ? req.connection.socket.remoteAddress : null);
+  next();
+});
+
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*"); // In production, replace * with your domain
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Origin, X-Requested-With, Content-Type, Accept, Authorization"
+  );
+
+  if (req.method === "OPTIONS") {
+    res.sendStatus(200);
+  } else {
+    next();
+  }
+});
+
+app.post("/api/submit-registration", async (req, res) => {
+  try {
+    console.log("📝 New registration received:", req.body);
+    console.log("🌐 Client IP:", req.clientIP);
+
+    // Validate required fields
+    const { name, phone, email, type, ticket, city } = req.body;
+
+    if (!name || !phone || !email) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing required fields: name, phone, email",
+        code: "MISSING_FIELDS",
+      });
+    }
+
+    // Add client IP to form data
+    const formDataWithIP = {
+      ...req.body,
+      clientIP: req.clientIP,
+      userAgent: req.get("User-Agent"),
+    };
+
+    // Add record to CRM Base
+    const result = await addRecordToCRMBase(formDataWithIP);
+
+    if (result.success) {
+      console.log(`✅ Registration processed successfully: STT ${result.stt}`);
+
+      res.json({
+        success: true,
+        message: "Registration submitted successfully",
+        data: {
+          record_id: result.record_id,
+          stt: result.stt,
+          status: "Đã lưu vào CRM",
+        },
+      });
+    } else {
+      throw new Error("Failed to save to CRM");
+    }
+  } catch (error) {
+    console.error("❌ Registration submission error:", error.message);
+
+    res.status(500).json({
+      success: false,
+      message: "Lỗi hệ thống, vui lòng thử lại sau",
+      code: "INTERNAL_ERROR",
+      details:
+        process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+});
+
+/**
+ * Get CRM statistics
+ */
+app.get("/api/crm/stats", async (req, res) => {
+  try {
+    const stats = await getCRMStats();
+
+    if (stats) {
+      res.json({
+        success: true,
+        data: stats,
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: "Could not retrieve CRM statistics",
+      });
+    }
+  } catch (error) {
+    console.error("❌ Error getting CRM stats:", error.message);
+    res.status(500).json({
+      success: false,
+      message: "Error retrieving statistics",
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * Test LarkSuite connection
+ */
+app.get("/api/test-lark", async (req, res) => {
+  try {
+    const result = await sendTestMessage();
+    res.json({
+      success: true,
+      message: "LarkSuite connection test successful",
+      data: result,
+    });
+  } catch (error) {
+    console.error("❌ LarkSuite test failed:", error.message);
+    res.status(500).json({
+      success: false,
+      message: "LarkSuite connection test failed",
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * Health check endpoint for CRM integration
+ */
+app.get("/api/health", (req, res) => {
+  res.json({
+    status: "OK",
+    timestamp: new Date().toISOString(),
+    services: {
+      database: "Connected", // You already have DB connection
+      larkSuite: "Available",
+      crm: "Ready",
+    },
+    version: "1.0.0",
+  });
+});
+
+/**
+ * Webhook endpoint for LarkSuite (optional)
+ */
+app.post("/api/webhook/lark", (req, res) => {
+  try {
+    console.log("📨 LarkSuite webhook received:", req.body);
+
+    // Handle webhook events if needed
+    // For example: when someone updates a CRM record
+
+    res.json({
+      success: true,
+      message: "Webhook processed",
+    });
+  } catch (error) {
+    console.error("❌ Webhook error:", error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
 });
 
 app.get("/save-order", async (req, res) => {
