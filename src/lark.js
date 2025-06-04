@@ -134,18 +134,18 @@ async function addRecordToCRMBase(formData) {
     // Map form data to CRM structure
     const recordData = {
       fields: {
-        STT: nextSTT,
-        "Tên khách hàng": formData.name,
-        "Số điện thoại": formData.phone,
-        "Nhu cầu": formData.type,
+        STT: String(nextSTT), // Convert to string
+        "Tên khách hàng": String(formData.name || ""),
+        "Số điện thoại": String(formData.phone || ""),
+        "Nhu cầu": String(formData.type || ""),
         "Người tạo": "Website Form",
-        "Thời gian tạo": new Date().toISOString(),
+        "Thời gian tạo": new Date().toISOString().split("T")[0], // Date only format
         "Sales phụ trách": "",
         "Zalo khách hàng": "",
-        "Ghi chú": formatCRMNotes(formData),
+        "Ghi chú": String(formatCRMNotes(formData)),
         "Trạng thái": "Mới",
-        "Giá Trị Đơn Hàng": 0,
-        "Last Modified Date": new Date().toISOString(),
+        "Giá Trị Đơn Hàng": "0", // Convert to string
+        "Last Modified Date": new Date().toISOString().split("T")[0], // Date only format
       },
     };
 
