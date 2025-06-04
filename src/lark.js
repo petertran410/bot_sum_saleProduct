@@ -124,6 +124,8 @@ function formatCRMNotes(formData) {
  * @param {Object} formData - Form submission data
  * @returns {Promise<Object>} Created record
  */
+// Complete fix for src/lark.js addRecordToCRMBase function
+
 async function addRecordToCRMBase(formData) {
   try {
     console.log("📝 Adding record to CRM Base...", formData);
@@ -131,23 +133,32 @@ async function addRecordToCRMBase(formData) {
     const token = await getLarkToken();
     const nextSTT = await getNextSTTNumber(token);
 
-    // Map form data to CRM structure
+    // Convert phone number properly for numbering field
+    const phoneNumber = formData.phone.replace(/^0+/, "") || formData.phone; // Remove leading zeros
+    const phoneAsNumber = parseInt(phoneNumber, 10);
+
+    // Map form data to CRM structure with correct field types
     const recordData = {
       fields: {
-        STT: String(nextSTT), // Convert to string
-        "Tên khách hàng": String(formData.name || ""),
-        "Số điện thoại": String(formData.phone || ""),
-        "Nhu cầu": String(formData.type || ""),
-        "Người tạo": "Website Form",
-        "Thời gian tạo": new Date().toISOString().split("T")[0], // Date only format
-        "Sales phụ trách": "",
-        "Zalo khách hàng": "",
-        "Ghi chú": String(formatCRMNotes(formData)),
-        "Trạng thái": "Mới",
-        "Giá Trị Đơn Hàng": "0", // Convert to string
-        "Last Modified Date": new Date().toISOString().split("T")[0], // Date only format
+        STT: nextSTT, // Number (numbering field)
+        "Tên khách hàng": String(formData.name), // String
+        "Số điện thoại": phoneAsNumber, // Number (0901391300 → 901391300)
+        "Nhu cầu": String(formData.type), // String
+        "Người tạo": "Website Form", // String
+        "Thời gian tạo": new Date().toISOString().split("T")[0], // Date format
+        "Sales phụ trách": "", // String
+        "Zalo khách hàng": "", // String
+        "Ghi chú": formatCRMNotes(formData), // String
+        "Trạng thái": "Mới", // String
+        "Giá Trị Đơn Hàng": 0, // Number
+        "Last Modified Date": new Date().toISOString().split("T")[0], // Date
       },
     };
+
+    console.log(
+      "📤 Sending to LarkSuite:",
+      JSON.stringify(recordData, null, 2)
+    );
 
     const response = await axios.post(
       `${LARK_BASE_URL}/bitable/v1/apps/${CRM_BASE_TOKEN}/tables/${CRM_TABLE_ID}/records`,
@@ -180,6 +191,9 @@ async function addRecordToCRMBase(formData) {
     }
   } catch (error) {
     console.error("❌ Error adding record to CRM Base:", error.message);
+    if (error.response) {
+      console.error("📄 API Error Details:", error.response.data);
+    }
     throw error;
   }
 }
