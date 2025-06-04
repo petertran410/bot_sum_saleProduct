@@ -5,10 +5,13 @@ const {
   runInvoiceSync,
   runProductSync,
   runCustomerSync,
+  runUserSync,
 } = require("./syncKiot/syncKiot");
 const { getProducts } = require("./kiotviet");
 const { getCustomers } = require("./kiotviet");
+const { getUsers } = require("./kiotviet");
 const { testConnection } = require("./db");
+const { initializeDatabase } = require("./db/init"); // Add this import
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -78,6 +81,22 @@ app.get("/save-customer", async (req, res) => {
   }
 });
 
+app.get("/save-user", async (req, res) => {
+  try {
+    await runUserSync();
+    res.json({
+      success: true,
+      message: "User synchronization completed",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error during user synchronization",
+      error: error.message,
+    });
+  }
+});
+
 app.get("/get-products", async (req, res) => {
   try {
     const products = await getProducts();
@@ -106,6 +125,20 @@ app.get("/get-customers", async (req, res) => {
   }
 });
 
+app.get("/get-users", async (req, res) => {
+  try {
+    const users = await getUsers();
+    res.json(users);
+  } catch (error) {
+    console.log("Cannot get users", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching users",
+      error: error.message,
+    });
+  }
+});
+
 // Initialize and start the server
 async function startServer() {
   try {
@@ -119,6 +152,16 @@ async function startServer() {
       process.exit(1);
     }
 
+    // AUTO-INITIALIZE DATABASE (This will create all tables including users table)
+    console.log("Initializing database schema...");
+    const dbInitialized = await initializeDatabase();
+
+    if (!dbInitialized) {
+      console.error("Failed to initialize database schema.");
+      process.exit(1);
+    }
+    console.log("Database schema initialization completed.");
+
     const server = app.listen(PORT, async () => {
       const historicalDaysAgo = parseInt(process.env.INITIAL_SCAN_DAYS || "7");
 
@@ -130,6 +173,17 @@ async function startServer() {
         await require("../src/db/customerService").getSyncStatus();
       const productSyncStatus =
         await require("../src/db/productService").getSyncStatus();
+      const userSyncStatus =
+        await require("../src/db/userService").getSyncStatus();
+
+      if (!userSyncStatus.historicalCompleted) {
+        console.log(
+          `Syncing ${historicalDaysAgo} days of historical user data...`
+        );
+        await require("../scheduler/userScheduler").userScheduler(
+          historicalDaysAgo
+        );
+      }
 
       if (!orderSyncStatus.historicalCompleted) {
         console.log(
@@ -168,16 +222,18 @@ async function startServer() {
       }
 
       // Now run the current data sync
+      await runUserSync();
       await runOrderSync();
       await runInvoiceSync();
       await runCustomerSync();
       await runProductSync();
 
-      const runBothSyncs = async () => {
+      const runAllSyncs = async () => {
         try {
           console.log(`[${new Date().toISOString()}] Starting sync cycle...`);
 
           await Promise.all([
+            runUserSync(),
             runOrderSync(),
             runInvoiceSync(),
             runCustomerSync(),
@@ -191,7 +247,7 @@ async function startServer() {
       };
 
       // Run sync every 10 minutes (10 * 60 * 1000 ms)
-      const syncInterval = setInterval(runBothSyncs, 10 * 60 * 1000);
+      const syncInterval = setInterval(runAllSyncs, 10 * 60 * 1000);
 
       process.on("SIGINT", () => {
         clearInterval(syncInterval);

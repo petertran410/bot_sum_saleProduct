@@ -24,6 +24,26 @@ async function initializeDatabase() {
       database: dbName,
     });
 
+    // Create users table first since it's referenced by other tables
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id BIGINT PRIMARY KEY,
+        userName VARCHAR(100) NOT NULL,
+        givenName VARCHAR(255) NOT NULL,
+        address VARCHAR(500),
+        mobilePhone VARCHAR(50),
+        email VARCHAR(100),
+        description VARCHAR(1000),
+        retailerId INT,
+        birthDate DATE,
+        createdDate DATETIME,
+        modifiedDate DATETIME,
+        jsonData JSON,
+        UNIQUE INDEX (userName, retailerId),
+        INDEX idx_retailerId (retailerId)
+      )
+    `);
+
     await connection.query(`
       CREATE TABLE IF NOT EXISTS products (
         id BIGINT PRIMARY KEY,
@@ -33,13 +53,20 @@ async function initializeDatabase() {
         fullName VARCHAR(255),
         categoryId INT,
         categoryName VARCHAR(100),
+        tradeMarkId INT,
+        tradeMarkName VARCHAR(100),
+        allowsSale BOOLEAN,
+        type INT,
+        hasVariants BOOLEAN,
         basePrice DECIMAL(15,2),
         unit VARCHAR(50),
+        conversionValue DECIMAL(15,2),
         weight DECIMAL(15,2),
+        description TEXT,
         isActive BOOLEAN,
+        orderTemplate VARCHAR(500),
         isLotSerialControl BOOLEAN,
         isBatchExpireControl BOOLEAN,
-        type INT,
         retailerId INT,
         modifiedDate DATETIME,
         createdDate DATETIME,
@@ -53,15 +80,33 @@ async function initializeDatabase() {
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
         productId BIGINT,
         productCode VARCHAR(50),
+        productName VARCHAR(255),
         branchId INT,
         branchName VARCHAR(100),
         cost DECIMAL(15,2),
         onHand DECIMAL(15,2),
         reserved DECIMAL(15,2),
+        actualReserved DECIMAL(15,2),
         minQuantity DECIMAL(15,2),
         maxQuantity DECIMAL(15,2),
+        isActive BOOLEAN,
+        onOrder DECIMAL(15,2),
         FOREIGN KEY (productId) REFERENCES products(id) ON DELETE CASCADE,
         UNIQUE KEY (productId, branchId)
+      )
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS product_price_books (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        productId BIGINT,
+        priceBookId BIGINT,
+        priceBookName VARCHAR(255),
+        price DECIMAL(15,2),
+        isActive BOOLEAN,
+        startDate DATETIME,
+        endDate DATETIME,
+        FOREIGN KEY (productId) REFERENCES products(id) ON DELETE CASCADE
       )
     `);
 
@@ -79,13 +124,22 @@ async function initializeDatabase() {
         customerName VARCHAR(255),
         total DECIMAL(15,2),
         totalPayment DECIMAL(15,2),
+        discount DECIMAL(15,2),
+        discountRatio DECIMAL(5,2),
         status INT,
         statusValue VARCHAR(50),
+        description TEXT,
         usingCod BOOLEAN,
+        saleChannelId INT,
+        saleChannelName VARCHAR(100),
+        priceBookId INT,
+        extra TEXT,
         createdDate DATETIME,
         modifiedDate DATETIME,
         jsonData JSON,
-        UNIQUE INDEX (code)
+        UNIQUE INDEX (code),
+        INDEX idx_soldById (soldById),
+        FOREIGN KEY (soldById) REFERENCES users(id) ON DELETE SET NULL
       )
     `);
 
@@ -100,7 +154,33 @@ async function initializeDatabase() {
         price DECIMAL(15,2),
         discount DECIMAL(15,2),
         discountRatio DECIMAL(5,2),
+        viewDiscount DECIMAL(15,2),
         note TEXT,
+        FOREIGN KEY (orderId) REFERENCES orders(id) ON DELETE CASCADE
+      )
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS order_delivery (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        orderId BIGINT,
+        serviceType VARCHAR(10),
+        status INT,
+        statusValue VARCHAR(50),
+        receiver VARCHAR(255),
+        contactNumber VARCHAR(50),
+        address TEXT,
+        locationId INT,
+        locationName VARCHAR(100),
+        wardId INT,
+        wardName VARCHAR(100),
+        weight DECIMAL(10,2),
+        length DECIMAL(10,2),
+        width DECIMAL(10,2),
+        height DECIMAL(10,2),
+        partnerDeliveryId BIGINT,
+        partnerDeliveryCode VARCHAR(50),
+        partnerDeliveryName VARCHAR(255),
         FOREIGN KEY (orderId) REFERENCES orders(id) ON DELETE CASCADE
       )
     `);
@@ -134,16 +214,21 @@ async function initializeDatabase() {
         customerId BIGINT,
         customerCode VARCHAR(50),
         customerName VARCHAR(255),
+        orderId BIGINT,
         orderCode VARCHAR(50),
         total DECIMAL(15,2),
         totalPayment DECIMAL(15,2),
+        discount DECIMAL(15,2),
         status INT,
         statusValue VARCHAR(50),
+        description TEXT,
         usingCod BOOLEAN,
         createdDate DATETIME,
         modifiedDate DATETIME,
         jsonData JSON,
-        UNIQUE INDEX (code)
+        UNIQUE INDEX (code),
+        INDEX idx_soldById (soldById),
+        FOREIGN KEY (soldById) REFERENCES users(id) ON DELETE SET NULL
       )
     `);
 
@@ -156,10 +241,15 @@ async function initializeDatabase() {
         productName VARCHAR(255),
         categoryId INT,
         categoryName VARCHAR(100),
+        tradeMarkId INT,
+        tradeMarkName VARCHAR(100),
         quantity DECIMAL(15,2),
         price DECIMAL(15,2),
         discount DECIMAL(15,2),
+        discountRatio DECIMAL(5,2),
+        usePoint BOOLEAN,
         subTotal DECIMAL(15,2),
+        note TEXT,
         returnQuantity DECIMAL(15,2),
         serialNumbers TEXT,
         FOREIGN KEY (invoiceId) REFERENCES invoices(id) ON DELETE CASCADE
@@ -167,10 +257,29 @@ async function initializeDatabase() {
     `);
 
     await connection.query(`
-      CREATE TABLE IF NOT EXISTS sync_status (
-        entity_type VARCHAR(50) PRIMARY KEY,
-        last_sync DATETIME,
-        historical_completed BOOLEAN DEFAULT FALSE
+      CREATE TABLE IF NOT EXISTS invoice_delivery (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        invoiceId BIGINT,
+        serviceType VARCHAR(10),
+        serviceTypeText VARCHAR(100),
+        status INT,
+        statusValue VARCHAR(50),
+        receiver VARCHAR(255),
+        contactNumber VARCHAR(50),
+        address TEXT,
+        locationId INT,
+        locationName VARCHAR(100),
+        wardId INT,
+        wardName VARCHAR(100),
+        weight DECIMAL(10,2),
+        length DECIMAL(10,2),
+        width DECIMAL(10,2),
+        height DECIMAL(10,2),
+        usingPriceCod BOOLEAN,
+        partnerDeliveryId BIGINT,
+        partnerDeliveryCode VARCHAR(50),
+        partnerDeliveryName VARCHAR(255),
+        FOREIGN KEY (invoiceId) REFERENCES invoices(id) ON DELETE CASCADE
       )
     `);
 
@@ -223,6 +332,26 @@ async function initializeDatabase() {
         UNIQUE KEY (customerId, groupId)
       )
     `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS sync_status (
+        entity_type VARCHAR(50) PRIMARY KEY,
+        last_sync DATETIME,
+        historical_completed BOOLEAN DEFAULT FALSE
+      )
+    `);
+
+    // Add user entity to sync_status if it doesn't exist
+    const [userSyncRows] = await connection.query(
+      "SELECT COUNT(*) as count FROM sync_status WHERE entity_type = 'users'"
+    );
+
+    if (userSyncRows[0].count === 0) {
+      await connection.query(`
+        INSERT INTO sync_status (entity_type, last_sync, historical_completed) 
+          VALUES ('users', NULL, FALSE)
+      `);
+    }
 
     // Add customer entity to sync_status if it doesn't exist
     const [customerSyncRows] = await connection.query(

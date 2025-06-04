@@ -676,6 +676,134 @@ const getCustomersByDate = async (daysAgo, specificDate = null) => {
   }
 };
 
+const getUsers = async () => {
+  try {
+    const token = await getToken();
+    const pageSize = 100;
+    const allUsers = [];
+    let currentItem = 0;
+    let hasMoreData = true;
+
+    console.log("Fetching current users...");
+
+    // Get only recent users (last 24 hours)
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const fromDate = yesterday.toISOString().split("T")[0];
+
+    while (hasMoreData) {
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/users`,
+        params: {
+          pageSize: pageSize,
+          currentItem: currentItem,
+          orderBy: "id",
+          orderDirection: "DESC",
+          lastModifiedFrom: fromDate,
+          includeRemoveIds: true,
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allUsers.push(...response.data.data);
+        currentItem += response.data.data.length;
+        hasMoreData = response.data.data.length === pageSize;
+
+        console.log(
+          `Fetched ${response.data.data.length} users, total: ${allUsers.length}`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        hasMoreData = false;
+      }
+    }
+
+    return { data: allUsers, total: allUsers.length };
+  } catch (error) {
+    console.error("Error getting users:", error.message);
+    throw error;
+  }
+};
+
+const getUsersByDate = async (daysAgo) => {
+  try {
+    const results = [];
+
+    for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() - currentDaysAgo);
+      const formattedDate = targetDate.toISOString().split("T")[0];
+
+      const token = await getToken();
+      const pageSize = 100;
+      const allUsersForDate = [];
+      let currentItem = 0;
+      let hasMoreData = true;
+
+      console.log(`Fetching users modified on/after ${formattedDate}...`);
+
+      while (hasMoreData) {
+        const response = await makeApiRequest({
+          method: "GET",
+          url: `${KIOTVIET_BASE_URL}/users`,
+          params: {
+            lastModifiedFrom: formattedDate,
+            pageSize: pageSize,
+            currentItem: currentItem,
+            orderBy: "id",
+            orderDirection: "ASC",
+            includeRemoveIds: true,
+          },
+          headers: {
+            Retailer: process.env.KIOT_SHOP_NAME,
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (
+          response.data &&
+          response.data.data &&
+          response.data.data.length > 0
+        ) {
+          allUsersForDate.push(...response.data.data);
+          currentItem += response.data.data.length;
+          hasMoreData = response.data.data.length === pageSize;
+
+          console.log(
+            `Date ${formattedDate}: Fetched ${response.data.data.length} users, total: ${allUsersForDate.length}`
+          );
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        } else {
+          hasMoreData = false;
+        }
+      }
+
+      results.push({
+        date: formattedDate,
+        daysAgo: currentDaysAgo,
+        data: { data: allUsersForDate },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+
+    return results;
+  } catch (error) {
+    console.error(`Error getting users by date:`, error.message);
+    return results;
+  }
+};
+
+// Add these to your module.exports:
 module.exports = {
   getOrders,
   getOrdersByDate,
@@ -685,4 +813,6 @@ module.exports = {
   getProductsByDate,
   getCustomers,
   getCustomersByDate,
+  getUsers, // Add this
+  getUsersByDate, // Add this
 };

@@ -2,6 +2,7 @@ const orderService = require("../db/orderService");
 const invoiceService = require("../db/invoiceService");
 const productService = require("../db/productService");
 const customerService = require("../db/customerService");
+const userService = require("../db/userService");
 
 const {
   orderScheduler,
@@ -22,6 +23,11 @@ const {
   customerScheduler,
   customerSchedulerCurrent,
 } = require("../../scheduler/customerScheduler");
+
+const {
+  userScheduler,
+  userSchedulerCurrent,
+} = require("../../scheduler/userScheduler");
 
 const runOrderSync = async () => {
   try {
@@ -153,9 +159,40 @@ const runCustomerSync = async () => {
   }
 };
 
+const runUserSync = async () => {
+  try {
+    const syncStatus = await userService.getSyncStatus();
+
+    if (!syncStatus.historicalCompleted) {
+      console.log("Starting historical users data sync...");
+      const result = await userScheduler(160);
+
+      if (result.success) {
+        console.log("Historical users data has been saved to database");
+      } else {
+        console.error("Error when saving historical users data:", result.error);
+      }
+    } else {
+      console.log("Running current users sync...");
+      const currentResult = await userSchedulerCurrent();
+
+      if (currentResult.success) {
+        console.log(
+          `Current users data has been added: ${currentResult.savedCount} users`
+        );
+      } else {
+        console.error("Error when adding current users:", currentResult.error);
+      }
+    }
+  } catch (error) {
+    console.error("Cannot get and save data users:", error);
+  }
+};
+
 module.exports = {
   runOrderSync,
   runInvoiceSync,
   runProductSync,
   runCustomerSync,
+  runUserSync,
 };
