@@ -35,7 +35,7 @@ app.use((req, res, next) => {
 });
 
 app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*"); // In production, replace * with your domain
+  res.header("Access-Control-Allow-Origin", "https://api.traphuonghoang.com"); // In production, replace * with your domain
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   res.header(
     "Access-Control-Allow-Headers",
