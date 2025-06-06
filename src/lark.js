@@ -1,4 +1,4 @@
-// src/lark.js - Updated with CORRECT Base IDs and improved error handling
+// src/lark.js - Fixed version without non-existent "Ghi chú" field
 const axios = require("axios");
 
 // Lark API Configuration
@@ -6,7 +6,7 @@ const LARK_BASE_URL = "https://open.larksuite.com/open-apis";
 const LARK_TOKEN_URL =
   "https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal";
 
-// ✅ CRM Base Configuration - Using environment variables
+// CRM Base Configuration
 const CRM_BASE_TOKEN = process.env.LARK_CRM_BASE_TOKEN;
 const CRM_TABLE_ID = process.env.LARK_CRM_TABLE_ID;
 
@@ -31,51 +31,39 @@ async function getLarkToken() {
     return response.data.tenant_access_token;
   } catch (error) {
     console.error("❌ Error getting Lark token:", error.message);
-    if (error.response) {
-      console.error("📄 Response status:", error.response.status);
-      console.error("📄 Response data:", JSON.stringify(error.response.data));
-    }
     throw error;
   }
 }
 
 /**
- * ✅ Add record to CRM Base with CORRECT field mapping
+ * ✅ Add record to CRM Base - FIXED VERSION
  */
 async function addRecordToCRMBase(formData) {
   try {
-    console.log(
-      "📝 Adding record to CRM Base with correct field mapping...",
-      formData
-    );
+    console.log("📝 Adding record to CRM Base (fixed mapping)...", formData);
 
-    // Validate required environment variables
     if (!CRM_BASE_TOKEN || !CRM_TABLE_ID) {
-      throw new Error(
-        "Missing CRM Base configuration. Please check LARK_CRM_BASE_TOKEN and LARK_CRM_TABLE_ID in .env"
-      );
+      throw new Error("Missing CRM Base configuration");
     }
 
     const token = await getLarkToken();
 
-    // ✅ CORRECT MAPPING: Form data -> Base field names (exact match with Base schema)
+    // ✅ FIXED MAPPING: Only use fields that exist in Base
     const recordData = {
       fields: {
-        "Họ và tên": formData.name, // ✅ name -> "Họ và tên"
-        "Số điện thoại": formData.phone, // ✅ phone -> "Số điện thoại"
-        "Mô hình kinh doanh": formData.type, // ✅ type -> "Mô hình kinh doanh"
-        "Số vé đăng ký": parseInt(formData.ticket) || 1, // ✅ ticket -> "Số vé đăng ký" (Number)
-        Workshop: formData.city, // ✅ city -> "Workshop"
+        "Họ và tên": formData.name, // ✅ Exists
+        "Số điện thoại": formData.phone, // ✅ Exists
+        "Mô hình kinh doanh": formData.type, // ✅ Exists
+        "Số vé đăng ký": parseInt(formData.ticket) || 1, // ✅ Exists (Number type)
+        Workshop: formData.city, // ✅ Exists
 
-        // Additional info in notes
-        "Ghi chú": formatDetailedNotes(formData),
+        // ❌ REMOVED: "Ghi chú" field doesn't exist in Base
+        // We'll handle email in notification instead
       },
     };
 
-    console.log(
-      "📤 Sending correctly mapped data:",
-      JSON.stringify(recordData, null, 2)
-    );
+    console.log("📤 Sending fixed data (no Ghi chú field):");
+    console.log(JSON.stringify(recordData, null, 2));
 
     const response = await axios.post(
       `${LARK_BASE_URL}/bitable/v1/apps/${CRM_BASE_TOKEN}/tables/${CRM_TABLE_ID}/records`,
@@ -85,7 +73,7 @@ async function addRecordToCRMBase(formData) {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        timeout: 10000, // 10 second timeout
+        timeout: 10000,
       }
     );
 
@@ -98,7 +86,7 @@ async function addRecordToCRMBase(formData) {
         `✅ CRM record created successfully: ${record.record_id} (STT: ${autoSTT})`
       );
 
-      // Send notification to team
+      // Send notification with email info (since we can't store it in Base)
       await sendCRMNotificationToGroup(formData, autoSTT);
 
       return {
@@ -117,58 +105,13 @@ async function addRecordToCRMBase(formData) {
     console.error("❌ Error adding record to CRM Base:", error.message);
     if (error.response) {
       console.error("📄 API Error Details:", error.response.data);
-      console.error("📄 Status:", error.response.status);
     }
-
-    // Return a more user-friendly error
-    const userError =
-      error.response?.status === 403
-        ? "Không có quyền truy cập CRM. Vui lòng kiểm tra token."
-        : error.response?.status === 404
-        ? "Không tìm thấy Base hoặc Table. Vui lòng kiểm tra Base ID."
-        : "Lỗi hệ thống CRM. Vui lòng thử lại sau.";
-
-    throw new Error(userError);
+    throw error;
   }
 }
 
 /**
- * Format detailed notes including email and metadata
- */
-function formatDetailedNotes(formData) {
-  const notes = [];
-
-  // Email information (since it's not a separate field in Base)
-  if (formData.email) {
-    notes.push(`📧 Email: ${formData.email}`);
-  }
-
-  // Source and timestamp
-  notes.push(`🌐 Nguồn: Website Registration`);
-  notes.push(
-    `⏰ Đăng ký lúc: ${new Date().toLocaleString("vi-VN", {
-      timeZone: "Asia/Ho_Chi_Minh",
-    })}`
-  );
-
-  // Technical info for troubleshooting
-  if (formData.clientIP) {
-    notes.push(`🆔 IP: ${formData.clientIP}`);
-  }
-
-  if (formData.userAgent) {
-    const shortUA =
-      formData.userAgent.length > 100
-        ? formData.userAgent.substring(0, 100) + "..."
-        : formData.userAgent;
-    notes.push(`🖥️ Device: ${shortUA}`);
-  }
-
-  return notes.join("\n");
-}
-
-/**
- * ✅ Enhanced notification with correct Base URL
+ * Enhanced notification - Email info included here since Base doesn't have Ghi chú field
  */
 async function sendCRMNotificationToGroup(formData, autoGeneratedSTT) {
   try {
@@ -228,12 +171,14 @@ async function sendCRMNotificationToGroup(formData, autoGeneratedSTT) {
             tag: "div",
             text: {
               tag: "lark_md",
-              content: `**📊 Trạng thái:** Mới\n**👔 Sales phụ trách:** Chưa phân công\n**⏰ Thời gian:** ${new Date().toLocaleString(
+              content: `**📧 Chi tiết Email:** ${
+                formData.email
+              }\n**🌐 Nguồn:** Website Registration\n**⏰ Thời gian:** ${new Date().toLocaleString(
                 "vi-VN",
                 {
                   timeZone: "Asia/Ho_Chi_Minh",
                 }
-              )}`,
+              )}\n**🆔 IP:** ${formData.clientIP || "N/A"}`,
             },
           },
           {
@@ -246,7 +191,6 @@ async function sendCRMNotificationToGroup(formData, autoGeneratedSTT) {
                   content: "📋 Mở CRM",
                 },
                 type: "primary",
-                // ✅ CORRECT URL với view ID chính xác từ Base URL của bạn
                 url: `https://dieptra2018.sg.larksuite.com/base/${CRM_BASE_TOKEN}?table=${CRM_TABLE_ID}&view=vewIia5G5j`,
               },
               {
@@ -257,6 +201,15 @@ async function sendCRMNotificationToGroup(formData, autoGeneratedSTT) {
                 },
                 type: "default",
                 url: `tel:${formData.phone}`,
+              },
+              {
+                tag: "button",
+                text: {
+                  tag: "plain_text",
+                  content: "📧 Email khách",
+                },
+                type: "default",
+                url: `mailto:${formData.email}`,
               },
             ],
           },
@@ -276,7 +229,7 @@ async function sendCRMNotificationToGroup(formData, autoGeneratedSTT) {
             Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
-          timeout: 5000, // 5 second timeout for notifications
+          timeout: 5000,
         }
       );
 
@@ -292,7 +245,6 @@ async function sendCRMNotificationToGroup(formData, autoGeneratedSTT) {
       "⚠️ Failed to send CRM notification (non-critical):",
       error.message
     );
-    // Don't throw error for notification failures - it's not critical
   }
 }
 
@@ -342,11 +294,19 @@ async function getCRMStats() {
   }
 }
 
-// Export functions
+// For backward compatibility - remove if not used elsewhere
+function formatDetailedNotes(formData) {
+  // This function is no longer used since we removed Ghi chú field
+  // Keeping for compatibility, but email info is now in notification
+  return `Email: ${
+    formData.email
+  } - Source: Website - Time: ${new Date().toISOString()}`;
+}
+
 module.exports = {
   getLarkToken,
   addRecordToCRMBase,
   sendCRMNotificationToGroup,
   getCRMStats,
-  formatDetailedNotes,
+  formatDetailedNotes, // Kept for compatibility
 };
