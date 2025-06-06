@@ -1,20 +1,17 @@
-// src/lark.js - Extended with CRM Base functionality
+// src/lark.js - Updated with CORRECT Base IDs and improved error handling
 const axios = require("axios");
-const path = require("path");
-const fs = require("fs");
 
-// Cấu hình endpoints của Lark API
+// Lark API Configuration
 const LARK_BASE_URL = "https://open.larksuite.com/open-apis";
 const LARK_TOKEN_URL =
   "https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal";
 
-// CRM Base configuration - Add these to your .env file
-const CRM_BASE_TOKEN = process.env.LARK_CRM_BASE_TOKEN; // Your Base token
-const CRM_TABLE_ID = process.env.LARK_CRM_TABLE_ID; // Your Table ID
+// ✅ CRM Base Configuration - Using environment variables
+const CRM_BASE_TOKEN = process.env.LARK_CRM_BASE_TOKEN;
+const CRM_TABLE_ID = process.env.LARK_CRM_TABLE_ID;
 
 /**
- * Lấy token truy cập từ Lark API
- * @returns {Promise<string>} Token truy cập
+ * Get Lark access token
  */
 async function getLarkToken() {
   try {
@@ -33,73 +30,50 @@ async function getLarkToken() {
 
     return response.data.tenant_access_token;
   } catch (error) {
-    console.error("Lỗi khi lấy Lark token:", error.message);
+    console.error("❌ Error getting Lark token:", error.message);
     if (error.response) {
-      console.error("Phản hồi từ server:", error.response.status);
-      console.error("Dữ liệu phản hồi:", JSON.stringify(error.response.data));
+      console.error("📄 Response status:", error.response.status);
+      console.error("📄 Response data:", JSON.stringify(error.response.data));
     }
     throw error;
   }
 }
 
 /**
- * Format notes field for CRM
- * @param {Object} formData - Form submission data
- * @returns {string} Formatted notes
+ * ✅ Add record to CRM Base with CORRECT field mapping
  */
-function formatCRMNotes(formData) {
-  const notes = [];
-
-  if (formData.email) {
-    notes.push(`📧 Email: ${formData.email}`);
-  }
-
-  if (formData.ticket) {
-    notes.push(`🎫 Số vé đăng ký: ${formData.ticket}`);
-  }
-
-  if (formData.city) {
-    notes.push(`📍 Sự kiện: ${formData.city}`);
-  }
-
-  notes.push(`🌐 Nguồn: Website Registration`);
-  notes.push(`⏰ Đăng ký lúc: ${new Date().toLocaleString("vi-VN")}`);
-  notes.push(`🆔 IP: ${formData.clientIP || "Unknown"}`);
-
-  return notes.join("\n");
-}
-
-/**
- * Add record to CRM Base
- * @param {Object} formData - Form submission data
- * @returns {Promise<Object>} Created record
- */
-// Complete fix for src/lark.js addRecordToCRMBase function
-
 async function addRecordToCRMBase(formData) {
   try {
-    console.log("📝 Adding record to CRM Base (form data only)...", formData);
+    console.log(
+      "📝 Adding record to CRM Base with correct field mapping...",
+      formData
+    );
+
+    // Validate required environment variables
+    if (!CRM_BASE_TOKEN || !CRM_TABLE_ID) {
+      throw new Error(
+        "Missing CRM Base configuration. Please check LARK_CRM_BASE_TOKEN and LARK_CRM_TABLE_ID in .env"
+      );
+    }
 
     const token = await getLarkToken();
 
-    // MINIMAL: Only send the form data, nothing else
+    // ✅ CORRECT MAPPING: Form data -> Base field names (exact match with Base schema)
     const recordData = {
       fields: {
-        "Tên khách hàng": formData.name,
-        "Số điện thoại": formData.phone,
-        "Nhu cầu": formData.type,
-        "Ghi chú": `📧 Email: ${formData.email}\n🎫 Số vé đăng ký: ${
-          formData.ticket
-        }\n📍 Sự kiện: ${
-          formData.city
-        }\n🌐 Nguồn: Website Registration\n⏰ Đăng ký lúc: ${new Date().toLocaleString(
-          "vi-VN"
-        )}\n🆔 IP: ${formData.clientIP || "Unknown"}`,
+        "Họ và tên": formData.name, // ✅ name -> "Họ và tên"
+        "Số điện thoại": formData.phone, // ✅ phone -> "Số điện thoại"
+        "Mô hình kinh doanh": formData.type, // ✅ type -> "Mô hình kinh doanh"
+        "Số vé đăng ký": parseInt(formData.ticket) || 1, // ✅ ticket -> "Số vé đăng ký" (Number)
+        Workshop: formData.city, // ✅ city -> "Workshop"
+
+        // Additional info in notes
+        "Ghi chú": formatDetailedNotes(formData),
       },
     };
 
     console.log(
-      "📤 Sending minimal form data to LarkSuite:",
+      "📤 Sending correctly mapped data:",
       JSON.stringify(recordData, null, 2)
     );
 
@@ -111,12 +85,14 @@ async function addRecordToCRMBase(formData) {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
+        timeout: 10000, // 10 second timeout
       }
     );
 
     if (response.data.code === 0) {
       const record = response.data.data.record;
-      const autoSTT = record.fields.STT || Date.now() % 10000; // Get auto-generated STT or fallback
+      const autoSTT =
+        record.fields.STT || record.fields["STT"] || Date.now() % 10000;
 
       console.log(
         `✅ CRM record created successfully: ${record.record_id} (STT: ${autoSTT})`
@@ -133,103 +109,67 @@ async function addRecordToCRMBase(formData) {
       };
     } else {
       console.error("📄 LarkSuite API Error:", response.data);
-      throw new Error(`Failed to add CRM record: ${response.data.msg}`);
+      throw new Error(
+        `Failed to add CRM record: ${response.data.msg || "Unknown error"}`
+      );
     }
   } catch (error) {
     console.error("❌ Error adding record to CRM Base:", error.message);
     if (error.response) {
       console.error("📄 API Error Details:", error.response.data);
+      console.error("📄 Status:", error.response.status);
     }
-    throw error;
+
+    // Return a more user-friendly error
+    const userError =
+      error.response?.status === 403
+        ? "Không có quyền truy cập CRM. Vui lòng kiểm tra token."
+        : error.response?.status === 404
+        ? "Không tìm thấy Base hoặc Table. Vui lòng kiểm tra Base ID."
+        : "Lỗi hệ thống CRM. Vui lòng thử lại sau.";
+
+    throw new Error(userError);
   }
 }
 
-// ALTERNATIVE: If the above still fails, use this ultra-minimal version
-async function addRecordToCRMBaseUltraMinimal(formData) {
-  try {
-    console.log("📝 Adding record to CRM Base (ultra minimal)...", formData);
+/**
+ * Format detailed notes including email and metadata
+ */
+function formatDetailedNotes(formData) {
+  const notes = [];
 
-    const token = await getLarkToken();
-
-    // ULTRA MINIMAL: Only the absolutely essential fields
-    const recordData = {
-      fields: {
-        "Tên khách hàng": formData.name,
-        "Số điện thoại": formData.phone,
-        "Nhu cầu": formData.type,
-      },
-    };
-
-    console.log(
-      "📤 Sending ultra minimal data:",
-      JSON.stringify(recordData, null, 2)
-    );
-
-    const response = await axios.post(
-      `${LARK_BASE_URL}/bitable/v1/apps/${CRM_BASE_TOKEN}/tables/${CRM_TABLE_ID}/records`,
-      recordData,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
-
-    if (response.data.code === 0) {
-      const record = response.data.data.record;
-      console.log(`✅ CRM record created (ultra minimal): ${record.record_id}`);
-
-      // Manually update with notes in a separate call
-      await addNotesToRecord(token, record.record_id, formData);
-
-      return {
-        success: true,
-        record_id: record.record_id,
-        stt: record.fields.STT || "Auto",
-        data: record,
-      };
-    } else {
-      throw new Error(`Failed to add CRM record: ${response.data.msg}`);
-    }
-  } catch (error) {
-    console.error("❌ Error adding ultra minimal record:", error.message);
-    throw error;
+  // Email information (since it's not a separate field in Base)
+  if (formData.email) {
+    notes.push(`📧 Email: ${formData.email}`);
   }
+
+  // Source and timestamp
+  notes.push(`🌐 Nguồn: Website Registration`);
+  notes.push(
+    `⏰ Đăng ký lúc: ${new Date().toLocaleString("vi-VN", {
+      timeZone: "Asia/Ho_Chi_Minh",
+    })}`
+  );
+
+  // Technical info for troubleshooting
+  if (formData.clientIP) {
+    notes.push(`🆔 IP: ${formData.clientIP}`);
+  }
+
+  if (formData.userAgent) {
+    const shortUA =
+      formData.userAgent.length > 100
+        ? formData.userAgent.substring(0, 100) + "..."
+        : formData.userAgent;
+    notes.push(`🖥️ Device: ${shortUA}`);
+  }
+
+  return notes.join("\n");
 }
 
-async function addNotesToRecord(token, recordId, formData) {
-  try {
-    const updateData = {
-      fields: {
-        "Ghi chú": `📧 Email: ${formData.email}\n🎫 Số vé: ${
-          formData.ticket
-        }\n📍 Sự kiện: ${
-          formData.city
-        }\n🌐 Nguồn: Website\n⏰ ${new Date().toLocaleString("vi-VN")}`,
-      },
-    };
-
-    await axios.put(
-      `${LARK_BASE_URL}/bitable/v1/apps/${CRM_BASE_TOKEN}/tables/${CRM_TABLE_ID}/records/${recordId}`,
-      updateData,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
-
-    console.log("✅ Notes added to record");
-  } catch (error) {
-    console.error(
-      "⚠️ Could not add notes (but main record created):",
-      error.message
-    );
-  }
-}
-
+/**
+ * ✅ Enhanced notification with correct Base URL
+ */
 async function sendCRMNotificationToGroup(formData, autoGeneratedSTT) {
   try {
     const token = await getLarkToken();
@@ -252,7 +192,7 @@ async function sendCRMNotificationToGroup(formData, autoGeneratedSTT) {
             tag: "div",
             text: {
               tag: "lark_md",
-              content: `**🆔 STT:** ${autoGeneratedSTT}\n**👤 Khách hàng:** ${formData.name}\n**📱 Điện thoại:** ${formData.phone}`,
+              content: `**🆔 STT:** ${autoGeneratedSTT}\n**👤 Họ và tên:** ${formData.name}\n**📱 Số điện thoại:** ${formData.phone}`,
             },
           },
           {
@@ -262,7 +202,7 @@ async function sendCRMNotificationToGroup(formData, autoGeneratedSTT) {
                 is_short: true,
                 text: {
                   tag: "lark_md",
-                  content: `**📧 Email:**\n${formData.email}`,
+                  content: `**📧 Email:**\n${formData.email || "Không có"}`,
                 },
               },
               {
@@ -278,7 +218,7 @@ async function sendCRMNotificationToGroup(formData, autoGeneratedSTT) {
             tag: "div",
             text: {
               tag: "lark_md",
-              content: `**🏢 Nhu cầu:** ${formData.type}\n**📍 Sự kiện:** ${formData.city}`,
+              content: `**🏢 Mô hình kinh doanh:** ${formData.type}\n**🎪 Workshop:** ${formData.city}`,
             },
           },
           {
@@ -289,7 +229,10 @@ async function sendCRMNotificationToGroup(formData, autoGeneratedSTT) {
             text: {
               tag: "lark_md",
               content: `**📊 Trạng thái:** Mới\n**👔 Sales phụ trách:** Chưa phân công\n**⏰ Thời gian:** ${new Date().toLocaleString(
-                "vi-VN"
+                "vi-VN",
+                {
+                  timeZone: "Asia/Ho_Chi_Minh",
+                }
               )}`,
             },
           },
@@ -303,7 +246,8 @@ async function sendCRMNotificationToGroup(formData, autoGeneratedSTT) {
                   content: "📋 Mở CRM",
                 },
                 type: "primary",
-                url: `https://dieptra2018.sg.larksuite.com/base/${CRM_BASE_TOKEN}?table=${CRM_TABLE_ID}&view=vewdQ1aYB2`,
+                // ✅ CORRECT URL với view ID chính xác từ Base URL của bạn
+                url: `https://dieptra2018.sg.larksuite.com/base/${CRM_BASE_TOKEN}?table=${CRM_TABLE_ID}&view=vewIia5G5j`,
               },
               {
                 tag: "button",
@@ -332,20 +276,28 @@ async function sendCRMNotificationToGroup(formData, autoGeneratedSTT) {
             Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
+          timeout: 5000, // 5 second timeout for notifications
         }
       );
 
       console.log("📢 CRM notification sent to group");
       return response.data;
+    } else {
+      console.log(
+        "⚠️ LARK_CHAT_ID not configured. Skipping group notification."
+      );
     }
   } catch (error) {
-    console.error("⚠️ Failed to send CRM notification:", error.message);
+    console.error(
+      "⚠️ Failed to send CRM notification (non-critical):",
+      error.message
+    );
+    // Don't throw error for notification failures - it's not critical
   }
 }
 
 /**
  * Get CRM statistics
- * @returns {Promise<Object>} CRM stats
  */
 async function getCRMStats() {
   try {
@@ -367,22 +319,16 @@ async function getCRMStats() {
       const records = response.data.data.items;
       const stats = {
         total: records.length,
-        new: records.filter((r) => r.fields["Trạng thái"] === "Mới").length,
-        contacted: records.filter(
-          (r) => r.fields["Trạng thái"] === "Đang liên hệ"
-        ).length,
-        interested: records.filter((r) => r.fields["Trạng thái"] === "Quan tâm")
-          .length,
-        closed: records.filter((r) => r.fields["Trạng thái"] === "Đã chốt")
-          .length,
-        totalValue: records.reduce(
-          (sum, r) => sum + (r.fields["Giá Trị Đơn Hàng"] || 0),
-          0
-        ),
         todayCount: records.filter((r) => {
-          const createDate = new Date(r.fields["Thời gian tạo"]);
+          const createDate = new Date(r.created_time);
           const today = new Date();
           return createDate.toDateString() === today.toDateString();
+        }).length,
+        lastWeekCount: records.filter((r) => {
+          const createDate = new Date(r.created_time);
+          const weekAgo = new Date();
+          weekAgo.setDate(weekAgo.getDate() - 7);
+          return createDate >= weekAgo;
         }).length,
       };
 
@@ -396,14 +342,11 @@ async function getCRMStats() {
   }
 }
 
-// Export existing functions and new CRM functions
+// Export functions
 module.exports = {
-  // Existing functions
   getLarkToken,
-
-  // New CRM functions
   addRecordToCRMBase,
   sendCRMNotificationToGroup,
   getCRMStats,
-  formatCRMNotes,
+  formatDetailedNotes,
 };
