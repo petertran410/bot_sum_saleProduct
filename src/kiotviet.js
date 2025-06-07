@@ -88,6 +88,217 @@ async function makeApiRequest(config) {
   }
 }
 
+// CATEGORIES with pagination
+const getCategories = async () => {
+  try {
+    const token = await getToken();
+    const pageSize = 100;
+    const allCategories = [];
+    let currentItem = 0;
+    let hasMoreData = true;
+
+    console.log("Fetching current categories...");
+
+    while (hasMoreData) {
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/categories`,
+        params: {
+          pageSize: pageSize,
+          currentItem: currentItem,
+          orderBy: "categoryName",
+          orderDirection: "ASC",
+          hierachicalData: false,
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allCategories.push(...response.data.data);
+        currentItem += response.data.data.length;
+        hasMoreData = response.data.data.length === pageSize;
+
+        console.log(
+          `Fetched ${response.data.data.length} categories, total: ${allCategories.length}`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        hasMoreData = false;
+      }
+    }
+
+    return { data: allCategories, total: allCategories.length };
+  } catch (error) {
+    console.error("Error getting categories:", error.message);
+    throw error;
+  }
+};
+
+// BRANCHES with pagination
+const getBranches = async () => {
+  try {
+    const token = await getToken();
+    const pageSize = 100;
+    const allBranches = [];
+    let currentItem = 0;
+    let hasMoreData = true;
+
+    console.log("Fetching current branches...");
+
+    while (hasMoreData) {
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/branches`,
+        params: {
+          pageSize: pageSize,
+          currentItem: currentItem,
+          orderBy: "branchName",
+          orderDirection: "ASC",
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allBranches.push(...response.data.data);
+        currentItem += response.data.data.length;
+        hasMoreData = response.data.data.length === pageSize;
+
+        console.log(
+          `Fetched ${response.data.data.length} branches, total: ${allBranches.length}`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        hasMoreData = false;
+      }
+    }
+
+    return { data: allBranches, total: allBranches.length };
+  } catch (error) {
+    console.error("Error getting branches:", error.message);
+    throw error;
+  }
+};
+
+// SUPPLIERS with pagination
+const getSuppliers = async () => {
+  try {
+    const token = await getToken();
+    const pageSize = 100;
+    const allSuppliers = [];
+    let currentItem = 0;
+    let hasMoreData = true;
+
+    console.log("Fetching current suppliers...");
+
+    while (hasMoreData) {
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/suppliers`,
+        params: {
+          pageSize: pageSize,
+          currentItem: currentItem,
+          orderBy: "name",
+          orderDirection: "ASC",
+          includeTotal: true,
+          includeSupplierGroup: true,
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allSuppliers.push(...response.data.data);
+        currentItem += response.data.data.length;
+        hasMoreData = response.data.data.length === pageSize;
+
+        console.log(
+          `Fetched ${response.data.data.length} suppliers, total: ${allSuppliers.length}`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        hasMoreData = false;
+      }
+    }
+
+    return { data: allSuppliers, total: allSuppliers.length };
+  } catch (error) {
+    console.error("Error getting suppliers:", error.message);
+    throw error;
+  }
+};
+
+// BANK ACCOUNTS with pagination
+const getBankAccounts = async () => {
+  try {
+    const token = await getToken();
+    const pageSize = 100;
+    const allBankAccounts = [];
+    let currentItem = 0;
+    let hasMoreData = true;
+
+    console.log("Fetching current bank accounts...");
+
+    while (hasMoreData) {
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/BankAccounts`,
+        params: {
+          pageSize: pageSize,
+          currentItem: currentItem,
+          orderBy: "bankName",
+          orderDirection: "ASC",
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allBankAccounts.push(...response.data.data);
+        currentItem += response.data.data.length;
+        hasMoreData = response.data.data.length === pageSize;
+
+        console.log(
+          `Fetched ${response.data.data.length} bank accounts, total: ${allBankAccounts.length}`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        hasMoreData = false;
+      }
+    }
+
+    return { data: allBankAccounts, total: allBankAccounts.length };
+  } catch (error) {
+    console.error("Error getting bank accounts:", error.message);
+    throw error;
+  }
+};
+
 // ORDERS with pagination
 const getOrders = async () => {
   try {
@@ -813,6 +1024,10 @@ module.exports = {
   getProductsByDate,
   getCustomers,
   getCustomersByDate,
-  getUsers, // Add this
-  getUsersByDate, // Add this
+  getUsers,
+  getUsersByDate,
+  getCategories, // New
+  getBranches, // New
+  getSuppliers, // New
+  getBankAccounts, // New
 };

@@ -24,6 +24,87 @@ async function initializeDatabase() {
       database: dbName,
     });
 
+    // Create categories table
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS categories (
+        categoryId INT PRIMARY KEY,
+        parentId INT,
+        categoryName VARCHAR(125) NOT NULL,
+        retailerId INT,
+        hasChild BOOLEAN DEFAULT FALSE,
+        modifiedDate DATETIME,
+        createdDate DATETIME,
+        jsonData JSON,
+        INDEX idx_parentId (parentId),
+        INDEX idx_retailerId (retailerId)
+      )
+    `);
+
+    // Create branches table
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS branches (
+        id INT PRIMARY KEY,
+        branchName VARCHAR(255) NOT NULL,
+        branchCode VARCHAR(50),
+        contactNumber VARCHAR(50),
+        retailerId INT,
+        email VARCHAR(100),
+        address TEXT,
+        modifiedDate DATETIME,
+        createdDate DATETIME,
+        jsonData JSON,
+        INDEX idx_retailerId (retailerId),
+        UNIQUE INDEX idx_branchCode (branchCode, retailerId)
+      )
+    `);
+
+    // Create suppliers table
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS suppliers (
+        id BIGINT PRIMARY KEY,
+        code VARCHAR(50) NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        contactNumber VARCHAR(50),
+        email VARCHAR(100),
+        address TEXT,
+        locationName VARCHAR(100),
+        wardName VARCHAR(100),
+        organization VARCHAR(255),
+        taxCode VARCHAR(50),
+        comments TEXT,
+        groups TEXT,
+        isActive BOOLEAN DEFAULT TRUE,
+        modifiedDate DATETIME,
+        createdDate DATETIME,
+        retailerId BIGINT,
+        branchId BIGINT,
+        createdBy VARCHAR(255),
+        debt DECIMAL(15,2) DEFAULT 0,
+        totalInvoiced DECIMAL(15,2) DEFAULT 0,
+        totalInvoicedWithoutReturn DECIMAL(15,2) DEFAULT 0,
+        jsonData JSON,
+        UNIQUE INDEX idx_code (code, retailerId),
+        INDEX idx_retailerId (retailerId),
+        INDEX idx_name (name)
+      )
+    `);
+
+    // Create bank_accounts table
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS bank_accounts (
+        id INT PRIMARY KEY,
+        bankName VARCHAR(255) NOT NULL,
+        accountNumber VARCHAR(50) NOT NULL,
+        description TEXT,
+        retailerId INT,
+        modifiedDate DATETIME,
+        createdDate DATETIME,
+        jsonData JSON,
+        INDEX idx_retailerId (retailerId),
+        UNIQUE INDEX idx_account (accountNumber, retailerId)
+      )
+    `);
+
     // Create users table first since it's referenced by other tables
     await connection.query(`
       CREATE TABLE IF NOT EXISTS users (
@@ -71,7 +152,8 @@ async function initializeDatabase() {
         modifiedDate DATETIME,
         createdDate DATETIME,
         jsonData JSON,
-        UNIQUE INDEX (code)
+        UNIQUE INDEX (code),
+        FOREIGN KEY (categoryId) REFERENCES categories(categoryId) ON DELETE SET NULL
       )
     `);
 
@@ -92,6 +174,7 @@ async function initializeDatabase() {
         isActive BOOLEAN,
         onOrder DECIMAL(15,2),
         FOREIGN KEY (productId) REFERENCES products(id) ON DELETE CASCADE,
+        FOREIGN KEY (branchId) REFERENCES branches(id) ON DELETE CASCADE,
         UNIQUE KEY (productId, branchId)
       )
     `);
@@ -139,7 +222,8 @@ async function initializeDatabase() {
         jsonData JSON,
         UNIQUE INDEX (code),
         INDEX idx_soldById (soldById),
-        FOREIGN KEY (soldById) REFERENCES users(id) ON DELETE SET NULL
+        FOREIGN KEY (soldById) REFERENCES users(id) ON DELETE SET NULL,
+        FOREIGN KEY (branchId) REFERENCES branches(id) ON DELETE SET NULL
       )
     `);
 
@@ -228,7 +312,8 @@ async function initializeDatabase() {
         jsonData JSON,
         UNIQUE INDEX (code),
         INDEX idx_soldById (soldById),
-        FOREIGN KEY (soldById) REFERENCES users(id) ON DELETE SET NULL
+        FOREIGN KEY (soldById) REFERENCES users(id) ON DELETE SET NULL,
+        FOREIGN KEY (branchId) REFERENCES branches(id) ON DELETE SET NULL
       )
     `);
 
@@ -341,44 +426,58 @@ async function initializeDatabase() {
       )
     `);
 
-    // Add user entity to sync_status if it doesn't exist
-    const [userSyncRows] = await connection.query(
-      "SELECT COUNT(*) as count FROM sync_status WHERE entity_type = 'users'"
-    );
+    // Add new entity types to sync_status if they don't exist
+    const newEntityTypes = [
+      "categories",
+      "branches",
+      "suppliers",
+      "bank_accounts",
+    ];
 
-    if (userSyncRows[0].count === 0) {
-      await connection.query(`
-        INSERT INTO sync_status (entity_type, last_sync, historical_completed) 
-          VALUES ('users', NULL, FALSE)
-      `);
+    for (const entityType of newEntityTypes) {
+      const [rows] = await connection.query(
+        "SELECT COUNT(*) as count FROM sync_status WHERE entity_type = ?",
+        [entityType]
+      );
+
+      if (rows[0].count === 0) {
+        await connection.query(
+          `
+          INSERT INTO sync_status (entity_type, last_sync, historical_completed) 
+            VALUES (?, NULL, FALSE)
+        `,
+          [entityType]
+        );
+      }
     }
 
-    // Add customer entity to sync_status if it doesn't exist
-    const [customerSyncRows] = await connection.query(
-      "SELECT COUNT(*) as count FROM sync_status WHERE entity_type = 'customers'"
-    );
+    // Add existing entity types if they don't exist
+    const existingEntityTypes = [
+      "users",
+      "customers",
+      "orders",
+      "invoices",
+      "products",
+    ];
 
-    if (customerSyncRows[0].count === 0) {
-      await connection.query(`
-        INSERT INTO sync_status (entity_type, last_sync, historical_completed) 
-          VALUES ('customers', NULL, FALSE)
-      `);
+    for (const entityType of existingEntityTypes) {
+      const [rows] = await connection.query(
+        "SELECT COUNT(*) as count FROM sync_status WHERE entity_type = ?",
+        [entityType]
+      );
+
+      if (rows[0].count === 0) {
+        await connection.query(
+          `
+          INSERT INTO sync_status (entity_type, last_sync, historical_completed) 
+            VALUES (?, NULL, FALSE)
+        `,
+          [entityType]
+        );
+      }
     }
 
-    const [rows] = await connection.query(
-      "SELECT COUNT(*) as count FROM sync_status"
-    );
-
-    if (rows[0].count === 0) {
-      await connection.query(`
-        INSERT INTO sync_status (entity_type, last_sync, historical_completed) VALUES 
-        ('orders', NULL, FALSE),
-        ('invoices', NULL, FALSE),
-        ('products', NULL, FALSE)
-      `);
-    }
-
-    console.log("Database initialized successfully");
+    console.log("Database initialized successfully with all tables");
     return true;
   } catch (error) {
     console.error("Error initializing database:", error);
