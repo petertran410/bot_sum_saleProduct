@@ -1014,6 +1014,458 @@ const getUsersByDate = async (daysAgo) => {
   }
 };
 
+const getTransfers = async () => {
+  try {
+    const token = await getToken();
+    const pageSize = 100;
+    const allTransfers = [];
+    let currentItem = 0;
+    let hasMoreData = true;
+
+    console.log("Fetching current transfers...");
+
+    while (hasMoreData) {
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/transfers`,
+        params: {
+          pageSize: pageSize,
+          currentItem: currentItem,
+          orderBy: "createdDate",
+          orderDirection: "DESC",
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allTransfers.push(...response.data.data);
+        currentItem += response.data.data.length;
+        hasMoreData = response.data.data.length === pageSize;
+
+        console.log(
+          `Fetched ${response.data.data.length} transfers, total: ${allTransfers.length}`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        hasMoreData = false;
+      }
+    }
+
+    return { data: allTransfers, total: allTransfers.length };
+  } catch (error) {
+    console.error("Error getting transfers:", error.message);
+    throw error;
+  }
+};
+
+const getTransfersByDate = async (daysAgo) => {
+  try {
+    const results = [];
+
+    for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() - currentDaysAgo);
+      const formattedDate = targetDate.toISOString().split("T")[0];
+
+      const token = await getToken();
+      const pageSize = 100;
+      const allTransfersForDate = [];
+      let currentItem = 0;
+      let hasMoreData = true;
+
+      console.log(`Fetching transfers for ${formattedDate}...`);
+
+      while (hasMoreData) {
+        const response = await makeApiRequest({
+          method: "GET",
+          url: `${KIOTVIET_BASE_URL}/transfers`,
+          params: {
+            pageSize: pageSize,
+            currentItem: currentItem,
+            orderBy: "createdDate",
+            orderDirection: "DESC",
+            lastModifiedFrom: formattedDate,
+          },
+          headers: {
+            Retailer: process.env.KIOT_SHOP_NAME,
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (
+          response.data &&
+          response.data.data &&
+          response.data.data.length > 0
+        ) {
+          allTransfersForDate.push(...response.data.data);
+          currentItem += response.data.data.length;
+          hasMoreData = response.data.data.length === pageSize;
+
+          console.log(
+            `Date ${formattedDate}: Fetched ${response.data.data.length} transfers, total: ${allTransfersForDate.length}`
+          );
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        } else {
+          hasMoreData = false;
+        }
+      }
+
+      results.push({
+        date: formattedDate,
+        daysAgo: currentDaysAgo,
+        data: { data: allTransfersForDate },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+
+    return results;
+  } catch (error) {
+    console.error(`Error getting transfers by date:`, error.message);
+    throw error;
+  }
+};
+
+// PRICE BOOKS with pagination
+const getPriceBooks = async () => {
+  try {
+    const token = await getToken();
+    const pageSize = 100;
+    const allPriceBooks = [];
+    let currentItem = 0;
+    let hasMoreData = true;
+
+    console.log("Fetching current price books...");
+
+    while (hasMoreData) {
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/pricebooks`,
+        params: {
+          pageSize: pageSize,
+          currentItem: currentItem,
+          orderBy: "name",
+          orderDirection: "ASC",
+          includePriceBookBranch: true,
+          includePriceBookCustomerGroups: true,
+          includePriceBookUsers: true,
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allPriceBooks.push(...response.data.data);
+        currentItem += response.data.data.length;
+        hasMoreData = response.data.data.length === pageSize;
+
+        console.log(
+          `Fetched ${response.data.data.length} price books, total: ${allPriceBooks.length}`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        hasMoreData = false;
+      }
+    }
+
+    return { data: allPriceBooks, total: allPriceBooks.length };
+  } catch (error) {
+    console.error("Error getting price books:", error.message);
+    throw error;
+  }
+};
+
+// PURCHASE ORDERS with pagination
+const getPurchaseOrders = async () => {
+  try {
+    const token = await getToken();
+    const pageSize = 100;
+    const allPurchaseOrders = [];
+    let currentItem = 0;
+    let hasMoreData = true;
+
+    console.log("Fetching current purchase orders...");
+
+    while (hasMoreData) {
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/purchaseorders`,
+        params: {
+          pageSize: pageSize,
+          currentItem: currentItem,
+          orderBy: "createdDate",
+          orderDirection: "DESC",
+          includePayment: true,
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allPurchaseOrders.push(...response.data.data);
+        currentItem += response.data.data.length;
+        hasMoreData = response.data.data.length === pageSize;
+
+        console.log(
+          `Fetched ${response.data.data.length} purchase orders, total: ${allPurchaseOrders.length}`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        hasMoreData = false;
+      }
+    }
+
+    return { data: allPurchaseOrders, total: allPurchaseOrders.length };
+  } catch (error) {
+    console.error("Error getting purchase orders:", error.message);
+    throw error;
+  }
+};
+
+const getPurchaseOrdersByDate = async (daysAgo) => {
+  try {
+    const results = [];
+
+    for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() - currentDaysAgo);
+      const formattedDate = targetDate.toISOString().split("T")[0];
+
+      const token = await getToken();
+      const pageSize = 100;
+      const allPurchaseOrdersForDate = [];
+      let currentItem = 0;
+      let hasMoreData = true;
+
+      console.log(`Fetching purchase orders for ${formattedDate}...`);
+
+      while (hasMoreData) {
+        const response = await makeApiRequest({
+          method: "GET",
+          url: `${KIOTVIET_BASE_URL}/purchaseorders`,
+          params: {
+            pageSize: pageSize,
+            currentItem: currentItem,
+            orderBy: "createdDate",
+            orderDirection: "DESC",
+            lastModifiedFrom: formattedDate,
+            includePayment: true,
+          },
+          headers: {
+            Retailer: process.env.KIOT_SHOP_NAME,
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (
+          response.data &&
+          response.data.data &&
+          response.data.data.length > 0
+        ) {
+          allPurchaseOrdersForDate.push(...response.data.data);
+          currentItem += response.data.data.length;
+          hasMoreData = response.data.data.length === pageSize;
+
+          console.log(
+            `Date ${formattedDate}: Fetched ${response.data.data.length} purchase orders, total: ${allPurchaseOrdersForDate.length}`
+          );
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        } else {
+          hasMoreData = false;
+        }
+      }
+
+      results.push({
+        date: formattedDate,
+        daysAgo: currentDaysAgo,
+        data: { data: allPurchaseOrdersForDate },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+
+    return results;
+  } catch (error) {
+    console.error(`Error getting purchase orders by date:`, error.message);
+    throw error;
+  }
+};
+
+// RECEIPTS with pagination
+const getReceipts = async () => {
+  try {
+    const token = await getToken();
+    const pageSize = 100;
+    const allReceipts = [];
+    let currentItem = 0;
+    let hasMoreData = true;
+
+    console.log("Fetching current receipts...");
+
+    while (hasMoreData) {
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/receipts`,
+        params: {
+          pageSize: pageSize,
+          currentItem: currentItem,
+          orderBy: "createdDate",
+          orderDirection: "DESC",
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allReceipts.push(...response.data.data);
+        currentItem += response.data.data.length;
+        hasMoreData = response.data.data.length === pageSize;
+
+        console.log(
+          `Fetched ${response.data.data.length} receipts, total: ${allReceipts.length}`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        hasMoreData = false;
+      }
+    }
+
+    return { data: allReceipts, total: allReceipts.length };
+  } catch (error) {
+    console.error("Error getting receipts:", error.message);
+    throw error;
+  }
+};
+
+// RETURNS with pagination
+const getReturns = async () => {
+  try {
+    const token = await getToken();
+    const pageSize = 100;
+    const allReturns = [];
+    let currentItem = 0;
+    let hasMoreData = true;
+
+    console.log("Fetching current returns...");
+
+    while (hasMoreData) {
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/returns`,
+        params: {
+          pageSize: pageSize,
+          currentItem: currentItem,
+          orderBy: "createdDate",
+          orderDirection: "DESC",
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allReturns.push(...response.data.data);
+        currentItem += response.data.data.length;
+        hasMoreData = response.data.data.length === pageSize;
+
+        console.log(
+          `Fetched ${response.data.data.length} returns, total: ${allReturns.length}`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        hasMoreData = false;
+      }
+    }
+
+    return { data: allReturns, total: allReturns.length };
+  } catch (error) {
+    console.error("Error getting returns:", error.message);
+    throw error;
+  }
+};
+
+// SURCHARGES with pagination
+const getSurcharges = async () => {
+  try {
+    const token = await getToken();
+    const pageSize = 100;
+    const allSurcharges = [];
+    let currentItem = 0;
+    let hasMoreData = true;
+
+    console.log("Fetching current surcharges...");
+
+    while (hasMoreData) {
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/surchages`,
+        params: {
+          pageSize: pageSize,
+          currentItem: currentItem,
+          orderBy: "createdDate",
+          orderDirection: "DESC",
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allSurcharges.push(...response.data.data);
+        currentItem += response.data.data.length;
+        hasMoreData = response.data.data.length === pageSize;
+
+        console.log(
+          `Fetched ${response.data.data.length} surcharges, total: ${allSurcharges.length}`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        hasMoreData = false;
+      }
+    }
+
+    return { data: allSurcharges, total: allSurcharges.length };
+  } catch (error) {
+    console.error("Error getting surcharges:", error.message);
+    throw error;
+  }
+};
+
 // Add these to your module.exports:
 module.exports = {
   getOrders,
@@ -1030,4 +1482,12 @@ module.exports = {
   getBranches, // New
   getSuppliers, // New
   getBankAccounts, // New
+  getTransfers,
+  getTransfersByDate,
+  getPriceBooks,
+  getPurchaseOrders,
+  getPurchaseOrdersByDate,
+  getReceipts,
+  getReturns,
+  getSurcharges,
 };
