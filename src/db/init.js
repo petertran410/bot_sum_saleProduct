@@ -13,7 +13,8 @@ async function initializeDatabase() {
 
     const dbName = process.env.DB_NAME || "kiotviet_data";
 
-    await connection.query(`CREATE DATABASE IF NOT EXISTS ${dbName}`);
+    // Fix: Wrap database name in backticks to handle hyphens and special characters
+    await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\``);
 
     await connection.end();
 
@@ -21,7 +22,7 @@ async function initializeDatabase() {
       host: process.env.DB_HOST || "localhost",
       user: process.env.DB_USER || "root",
       password: process.env.DB_PASSWORD,
-      database: dbName,
+      database: dbName, // No need for backticks here as mysql2 handles it
     });
 
     // Create categories table

@@ -4,6 +4,12 @@ const productService = require("../db/productService");
 const customerService = require("../db/customerService");
 const userService = require("../db/userService");
 
+// New services
+const categoryService = require("../db/categoryService");
+const branchService = require("../db/branchService");
+const supplierService = require("../db/supplierService");
+const bankAccountService = require("../db/backAccountService");
+
 const {
   orderScheduler,
   orderSchedulerCurrent,
@@ -28,6 +34,27 @@ const {
   userScheduler,
   userSchedulerCurrent,
 } = require("../../scheduler/userScheduler");
+
+// New schedulers
+const {
+  categoryScheduler,
+  categorySchedulerCurrent,
+} = require("../../scheduler/categoryScheduler");
+
+const {
+  branchScheduler,
+  branchSchedulerCurrent,
+} = require("../../scheduler/branchScheduler");
+
+const {
+  supplierScheduler,
+  supplierSchedulerCurrent,
+} = require("../../scheduler/supplierScheduler");
+
+const {
+  bankAccountScheduler,
+  bankAccountSchedulerCurrent,
+} = require("../../scheduler/bankAccountScheduler");
 
 const runOrderSync = async () => {
   try {
@@ -189,10 +216,149 @@ const runUserSync = async () => {
   }
 };
 
+// NEW SYNC FUNCTIONS
+
+const runCategorySync = async () => {
+  try {
+    const syncStatus = await categoryService.getSyncStatus();
+
+    if (!syncStatus.historicalCompleted) {
+      console.log("Starting category sync...");
+      const result = await categoryScheduler();
+
+      if (result.success) {
+        console.log("Categories data has been saved to database");
+      } else {
+        console.error("Error when saving categories data:", result.error);
+      }
+    } else {
+      console.log("Running current categories sync...");
+      const currentResult = await categorySchedulerCurrent();
+
+      if (currentResult.success) {
+        console.log(
+          `Current categories data has been added: ${currentResult.savedCount} categories`
+        );
+      } else {
+        console.error(
+          "Error when adding current categories:",
+          currentResult.error
+        );
+      }
+    }
+  } catch (error) {
+    console.error("Cannot get and save data categories:", error);
+  }
+};
+
+const runBranchSync = async () => {
+  try {
+    const syncStatus = await branchService.getSyncStatus();
+
+    if (!syncStatus.historicalCompleted) {
+      console.log("Starting branch sync...");
+      const result = await branchScheduler();
+
+      if (result.success) {
+        console.log("Branches data has been saved to database");
+      } else {
+        console.error("Error when saving branches data:", result.error);
+      }
+    } else {
+      console.log("Running current branches sync...");
+      const currentResult = await branchSchedulerCurrent();
+
+      if (currentResult.success) {
+        console.log(
+          `Current branches data has been added: ${currentResult.savedCount} branches`
+        );
+      } else {
+        console.error(
+          "Error when adding current branches:",
+          currentResult.error
+        );
+      }
+    }
+  } catch (error) {
+    console.error("Cannot get and save data branches:", error);
+  }
+};
+
+const runSupplierSync = async () => {
+  try {
+    const syncStatus = await supplierService.getSyncStatus();
+
+    if (!syncStatus.historicalCompleted) {
+      console.log("Starting supplier sync...");
+      const result = await supplierScheduler();
+
+      if (result.success) {
+        console.log("Suppliers data has been saved to database");
+      } else {
+        console.error("Error when saving suppliers data:", result.error);
+      }
+    } else {
+      console.log("Running current suppliers sync...");
+      const currentResult = await supplierSchedulerCurrent();
+
+      if (currentResult.success) {
+        console.log(
+          `Current suppliers data has been added: ${currentResult.savedCount} suppliers`
+        );
+      } else {
+        console.error(
+          "Error when adding current suppliers:",
+          currentResult.error
+        );
+      }
+    }
+  } catch (error) {
+    console.error("Cannot get and save data suppliers:", error);
+  }
+};
+
+const runBankAccountSync = async () => {
+  try {
+    const syncStatus = await bankAccountService.getSyncStatus();
+
+    if (!syncStatus.historicalCompleted) {
+      console.log("Starting bank account sync...");
+      const result = await bankAccountScheduler();
+
+      if (result.success) {
+        console.log("Bank accounts data has been saved to database");
+      } else {
+        console.error("Error when saving bank accounts data:", result.error);
+      }
+    } else {
+      console.log("Running current bank accounts sync...");
+      const currentResult = await bankAccountSchedulerCurrent();
+
+      if (currentResult.success) {
+        console.log(
+          `Current bank accounts data has been added: ${currentResult.savedCount} bank accounts`
+        );
+      } else {
+        console.error(
+          "Error when adding current bank accounts:",
+          currentResult.error
+        );
+      }
+    }
+  } catch (error) {
+    console.error("Cannot get and save data bank accounts:", error);
+  }
+};
+
 module.exports = {
   runOrderSync,
   runInvoiceSync,
   runProductSync,
   runCustomerSync,
   runUserSync,
+  // New sync functions
+  runCategorySync,
+  runBranchSync,
+  runSupplierSync,
+  runBankAccountSync,
 };

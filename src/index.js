@@ -6,10 +6,21 @@ const {
   runProductSync,
   runCustomerSync,
   runUserSync,
+  runCategorySync,
+  runBranchSync,
+  runSupplierSync,
+  runBankAccountSync,
 } = require("./syncKiot/syncKiot");
-const { getProducts } = require("./kiotviet");
-const { getCustomers } = require("./kiotviet");
-const { getUsers } = require("./kiotviet");
+
+const {
+  getProducts,
+  getCustomers,
+  getUsers,
+  getCategories,
+  getBranches,
+  getSuppliers,
+  getBankAccounts,
+} = require("./kiotviet");
 const { testConnection } = require("./db");
 const { initializeDatabase } = require("./db/init");
 const { addRecordToCRMBase, getCRMStats, sendTestMessage } = require("./lark");
@@ -53,6 +64,26 @@ app.get("/", (req, res) => {
       registration: "/api/submit-registration",
       stats: "/api/crm/stats",
       test: "/api/test-lark",
+      sync: {
+        order: "/save-order",
+        invoice: "/save-invoice",
+        product: "/save-product",
+        customer: "/save-customer",
+        user: "/save-user",
+        category: "/save-category",
+        branch: "/save-branch",
+        supplier: "/save-supplier",
+        bankAccount: "/save-bank-account",
+      },
+      get: {
+        products: "/get-products",
+        customers: "/get-customers",
+        users: "/get-users",
+        categories: "/get-categories",
+        branches: "/get-branches",
+        suppliers: "/get-suppliers",
+        bankAccounts: "/get-bank-accounts",
+      },
     },
     timestamp: new Date().toISOString(),
   });
@@ -245,6 +276,7 @@ app.post("/api/webhook/lark", (req, res) => {
   }
 });
 
+// EXISTING SYNC ENDPOINTS
 app.get("/save-order", async (req, res) => {
   try {
     await runOrderSync();
@@ -322,6 +354,72 @@ app.get("/save-user", async (req, res) => {
   }
 });
 
+// NEW SYNC ENDPOINTS
+app.get("/save-category", async (req, res) => {
+  try {
+    await runCategorySync();
+    res.json({
+      success: true,
+      message: "Category synchronization completed",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error during category synchronization",
+      error: error.message,
+    });
+  }
+});
+
+app.get("/save-branch", async (req, res) => {
+  try {
+    await runBranchSync();
+    res.json({
+      success: true,
+      message: "Branch synchronization completed",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error during branch synchronization",
+      error: error.message,
+    });
+  }
+});
+
+app.get("/save-supplier", async (req, res) => {
+  try {
+    await runSupplierSync();
+    res.json({
+      success: true,
+      message: "Supplier synchronization completed",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error during supplier synchronization",
+      error: error.message,
+    });
+  }
+});
+
+app.get("/save-bank-account", async (req, res) => {
+  try {
+    await runBankAccountSync();
+    res.json({
+      success: true,
+      message: "Bank account synchronization completed",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error during bank account synchronization",
+      error: error.message,
+    });
+  }
+});
+
+// EXISTING GET ENDPOINTS
 app.get("/get-products", async (req, res) => {
   try {
     const products = await getProducts();
@@ -364,6 +462,63 @@ app.get("/get-users", async (req, res) => {
   }
 });
 
+// NEW GET ENDPOINTS
+app.get("/get-categories", async (req, res) => {
+  try {
+    const categories = await getCategories();
+    res.json(categories);
+  } catch (error) {
+    console.log("Cannot get categories", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching categories",
+      error: error.message,
+    });
+  }
+});
+
+app.get("/get-branches", async (req, res) => {
+  try {
+    const branches = await getBranches();
+    res.json(branches);
+  } catch (error) {
+    console.log("Cannot get branches", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching branches",
+      error: error.message,
+    });
+  }
+});
+
+app.get("/get-suppliers", async (req, res) => {
+  try {
+    const suppliers = await getSuppliers();
+    res.json(suppliers);
+  } catch (error) {
+    console.log("Cannot get suppliers", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching suppliers",
+      error: error.message,
+    });
+  }
+});
+
+app.get("/get-bank-accounts", async (req, res) => {
+  try {
+    const bankAccounts = await getBankAccounts();
+    res.json(bankAccounts);
+  } catch (error) {
+    console.log("Cannot get bank accounts", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching bank accounts",
+      error: error.message,
+    });
+  }
+});
+
 // Initialize and start the server
 async function startServer() {
   try {
@@ -396,6 +551,7 @@ async function startServer() {
 
       const historicalDaysAgo = parseInt(process.env.INITIAL_SCAN_DAYS || "7");
 
+      // Get sync status for all entities
       const orderSyncStatus =
         await require("../src/db/orderService").getSyncStatus();
       const invoiceSyncStatus =
@@ -406,7 +562,39 @@ async function startServer() {
         await require("../src/db/productService").getSyncStatus();
       const userSyncStatus =
         await require("../src/db/userService").getSyncStatus();
+      const categorySyncStatus =
+        await require("../src/db/categoryService").getSyncStatus();
+      const branchSyncStatus =
+        await require("../src/db/branchService").getSyncStatus();
+      const supplierSyncStatus =
+        await require("../src/db/supplierService").getSyncStatus();
+      const bankAccountSyncStatus =
+        await require("../src/db/backAccountService").getSyncStatus();
 
+      // Sync foundation data first (categories, branches, suppliers, bank accounts)
+      console.log("=== SYNCING FOUNDATION DATA ===");
+
+      if (!categorySyncStatus.historicalCompleted) {
+        console.log("Syncing categories...");
+        await runCategorySync();
+      }
+
+      if (!branchSyncStatus.historicalCompleted) {
+        console.log("Syncing branches...");
+        await runBranchSync();
+      }
+
+      if (!supplierSyncStatus.historicalCompleted) {
+        console.log("Syncing suppliers...");
+        await runSupplierSync();
+      }
+
+      if (!bankAccountSyncStatus.historicalCompleted) {
+        console.log("Syncing bank accounts...");
+        await runBankAccountSync();
+      }
+
+      // Sync users first since they're referenced by other entities
       if (!userSyncStatus.historicalCompleted) {
         console.log(
           `Syncing ${historicalDaysAgo} days of historical user data...`
@@ -415,6 +603,9 @@ async function startServer() {
           historicalDaysAgo
         );
       }
+
+      // Sync transactional data
+      console.log("=== SYNCING TRANSACTIONAL DATA ===");
 
       if (!orderSyncStatus.historicalCompleted) {
         console.log(
@@ -452,18 +643,29 @@ async function startServer() {
         );
       }
 
-      // Now run the current data sync
-      await runUserSync();
-      await runOrderSync();
-      await runInvoiceSync();
-      await runCustomerSync();
-      await runProductSync();
+      // Now run the current data sync for all entities
+      console.log("=== RUNNING CURRENT SYNC ===");
+      await Promise.all([
+        runCategorySync(),
+        runBranchSync(),
+        runSupplierSync(),
+        runBankAccountSync(),
+        runUserSync(),
+        runOrderSync(),
+        runInvoiceSync(),
+        runCustomerSync(),
+        runProductSync(),
+      ]);
 
       const runAllSyncs = async () => {
         try {
           console.log(`[${new Date().toISOString()}] Starting sync cycle...`);
 
           await Promise.all([
+            runCategorySync(),
+            runBranchSync(),
+            runSupplierSync(),
+            runBankAccountSync(),
             runUserSync(),
             runOrderSync(),
             runInvoiceSync(),
