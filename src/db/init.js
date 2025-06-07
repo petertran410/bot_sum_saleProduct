@@ -59,7 +59,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // Create suppliers table
+    // Create suppliers table - Fixed: escaped 'groups' keyword with backticks
     await connection.query(`
       CREATE TABLE IF NOT EXISTS suppliers (
         id BIGINT PRIMARY KEY,
@@ -73,7 +73,7 @@ async function initializeDatabase() {
         organization VARCHAR(255),
         taxCode VARCHAR(50),
         comments TEXT,
-        groups TEXT,
+        \`groups\` TEXT,
         isActive BOOLEAN DEFAULT TRUE,
         modifiedDate DATETIME,
         createdDate DATETIME,

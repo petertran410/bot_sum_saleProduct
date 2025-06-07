@@ -162,10 +162,11 @@ async function saveSupplier(supplier, connection = null) {
 
     const jsonData = JSON.stringify(supplier);
 
+    // Fixed: Use backticks around 'groups' column name since it's a reserved keyword
     const query = `
       INSERT INTO suppliers 
         (id, code, name, contactNumber, email, address, locationName, 
-         wardName, organization, taxCode, comments, groups, isActive, 
+         wardName, organization, taxCode, comments, \`groups\`, isActive, 
          modifiedDate, createdDate, retailerId, branchId, createdBy, 
          debt, totalInvoiced, totalInvoicedWithoutReturn, jsonData)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -179,7 +180,7 @@ async function saveSupplier(supplier, connection = null) {
         organization = VALUES(organization),
         taxCode = VALUES(taxCode),
         comments = VALUES(comments),
-        groups = VALUES(groups),
+        \`groups\` = VALUES(\`groups\`),
         isActive = VALUES(isActive),
         modifiedDate = VALUES(modifiedDate),
         debt = VALUES(debt),
