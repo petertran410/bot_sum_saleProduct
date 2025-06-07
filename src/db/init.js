@@ -594,10 +594,6 @@ async function initializeDatabase() {
 
     // Add new entity types to sync_status if they don't exist
     const newEntityTypes = [
-      "categories",
-      "branches",
-      "suppliers",
-      "bank_accounts",
       "transfers",
       "price_books",
       "purchase_orders",

@@ -61,36 +61,21 @@ const receiptSchedulerCurrent = async () => {
   }
 };
 
-const receiptScheduler = async (daysAgo) => {
+// For now, receipts only support current sync since getReceiptsByDate is not implemented in KiotViet API
+const receiptScheduler = async () => {
   try {
-    const receiptsByDate = await require("../src/kiotviet").getReceiptsByDate(
-      daysAgo
-    );
-    let totalSaved = 0;
+    console.log("Starting receipt sync...");
+    const result = await receiptSchedulerCurrent();
 
-    for (const dateData of receiptsByDate) {
-      if (
-        dateData.data &&
-        dateData.data.data &&
-        Array.isArray(dateData.data.data)
-      ) {
-        console.log(
-          `Processing ${dateData.data.data.length} receipts from ${dateData.date}`
-        );
-        const result = await receiptService.saveReceipts(dateData.data.data);
-        totalSaved += result.stats.success;
-      }
+    if (result.success) {
+      console.log("Receipts sync completed successfully");
+    } else {
+      console.error("Error when syncing receipts:", result.error);
     }
 
-    await receiptService.updateSyncStatus(true, new Date());
-    console.log(`Historical receipts data saved: ${totalSaved} receipts total`);
-
-    return {
-      success: true,
-      message: `Saved ${totalSaved} receipts from historical data`,
-    };
+    return result;
   } catch (error) {
-    console.error("Cannot create receiptSchedulerByDate", error);
+    console.error("Cannot sync receipts:", error);
     return { success: false, error: error.message };
   }
 };
