@@ -27,7 +27,6 @@ const { addRecordToCRMBase, getCRMStats, sendTestMessage } = require("./lark");
 
 const app = express();
 const PORT = process.env.PORT || 3690;
-console.log(PORT);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
