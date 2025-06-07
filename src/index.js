@@ -10,6 +10,13 @@ const {
   runBranchSync,
   runSupplierSync,
   runBankAccountSync,
+  // NEW MISSING SYNC FUNCTIONS
+  runTransferSync,
+  runPriceBookSync,
+  runPurchaseOrderSync,
+  runReceiptSync,
+  runReturnSync,
+  runSurchargeSync,
 } = require("./syncKiot/syncKiot");
 
 const {
@@ -20,7 +27,15 @@ const {
   getBranches,
   getSuppliers,
   getBankAccounts,
+  // NEW MISSING API FUNCTIONS
+  getTransfers,
+  getPriceBooks,
+  getPurchaseOrders,
+  getReceipts,
+  getReturns,
+  getSurcharges,
 } = require("./kiotviet");
+
 const { testConnection } = require("./db");
 const { initializeDatabase } = require("./db/init");
 const { addRecordToCRMBase, getCRMStats, sendTestMessage } = require("./lark");
@@ -73,6 +88,13 @@ app.get("/", (req, res) => {
         branch: "/save-branch",
         supplier: "/save-supplier",
         bankAccount: "/save-bank-account",
+        // NEW MISSING SYNC ENDPOINTS
+        transfer: "/save-transfer",
+        priceBook: "/save-price-book",
+        purchaseOrder: "/save-purchase-order",
+        receipt: "/save-receipt",
+        return: "/save-return",
+        surcharge: "/save-surcharge",
       },
       get: {
         products: "/get-products",
@@ -82,6 +104,13 @@ app.get("/", (req, res) => {
         branches: "/get-branches",
         suppliers: "/get-suppliers",
         bankAccounts: "/get-bank-accounts",
+        // NEW MISSING GET ENDPOINTS
+        transfers: "/get-transfers",
+        priceBooks: "/get-price-books",
+        purchaseOrders: "/get-purchase-orders",
+        receipts: "/get-receipts",
+        returns: "/get-returns",
+        surcharges: "/get-surcharges",
       },
     },
     timestamp: new Date().toISOString(),
@@ -525,29 +554,16 @@ async function startServer() {
     const dbConnected = await testConnection();
 
     if (!dbConnected) {
-      console.error(
-        "Failed to connect to database. Please check your database configuration."
-      );
       process.exit(1);
     }
 
     const dbInitialized = await initializeDatabase();
 
     if (!dbInitialized) {
-      console.error("Failed to initialize database schema.");
       process.exit(1);
     }
-    console.log("Database schema initialization completed.");
 
     const server = app.listen(PORT, async () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`📊 CRM Health: http://localhost:${PORT}/api/health`);
-      console.log(
-        `📝 CRM Registration: http://localhost:${PORT}/api/submit-registration`
-      );
-      console.log(`📈 CRM Stats: http://localhost:${PORT}/api/crm/stats`);
-      console.log(`🔧 LarkSuite Test: http://localhost:${PORT}/api/test-lark`);
-
       const historicalDaysAgo = parseInt(process.env.INITIAL_SCAN_DAYS || "7");
 
       // Get sync status for all entities
@@ -570,80 +586,53 @@ async function startServer() {
       const bankAccountSyncStatus =
         await require("../src/db/backAccountService").getSyncStatus();
 
-      // Sync foundation data first (categories, branches, suppliers, bank accounts)
-      console.log("=== SYNCING FOUNDATION DATA ===");
-
       if (!categorySyncStatus.historicalCompleted) {
-        console.log("Syncing categories...");
         await runCategorySync();
       }
 
       if (!branchSyncStatus.historicalCompleted) {
-        console.log("Syncing branches...");
         await runBranchSync();
       }
 
       if (!supplierSyncStatus.historicalCompleted) {
-        console.log("Syncing suppliers...");
         await runSupplierSync();
       }
 
       if (!bankAccountSyncStatus.historicalCompleted) {
-        console.log("Syncing bank accounts...");
         await runBankAccountSync();
       }
 
       // Sync users first since they're referenced by other entities
       if (!userSyncStatus.historicalCompleted) {
-        console.log(
-          `Syncing ${historicalDaysAgo} days of historical user data...`
-        );
         await require("../scheduler/userScheduler").userScheduler(
           historicalDaysAgo
         );
       }
 
-      // Sync transactional data
-      console.log("=== SYNCING TRANSACTIONAL DATA ===");
-
       if (!orderSyncStatus.historicalCompleted) {
-        console.log(
-          `Syncing ${historicalDaysAgo} days of historical order data...`
-        );
         await require("../scheduler/orderScheduler").orderScheduler(
           historicalDaysAgo
         );
       }
 
       if (!invoiceSyncStatus.historicalCompleted) {
-        console.log(
-          `Syncing ${historicalDaysAgo} days of historical invoice data...`
-        );
         await require("../scheduler/invoiceScheduler").invoiceScheduler(
           historicalDaysAgo
         );
       }
 
       if (!customerSyncStatus.historicalCompleted) {
-        console.log(
-          `Syncing ${historicalDaysAgo} days of historical customer data...`
-        );
         await require("../scheduler/customerScheduler").customerScheduler(
           historicalDaysAgo
         );
       }
 
       if (!productSyncStatus.historicalCompleted) {
-        console.log(
-          `Syncing ${historicalDaysAgo} days of historical product data...`
-        );
         await require("../scheduler/productScheduler").productScheduler(
           historicalDaysAgo
         );
       }
 
-      // Now run the current data sync for all entities
-      console.log("=== RUNNING CURRENT SYNC ===");
       await Promise.all([
         runCategorySync(),
         runBranchSync(),
@@ -654,12 +643,17 @@ async function startServer() {
         runInvoiceSync(),
         runCustomerSync(),
         runProductSync(),
+        // NEW MISSING SYNCS
+        runTransferSync(),
+        runPriceBookSync(),
+        runPurchaseOrderSync(),
+        runReceiptSync(),
+        runReturnSync(),
+        runSurchargeSync(),
       ]);
 
       const runAllSyncs = async () => {
         try {
-          console.log(`[${new Date().toISOString()}] Starting sync cycle...`);
-
           await Promise.all([
             runCategorySync(),
             runBranchSync(),
@@ -670,9 +664,14 @@ async function startServer() {
             runInvoiceSync(),
             runCustomerSync(),
             runProductSync(),
+            // NEW MISSING SYNCS
+            runTransferSync(),
+            runPriceBookSync(),
+            runPurchaseOrderSync(),
+            runReceiptSync(),
+            runReturnSync(),
+            runSurchargeSync(),
           ]);
-
-          console.log(`[${new Date().toISOString()}] Sync cycle completed.`);
         } catch (error) {
           console.error("Error during simultaneous sync:", error);
         }
@@ -697,5 +696,4 @@ async function startServer() {
   }
 }
 
-// Start the server
 startServer();

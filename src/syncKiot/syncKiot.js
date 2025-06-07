@@ -1,15 +1,26 @@
+// src/syncKiot/syncKiot.js - Updated with all missing sync functions
+
 const orderService = require("../db/orderService");
 const invoiceService = require("../db/invoiceService");
 const productService = require("../db/productService");
 const customerService = require("../db/customerService");
 const userService = require("../db/userService");
 
-// New services
+// Existing services
 const categoryService = require("../db/categoryService");
 const branchService = require("../db/branchService");
 const supplierService = require("../db/supplierService");
 const bankAccountService = require("../db/backAccountService");
 
+// NEW MISSING SERVICES
+const transferService = require("../db/transferService");
+const priceBookService = require("../db/priceBookService");
+const purchaseOrderService = require("../db/purchaseOrderService");
+const receiptService = require("../db/receiptService");
+const returnService = require("../db/returnService");
+const surchargeService = require("../db/surchargeService");
+
+// Existing schedulers
 const {
   orderScheduler,
   orderSchedulerCurrent,
@@ -35,7 +46,6 @@ const {
   userSchedulerCurrent,
 } = require("../../scheduler/userScheduler");
 
-// New schedulers
 const {
   categoryScheduler,
   categorySchedulerCurrent,
@@ -56,6 +66,38 @@ const {
   bankAccountSchedulerCurrent,
 } = require("../../scheduler/bankAccountScheduler");
 
+// NEW MISSING SCHEDULERS
+const {
+  transferScheduler,
+  transferSchedulerCurrent,
+} = require("../../scheduler/transferScheduler");
+
+const {
+  priceBookScheduler,
+  priceBookSchedulerCurrent,
+} = require("../../scheduler/priceBookScheduler");
+
+const {
+  purchaseOrderScheduler,
+  purchaseOrderSchedulerCurrent,
+} = require("../../scheduler/purchaseOrderScheduler");
+
+const {
+  receiptScheduler,
+  receiptSchedulerCurrent,
+} = require("../../scheduler/receiptScheduler");
+
+const {
+  returnScheduler,
+  returnSchedulerCurrent,
+} = require("../../scheduler/returnScheduler");
+
+const {
+  surchargeScheduler,
+  surchargeSchedulerCurrent,
+} = require("../../scheduler/surchargeScheduler");
+
+// EXISTING SYNC FUNCTIONS (keep as is)
 const runOrderSync = async () => {
   try {
     const syncStatus = await orderService.getSyncStatus();
@@ -216,8 +258,6 @@ const runUserSync = async () => {
   }
 };
 
-// NEW SYNC FUNCTIONS
-
 const runCategorySync = async () => {
   try {
     const syncStatus = await categoryService.getSyncStatus();
@@ -350,15 +390,230 @@ const runBankAccountSync = async () => {
   }
 };
 
+// NEW MISSING SYNC FUNCTIONS
+
+const runTransferSync = async () => {
+  try {
+    const syncStatus = await transferService.getSyncStatus();
+
+    if (!syncStatus.historicalCompleted) {
+      console.log("Starting historical transfers data sync...");
+      const result = await transferScheduler(160);
+
+      if (result.success) {
+        console.log("Historical transfers data has been saved to database");
+      } else {
+        console.error(
+          "Error when saving historical transfers data:",
+          result.error
+        );
+      }
+    } else {
+      console.log("Running current transfers sync...");
+      const currentResult = await transferSchedulerCurrent();
+
+      if (currentResult.success) {
+        console.log(
+          `Current transfers data has been added: ${currentResult.savedCount} transfers`
+        );
+      } else {
+        console.error(
+          "Error when adding current transfers:",
+          currentResult.error
+        );
+      }
+    }
+  } catch (error) {
+    console.error("Cannot get and save data transfers:", error);
+  }
+};
+
+const runPriceBookSync = async () => {
+  try {
+    const syncStatus = await priceBookService.getSyncStatus();
+
+    if (!syncStatus.historicalCompleted) {
+      console.log("Starting price book sync...");
+      const result = await priceBookScheduler();
+
+      if (result.success) {
+        console.log("Price books data has been saved to database");
+      } else {
+        console.error("Error when saving price books data:", result.error);
+      }
+    } else {
+      console.log("Running current price books sync...");
+      const currentResult = await priceBookSchedulerCurrent();
+
+      if (currentResult.success) {
+        console.log(
+          `Current price books data has been added: ${currentResult.savedCount} price books`
+        );
+      } else {
+        console.error(
+          "Error when adding current price books:",
+          currentResult.error
+        );
+      }
+    }
+  } catch (error) {
+    console.error("Cannot get and save data price books:", error);
+  }
+};
+
+const runPurchaseOrderSync = async () => {
+  try {
+    const syncStatus = await purchaseOrderService.getSyncStatus();
+
+    if (!syncStatus.historicalCompleted) {
+      console.log("Starting historical purchase orders data sync...");
+      const result = await purchaseOrderScheduler(160);
+
+      if (result.success) {
+        console.log(
+          "Historical purchase orders data has been saved to database"
+        );
+      } else {
+        console.error(
+          "Error when saving historical purchase orders data:",
+          result.error
+        );
+      }
+    } else {
+      console.log("Running current purchase orders sync...");
+      const currentResult = await purchaseOrderSchedulerCurrent();
+
+      if (currentResult.success) {
+        console.log(
+          `Current purchase orders data has been added: ${currentResult.savedCount} purchase orders`
+        );
+      } else {
+        console.error(
+          "Error when adding current purchase orders:",
+          currentResult.error
+        );
+      }
+    }
+  } catch (error) {
+    console.error("Cannot get and save data purchase orders:", error);
+  }
+};
+
+const runReceiptSync = async () => {
+  try {
+    const syncStatus = await receiptService.getSyncStatus();
+
+    if (!syncStatus.historicalCompleted) {
+      console.log("Starting receipt sync...");
+      const result = await receiptScheduler();
+
+      if (result.success) {
+        console.log("Receipts data has been saved to database");
+      } else {
+        console.error("Error when saving receipts data:", result.error);
+      }
+    } else {
+      console.log("Running current receipts sync...");
+      const currentResult = await receiptSchedulerCurrent();
+
+      if (currentResult.success) {
+        console.log(
+          `Current receipts data has been added: ${currentResult.savedCount} receipts`
+        );
+      } else {
+        console.error(
+          "Error when adding current receipts:",
+          currentResult.error
+        );
+      }
+    }
+  } catch (error) {
+    console.error("Cannot get and save data receipts:", error);
+  }
+};
+
+const runReturnSync = async () => {
+  try {
+    const syncStatus = await returnService.getSyncStatus();
+
+    if (!syncStatus.historicalCompleted) {
+      console.log("Starting return sync...");
+      const result = await returnScheduler();
+
+      if (result.success) {
+        console.log("Returns data has been saved to database");
+      } else {
+        console.error("Error when saving returns data:", result.error);
+      }
+    } else {
+      console.log("Running current returns sync...");
+      const currentResult = await returnSchedulerCurrent();
+
+      if (currentResult.success) {
+        console.log(
+          `Current returns data has been added: ${currentResult.savedCount} returns`
+        );
+      } else {
+        console.error(
+          "Error when adding current returns:",
+          currentResult.error
+        );
+      }
+    }
+  } catch (error) {
+    console.error("Cannot get and save data returns:", error);
+  }
+};
+
+const runSurchargeSync = async () => {
+  try {
+    const syncStatus = await surchargeService.getSyncStatus();
+
+    if (!syncStatus.historicalCompleted) {
+      console.log("Starting surcharge sync...");
+      const result = await surchargeScheduler();
+
+      if (result.success) {
+        console.log("Surcharges data has been saved to database");
+      } else {
+        console.error("Error when saving surcharges data:", result.error);
+      }
+    } else {
+      console.log("Running current surcharges sync...");
+      const currentResult = await surchargeSchedulerCurrent();
+
+      if (currentResult.success) {
+        console.log(
+          `Current surcharges data has been added: ${currentResult.savedCount} surcharges`
+        );
+      } else {
+        console.error(
+          "Error when adding current surcharges:",
+          currentResult.error
+        );
+      }
+    }
+  } catch (error) {
+    console.error("Cannot get and save data surcharges:", error);
+  }
+};
+
 module.exports = {
+  // Existing functions
   runOrderSync,
   runInvoiceSync,
   runProductSync,
   runCustomerSync,
   runUserSync,
-  // New sync functions
   runCategorySync,
   runBranchSync,
   runSupplierSync,
   runBankAccountSync,
+  // New missing functions
+  runTransferSync,
+  runPriceBookSync,
+  runPurchaseOrderSync,
+  runReceiptSync,
+  runReturnSync,
+  runSurchargeSync,
 };

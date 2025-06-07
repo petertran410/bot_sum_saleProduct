@@ -427,12 +427,183 @@ async function initializeDatabase() {
       )
     `);
 
+    await connection.query(`
+  CREATE TABLE IF NOT EXISTS transfers (
+    id BIGINT PRIMARY KEY,
+    code VARCHAR(50) NOT NULL,
+    transferDate DATETIME,
+    fromBranchId INT,
+    fromBranchName VARCHAR(255),
+    toBranchId INT,
+    toBranchName VARCHAR(255),
+    transferById BIGINT,
+    transferByName VARCHAR(255),
+    status INT,
+    statusValue VARCHAR(50),
+    description TEXT,
+    createdDate DATETIME,
+    modifiedDate DATETIME,
+    retailerId INT,
+    jsonData JSON,
+    UNIQUE INDEX (code),
+    INDEX idx_transferById (transferById),
+    FOREIGN KEY (transferById) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (fromBranchId) REFERENCES branches(id) ON DELETE SET NULL,
+    FOREIGN KEY (toBranchId) REFERENCES branches(id) ON DELETE SET NULL
+  )
+`);
+
+    await connection.query(`
+  CREATE TABLE IF NOT EXISTS transfer_details (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    transferId BIGINT,
+    productId BIGINT,
+    productCode VARCHAR(50),
+    productName VARCHAR(255),
+    quantity DECIMAL(15,2),
+    transferQuantity DECIMAL(15,2),
+    cost DECIMAL(15,2),
+    note TEXT,
+    FOREIGN KEY (transferId) REFERENCES transfers(id) ON DELETE CASCADE
+  )
+`);
+
+    // RECEIPTS TABLES
+    await connection.query(`
+  CREATE TABLE IF NOT EXISTS receipts (
+    id BIGINT PRIMARY KEY,
+    code VARCHAR(50) NOT NULL,
+    receiptDate DATETIME,
+    branchId INT,
+    branchName VARCHAR(255),
+    supplierId BIGINT,
+    supplierName VARCHAR(255),
+    createdById BIGINT,
+    createdByName VARCHAR(255),
+    status INT,
+    statusValue VARCHAR(50),
+    total DECIMAL(15,2),
+    totalPayment DECIMAL(15,2),
+    discount DECIMAL(15,2),
+    description TEXT,
+    retailerId INT,
+    createdDate DATETIME,
+    modifiedDate DATETIME,
+    jsonData JSON,
+    UNIQUE INDEX (code),
+    INDEX idx_createdById (createdById),
+    INDEX idx_supplierId (supplierId),
+    FOREIGN KEY (createdById) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (branchId) REFERENCES branches(id) ON DELETE SET NULL,
+    FOREIGN KEY (supplierId) REFERENCES suppliers(id) ON DELETE SET NULL
+  )
+`);
+
+    await connection.query(`
+  CREATE TABLE IF NOT EXISTS receipt_details (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    receiptId BIGINT,
+    productId BIGINT,
+    productCode VARCHAR(50),
+    productName VARCHAR(255),
+    quantity DECIMAL(15,2),
+    price DECIMAL(15,2),
+    discount DECIMAL(15,2),
+    discountRatio DECIMAL(5,2),
+    note TEXT,
+    FOREIGN KEY (receiptId) REFERENCES receipts(id) ON DELETE CASCADE
+  )
+`);
+
+    // RETURNS TABLES
+    await connection.query(`
+  CREATE TABLE IF NOT EXISTS returns (
+    id BIGINT PRIMARY KEY,
+    code VARCHAR(50) NOT NULL,
+    returnDate DATETIME,
+    branchId INT,
+    branchName VARCHAR(255),
+    customerId BIGINT,
+    customerName VARCHAR(255),
+    createdById BIGINT,
+    createdByName VARCHAR(255),
+    status INT,
+    statusValue VARCHAR(50),
+    total DECIMAL(15,2),
+    totalPayment DECIMAL(15,2),
+    discount DECIMAL(15,2),
+    description TEXT,
+    invoiceId BIGINT,
+    invoiceCode VARCHAR(50),
+    retailerId INT,
+    createdDate DATETIME,
+    modifiedDate DATETIME,
+    jsonData JSON,
+    UNIQUE INDEX (code),
+    INDEX idx_createdById (createdById),
+    INDEX idx_customerId (customerId),
+    INDEX idx_invoiceId (invoiceId),
+    FOREIGN KEY (createdById) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (branchId) REFERENCES branches(id) ON DELETE SET NULL,
+    FOREIGN KEY (customerId) REFERENCES customers(id) ON DELETE SET NULL,
+    FOREIGN KEY (invoiceId) REFERENCES invoices(id) ON DELETE SET NULL
+  )
+`);
+
+    await connection.query(`
+  CREATE TABLE IF NOT EXISTS return_details (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    returnId BIGINT,
+    productId BIGINT,
+    productCode VARCHAR(50),
+    productName VARCHAR(255),
+    quantity DECIMAL(15,2),
+    price DECIMAL(15,2),
+    discount DECIMAL(15,2),
+    discountRatio DECIMAL(5,2),
+    note TEXT,
+    returnReason VARCHAR(255),
+    FOREIGN KEY (returnId) REFERENCES returns(id) ON DELETE CASCADE
+  )
+`);
+
+    // SURCHARGES TABLE
+    await connection.query(`
+  CREATE TABLE IF NOT EXISTS surcharges (
+    id BIGINT PRIMARY KEY,
+    code VARCHAR(50) NOT NULL,
+    surchargeDate DATETIME,
+    branchId INT,
+    branchName VARCHAR(255),
+    createdById BIGINT,
+    createdByName VARCHAR(255),
+    type INT,
+    typeValue VARCHAR(50),
+    amount DECIMAL(15,2),
+    description TEXT,
+    retailerId INT,
+    createdDate DATETIME,
+    modifiedDate DATETIME,
+    jsonData JSON,
+    UNIQUE INDEX (code),
+    INDEX idx_createdById (createdById),
+    FOREIGN KEY (createdById) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (branchId) REFERENCES branches(id) ON DELETE SET NULL
+  )
+`);
+
     // Add new entity types to sync_status if they don't exist
     const newEntityTypes = [
       "categories",
       "branches",
       "suppliers",
       "bank_accounts",
+      "transfers",
+      "price_books",
+      "purchase_orders",
+      "receipts",
+      "returns",
+      "surcharges",
     ];
 
     for (const entityType of newEntityTypes) {
@@ -443,10 +614,8 @@ async function initializeDatabase() {
 
       if (rows[0].count === 0) {
         await connection.query(
-          `
-          INSERT INTO sync_status (entity_type, last_sync, historical_completed) 
-            VALUES (?, NULL, FALSE)
-        `,
+          `INSERT INTO sync_status (entity_type, last_sync, historical_completed) 
+       VALUES (?, NULL, FALSE)`,
           [entityType]
         );
       }
