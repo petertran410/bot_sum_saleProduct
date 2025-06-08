@@ -1146,11 +1146,10 @@ const getPriceBooks = async () => {
     while (hasMoreData) {
       const response = await makeApiRequest({
         method: "GET",
-        url: `${KIOTVIET_BASE_URL}/pricebook`, // Fixed: singular 'pricebook'
+        url: `${KIOTVIET_BASE_URL}/pricebooks`,
         params: {
           pageSize: pageSize,
           currentItem: currentItem,
-          // Fixed: Simplified parameters based on API documentation
           includePriceBookBranch: true,
           includePriceBookCustomerGroups: true,
           includePriceBookUsers: true,
