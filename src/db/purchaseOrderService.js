@@ -1,5 +1,10 @@
 const { getPool } = require("../db");
 
+// HELPER FUNCTION: Convert undefined to null for MySQL2 compatibility
+function convertUndefinedToNull(value) {
+  return value === undefined ? null : value;
+}
+
 // Add data validation and sanitization
 function validateAndSanitizePurchaseOrder(purchaseOrder) {
   return {
@@ -25,6 +30,55 @@ function validateAndSanitizePurchaseOrder(purchaseOrder) {
       ? 0
       : Number(purchaseOrder.discount),
   };
+}
+
+// FIXED: Function to check if foreign key references exist
+async function validateForeignKeys(purchaseOrder, connection) {
+  const validatedData = { ...purchaseOrder };
+
+  // Check if branchId exists
+  if (validatedData.branchId) {
+    const [branchExists] = await connection.execute(
+      "SELECT id FROM branches WHERE id = ?",
+      [validatedData.branchId]
+    );
+    if (branchExists.length === 0) {
+      console.warn(
+        `Branch ${validatedData.branchId} not found, setting to null`
+      );
+      validatedData.branchId = null;
+    }
+  }
+
+  // Check if supplierId exists
+  if (validatedData.supplierId) {
+    const [supplierExists] = await connection.execute(
+      "SELECT id FROM suppliers WHERE id = ?",
+      [validatedData.supplierId]
+    );
+    if (supplierExists.length === 0) {
+      console.warn(
+        `Supplier ${validatedData.supplierId} not found, setting to null`
+      );
+      validatedData.supplierId = null;
+    }
+  }
+
+  // Check if createdById exists
+  if (validatedData.createdById) {
+    const [userExists] = await connection.execute(
+      "SELECT id FROM users WHERE id = ?",
+      [validatedData.createdById]
+    );
+    if (userExists.length === 0) {
+      console.warn(
+        `User ${validatedData.createdById} not found, setting to null`
+      );
+      validatedData.createdById = null;
+    }
+  }
+
+  return validatedData;
 }
 
 async function savePurchaseOrders(purchaseOrders) {
@@ -117,7 +171,7 @@ async function savePurchaseOrders(purchaseOrders) {
   };
 }
 
-// Update savePurchaseOrder to accept connection parameter
+// FIXED: Update savePurchaseOrder to accept connection parameter and validate foreign keys
 async function savePurchaseOrder(purchaseOrder, connection = null) {
   const shouldReleaseConnection = !connection;
 
@@ -127,27 +181,58 @@ async function savePurchaseOrder(purchaseOrder, connection = null) {
   }
 
   try {
-    const {
-      id,
-      code,
-      purchaseDate,
-      expectedDeliveryDate = null,
-      branchId = null,
-      branchName = null,
-      supplierId = null,
-      supplierName = null,
-      createdById = null,
-      createdByName = null,
-      status = null,
-      statusValue = null,
-      total = null,
-      totalPayment = null,
-      discount = null,
-      description = null,
-      retailerId,
-      createdDate = null,
-      modifiedDate = null,
-    } = purchaseOrder;
+    // FIXED: Validate foreign keys before insertion
+    const validatedPurchaseOrder = await validateForeignKeys(
+      purchaseOrder,
+      connection
+    );
+
+    // FIXED: Extract and convert undefined to null
+    const id = convertUndefinedToNull(validatedPurchaseOrder.id);
+    const code = convertUndefinedToNull(validatedPurchaseOrder.code) || "";
+    const purchaseDate = convertUndefinedToNull(
+      validatedPurchaseOrder.purchaseDate
+    );
+    const expectedDeliveryDate = convertUndefinedToNull(
+      validatedPurchaseOrder.expectedDeliveryDate
+    );
+    const branchId = convertUndefinedToNull(validatedPurchaseOrder.branchId);
+    const branchName = convertUndefinedToNull(
+      validatedPurchaseOrder.branchName
+    );
+    const supplierId = convertUndefinedToNull(
+      validatedPurchaseOrder.supplierId
+    );
+    const supplierName = convertUndefinedToNull(
+      validatedPurchaseOrder.supplierName
+    );
+    const createdById = convertUndefinedToNull(
+      validatedPurchaseOrder.createdById
+    );
+    const createdByName = convertUndefinedToNull(
+      validatedPurchaseOrder.createdByName
+    );
+    const status = convertUndefinedToNull(validatedPurchaseOrder.status);
+    const statusValue = convertUndefinedToNull(
+      validatedPurchaseOrder.statusValue
+    );
+    const total = convertUndefinedToNull(validatedPurchaseOrder.total);
+    const totalPayment = convertUndefinedToNull(
+      validatedPurchaseOrder.totalPayment
+    );
+    const discount = convertUndefinedToNull(validatedPurchaseOrder.discount);
+    const description = convertUndefinedToNull(
+      validatedPurchaseOrder.description
+    );
+    const retailerId = convertUndefinedToNull(
+      validatedPurchaseOrder.retailerId
+    );
+    const createdDate = convertUndefinedToNull(
+      validatedPurchaseOrder.createdDate
+    );
+    const modifiedDate = convertUndefinedToNull(
+      validatedPurchaseOrder.modifiedDate
+    );
 
     const jsonData = JSON.stringify(purchaseOrder);
 
@@ -217,15 +302,15 @@ async function savePurchaseOrder(purchaseOrder, connection = null) {
 
         await connection.execute(detailQuery, [
           id,
-          detail.productId,
-          detail.productCode,
-          detail.productName,
-          detail.quantity || 0,
-          detail.price || 0,
-          detail.discount || 0,
-          detail.discountRatio || 0,
-          detail.note || null,
-          detail.receivedQuantity || 0,
+          convertUndefinedToNull(detail.productId),
+          convertUndefinedToNull(detail.productCode),
+          convertUndefinedToNull(detail.productName),
+          convertUndefinedToNull(detail.quantity) || 0,
+          convertUndefinedToNull(detail.price) || 0,
+          convertUndefinedToNull(detail.discount) || 0,
+          convertUndefinedToNull(detail.discountRatio) || 0,
+          convertUndefinedToNull(detail.note),
+          convertUndefinedToNull(detail.receivedQuantity) || 0,
         ]);
       }
     }
@@ -246,14 +331,14 @@ async function savePurchaseOrder(purchaseOrder, connection = null) {
         `;
 
         await connection.execute(paymentQuery, [
-          payment.id,
+          convertUndefinedToNull(payment.id),
           id,
-          payment.amount || 0,
-          payment.method || null,
-          payment.accountId || null,
-          payment.status || 0,
-          payment.statusValue || null,
-          payment.transDate || null,
+          convertUndefinedToNull(payment.amount) || 0,
+          convertUndefinedToNull(payment.method),
+          convertUndefinedToNull(payment.accountId),
+          convertUndefinedToNull(payment.status) || 0,
+          convertUndefinedToNull(payment.statusValue),
+          convertUndefinedToNull(payment.transDate),
         ]);
       }
     }

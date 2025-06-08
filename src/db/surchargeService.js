@@ -1,5 +1,10 @@
-// src/db/surchargeService.js - FIXED VERSION
+// src/db/surchargeService.js - FIXED VERSION with foreign key validation
 const { getPool } = require("../db");
+
+// HELPER FUNCTION: Convert undefined to null for MySQL2 compatibility
+function convertUndefinedToNull(value) {
+  return value === undefined ? null : value;
+}
 
 // Add data validation and sanitization
 function validateAndSanitizeSurcharge(surcharge) {
@@ -17,6 +22,41 @@ function validateAndSanitizeSurcharge(surcharge) {
       : null,
     amount: isNaN(Number(surcharge.amount)) ? 0 : Number(surcharge.amount),
   };
+}
+
+// FIXED: Function to check if foreign key references exist
+async function validateForeignKeys(surcharge, connection) {
+  const validatedData = { ...surcharge };
+
+  // Check if branchId exists
+  if (validatedData.branchId) {
+    const [branchExists] = await connection.execute(
+      "SELECT id FROM branches WHERE id = ?",
+      [validatedData.branchId]
+    );
+    if (branchExists.length === 0) {
+      console.warn(
+        `Branch ${validatedData.branchId} not found, setting to null`
+      );
+      validatedData.branchId = null;
+    }
+  }
+
+  // Check if createdById exists
+  if (validatedData.createdById) {
+    const [userExists] = await connection.execute(
+      "SELECT id FROM users WHERE id = ?",
+      [validatedData.createdById]
+    );
+    if (userExists.length === 0) {
+      console.warn(
+        `User ${validatedData.createdById} not found, setting to null`
+      );
+      validatedData.createdById = null;
+    }
+  }
+
+  return validatedData;
 }
 
 async function saveSurcharges(surcharges) {
@@ -105,12 +145,7 @@ async function saveSurcharges(surcharges) {
   };
 }
 
-// FIXED: Convert undefined to null
-function convertUndefinedToNull(value) {
-  return value === undefined ? null : value;
-}
-
-// Update saveSurcharge to accept connection parameter
+// FIXED: Update saveSurcharge to accept connection parameter and validate foreign keys
 async function saveSurcharge(surcharge, connection = null) {
   const shouldReleaseConnection = !connection;
 
@@ -120,21 +155,30 @@ async function saveSurcharge(surcharge, connection = null) {
   }
 
   try {
+    // FIXED: Validate foreign keys before insertion
+    const validatedSurcharge = await validateForeignKeys(surcharge, connection);
+
     // FIXED: Extract and convert undefined to null
-    const id = convertUndefinedToNull(surcharge.id);
-    const code = convertUndefinedToNull(surcharge.code) || "";
-    const surchargeDate = convertUndefinedToNull(surcharge.surchargeDate);
-    const branchId = convertUndefinedToNull(surcharge.branchId);
-    const branchName = convertUndefinedToNull(surcharge.branchName);
-    const createdById = convertUndefinedToNull(surcharge.createdById);
-    const createdByName = convertUndefinedToNull(surcharge.createdByName);
-    const type = convertUndefinedToNull(surcharge.type);
-    const typeValue = convertUndefinedToNull(surcharge.typeValue);
-    const amount = convertUndefinedToNull(surcharge.amount);
-    const description = convertUndefinedToNull(surcharge.description);
-    const retailerId = convertUndefinedToNull(surcharge.retailerId);
-    const createdDate = convertUndefinedToNull(surcharge.createdDate);
-    const modifiedDate = convertUndefinedToNull(surcharge.modifiedDate);
+    const id = convertUndefinedToNull(validatedSurcharge.id);
+    const code = convertUndefinedToNull(validatedSurcharge.code) || "";
+    const surchargeDate = convertUndefinedToNull(
+      validatedSurcharge.surchargeDate
+    );
+    const branchId = convertUndefinedToNull(validatedSurcharge.branchId);
+    const branchName = convertUndefinedToNull(validatedSurcharge.branchName);
+    const createdById = convertUndefinedToNull(validatedSurcharge.createdById);
+    const createdByName = convertUndefinedToNull(
+      validatedSurcharge.createdByName
+    );
+    const type = convertUndefinedToNull(validatedSurcharge.type);
+    const typeValue = convertUndefinedToNull(validatedSurcharge.typeValue);
+    const amount = convertUndefinedToNull(validatedSurcharge.amount);
+    const description = convertUndefinedToNull(validatedSurcharge.description);
+    const retailerId = convertUndefinedToNull(validatedSurcharge.retailerId);
+    const createdDate = convertUndefinedToNull(validatedSurcharge.createdDate);
+    const modifiedDate = convertUndefinedToNull(
+      validatedSurcharge.modifiedDate
+    );
 
     const jsonData = JSON.stringify(surcharge);
 

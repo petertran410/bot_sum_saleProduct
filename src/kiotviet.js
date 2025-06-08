@@ -1710,6 +1710,109 @@ const getDamageReportsByDate = async (daysAgo) => {
   }
 };
 
+const getCustomerGroups = async () => {
+  try {
+    const token = await getToken();
+    const pageSize = 100;
+    const allCustomerGroups = [];
+    let currentItem = 0;
+    let hasMoreData = true;
+
+    console.log("Fetching current customer groups...");
+
+    while (hasMoreData) {
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/customergroups`,
+        params: {
+          pageSize: pageSize,
+          currentItem: currentItem,
+          orderBy: "name",
+          orderDirection: "ASC",
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allCustomerGroups.push(...response.data.data);
+        currentItem += response.data.data.length;
+        hasMoreData = response.data.data.length === pageSize;
+
+        console.log(
+          `Fetched ${response.data.data.length} customer groups, total: ${allCustomerGroups.length}`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        hasMoreData = false;
+      }
+    }
+
+    return { data: allCustomerGroups, total: allCustomerGroups.length };
+  } catch (error) {
+    console.error("Error getting customer groups:", error.message);
+    throw error;
+  }
+};
+
+// LOCATIONS with pagination
+const getLocations = async () => {
+  try {
+    const token = await getToken();
+    const pageSize = 100;
+    const allLocations = [];
+    let currentItem = 0;
+    let hasMoreData = true;
+
+    console.log("Fetching current locations...");
+
+    while (hasMoreData) {
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/locations`,
+        params: {
+          pageSize: pageSize,
+          currentItem: currentItem,
+          orderBy: "name",
+          orderDirection: "ASC",
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allLocations.push(...response.data.data);
+        currentItem += response.data.data.length;
+        hasMoreData = response.data.data.length === pageSize;
+
+        console.log(
+          `Fetched ${response.data.data.length} locations, total: ${allLocations.length}`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        hasMoreData = false;
+      }
+    }
+
+    return { data: allLocations, total: allLocations.length };
+  } catch (error) {
+    console.error("Error getting locations:", error.message);
+    throw error;
+  }
+};
+
 // Export all functions
 module.exports = {
   // Existing functions
@@ -1740,4 +1843,6 @@ module.exports = {
   getInventoryAdjustmentsByDate,
   getDamageReports,
   getDamageReportsByDate,
+  getCustomerGroups,
+  getLocations,
 };

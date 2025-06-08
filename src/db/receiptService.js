@@ -1,4 +1,4 @@
-// src/db/receiptService.js - FIXED VERSION
+// src/db/receiptService.js - FIXED VERSION with foreign key validation
 const { getPool } = require("../db");
 
 // HELPER FUNCTION: Convert undefined to null for MySQL2 compatibility
@@ -29,6 +29,55 @@ function validateAndSanitizeReceipt(receipt) {
       : Number(receipt.totalPayment),
     discount: isNaN(Number(receipt.discount)) ? 0 : Number(receipt.discount),
   };
+}
+
+// FIXED: Function to check if foreign key references exist
+async function validateForeignKeys(receipt, connection) {
+  const validatedData = { ...receipt };
+
+  // Check if branchId exists
+  if (validatedData.branchId) {
+    const [branchExists] = await connection.execute(
+      "SELECT id FROM branches WHERE id = ?",
+      [validatedData.branchId]
+    );
+    if (branchExists.length === 0) {
+      console.warn(
+        `Branch ${validatedData.branchId} not found, setting to null`
+      );
+      validatedData.branchId = null;
+    }
+  }
+
+  // Check if supplierId exists
+  if (validatedData.supplierId) {
+    const [supplierExists] = await connection.execute(
+      "SELECT id FROM suppliers WHERE id = ?",
+      [validatedData.supplierId]
+    );
+    if (supplierExists.length === 0) {
+      console.warn(
+        `Supplier ${validatedData.supplierId} not found, setting to null`
+      );
+      validatedData.supplierId = null;
+    }
+  }
+
+  // Check if createdById exists
+  if (validatedData.createdById) {
+    const [userExists] = await connection.execute(
+      "SELECT id FROM users WHERE id = ?",
+      [validatedData.createdById]
+    );
+    if (userExists.length === 0) {
+      console.warn(
+        `User ${validatedData.createdById} not found, setting to null`
+      );
+      validatedData.createdById = null;
+    }
+  }
+
+  return validatedData;
 }
 
 async function saveReceipts(receipts) {
@@ -117,7 +166,7 @@ async function saveReceipts(receipts) {
   };
 }
 
-// Update saveReceipt to accept connection parameter
+// FIXED: Update saveReceipt to accept connection parameter and validate foreign keys
 async function saveReceipt(receipt, connection = null) {
   const shouldReleaseConnection = !connection;
 
@@ -127,25 +176,30 @@ async function saveReceipt(receipt, connection = null) {
   }
 
   try {
+    // FIXED: Validate foreign keys before insertion
+    const validatedReceipt = await validateForeignKeys(receipt, connection);
+
     // FIXED: Extract and convert undefined to null
-    const id = convertUndefinedToNull(receipt.id);
-    const code = convertUndefinedToNull(receipt.code) || "";
-    const receiptDate = convertUndefinedToNull(receipt.receiptDate);
-    const branchId = convertUndefinedToNull(receipt.branchId);
-    const branchName = convertUndefinedToNull(receipt.branchName);
-    const supplierId = convertUndefinedToNull(receipt.supplierId);
-    const supplierName = convertUndefinedToNull(receipt.supplierName);
-    const createdById = convertUndefinedToNull(receipt.createdById);
-    const createdByName = convertUndefinedToNull(receipt.createdByName);
-    const status = convertUndefinedToNull(receipt.status);
-    const statusValue = convertUndefinedToNull(receipt.statusValue);
-    const total = convertUndefinedToNull(receipt.total);
-    const totalPayment = convertUndefinedToNull(receipt.totalPayment);
-    const discount = convertUndefinedToNull(receipt.discount);
-    const description = convertUndefinedToNull(receipt.description);
-    const retailerId = convertUndefinedToNull(receipt.retailerId);
-    const createdDate = convertUndefinedToNull(receipt.createdDate);
-    const modifiedDate = convertUndefinedToNull(receipt.modifiedDate);
+    const id = convertUndefinedToNull(validatedReceipt.id);
+    const code = convertUndefinedToNull(validatedReceipt.code) || "";
+    const receiptDate = convertUndefinedToNull(validatedReceipt.receiptDate);
+    const branchId = convertUndefinedToNull(validatedReceipt.branchId);
+    const branchName = convertUndefinedToNull(validatedReceipt.branchName);
+    const supplierId = convertUndefinedToNull(validatedReceipt.supplierId);
+    const supplierName = convertUndefinedToNull(validatedReceipt.supplierName);
+    const createdById = convertUndefinedToNull(validatedReceipt.createdById);
+    const createdByName = convertUndefinedToNull(
+      validatedReceipt.createdByName
+    );
+    const status = convertUndefinedToNull(validatedReceipt.status);
+    const statusValue = convertUndefinedToNull(validatedReceipt.statusValue);
+    const total = convertUndefinedToNull(validatedReceipt.total);
+    const totalPayment = convertUndefinedToNull(validatedReceipt.totalPayment);
+    const discount = convertUndefinedToNull(validatedReceipt.discount);
+    const description = convertUndefinedToNull(validatedReceipt.description);
+    const retailerId = convertUndefinedToNull(validatedReceipt.retailerId);
+    const createdDate = convertUndefinedToNull(validatedReceipt.createdDate);
+    const modifiedDate = convertUndefinedToNull(validatedReceipt.modifiedDate);
 
     const jsonData = JSON.stringify(receipt);
 

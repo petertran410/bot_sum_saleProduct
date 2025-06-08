@@ -795,6 +795,33 @@ async function initializeDatabase() {
       )
     `);
 
+    await connection.query(`
+  CREATE TABLE IF NOT EXISTS locations (
+    id INT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    type VARCHAR(50),
+    parentId INT,
+    level INT DEFAULT 1,
+    code VARCHAR(50),
+    jsonData JSON,
+    INDEX idx_parentId (parentId),
+    INDEX idx_type (type)
+  )
+`);
+
+    await connection.query(`
+  CREATE TABLE IF NOT EXISTS wards (
+    id INT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    locationId INT,
+    type VARCHAR(50),
+    code VARCHAR(50),
+    jsonData JSON,
+    INDEX idx_locationId (locationId),
+    FOREIGN KEY (locationId) REFERENCES locations(id) ON DELETE SET NULL
+  )
+`);
+
     // Add all entity types to sync_status if they don't exist
     const allEntityTypes = [
       "categories",
@@ -814,6 +841,8 @@ async function initializeDatabase() {
       "surcharges",
       "inventory_adjustments",
       "damage_reports",
+      "locations",
+      "wards",
     ];
 
     for (const entityType of allEntityTypes) {
