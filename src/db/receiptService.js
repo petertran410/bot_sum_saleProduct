@@ -1,5 +1,10 @@
-// src/db/receiptService.js
+// src/db/receiptService.js - FIXED VERSION
 const { getPool } = require("../db");
+
+// HELPER FUNCTION: Convert undefined to null for MySQL2 compatibility
+function convertUndefinedToNull(value) {
+  return value === undefined ? null : value;
+}
 
 // Add data validation and sanitization
 function validateAndSanitizeReceipt(receipt) {
@@ -122,26 +127,25 @@ async function saveReceipt(receipt, connection = null) {
   }
 
   try {
-    const {
-      id,
-      code,
-      receiptDate,
-      branchId = null,
-      branchName = null,
-      supplierId = null,
-      supplierName = null,
-      createdById = null,
-      createdByName = null,
-      status = null,
-      statusValue = null,
-      total = null,
-      totalPayment = null,
-      discount = null,
-      description = null,
-      retailerId,
-      createdDate = null,
-      modifiedDate = null,
-    } = receipt;
+    // FIXED: Extract and convert undefined to null
+    const id = convertUndefinedToNull(receipt.id);
+    const code = convertUndefinedToNull(receipt.code) || "";
+    const receiptDate = convertUndefinedToNull(receipt.receiptDate);
+    const branchId = convertUndefinedToNull(receipt.branchId);
+    const branchName = convertUndefinedToNull(receipt.branchName);
+    const supplierId = convertUndefinedToNull(receipt.supplierId);
+    const supplierName = convertUndefinedToNull(receipt.supplierName);
+    const createdById = convertUndefinedToNull(receipt.createdById);
+    const createdByName = convertUndefinedToNull(receipt.createdByName);
+    const status = convertUndefinedToNull(receipt.status);
+    const statusValue = convertUndefinedToNull(receipt.statusValue);
+    const total = convertUndefinedToNull(receipt.total);
+    const totalPayment = convertUndefinedToNull(receipt.totalPayment);
+    const discount = convertUndefinedToNull(receipt.discount);
+    const description = convertUndefinedToNull(receipt.description);
+    const retailerId = convertUndefinedToNull(receipt.retailerId);
+    const createdDate = convertUndefinedToNull(receipt.createdDate);
+    const modifiedDate = convertUndefinedToNull(receipt.modifiedDate);
 
     const jsonData = JSON.stringify(receipt);
 
@@ -205,14 +209,14 @@ async function saveReceipt(receipt, connection = null) {
 
         await connection.execute(detailQuery, [
           id,
-          detail.productId,
-          detail.productCode,
-          detail.productName,
-          detail.quantity || 0,
-          detail.price || 0,
-          detail.discount || 0,
-          detail.discountRatio || 0,
-          detail.note || null,
+          convertUndefinedToNull(detail.productId),
+          convertUndefinedToNull(detail.productCode),
+          convertUndefinedToNull(detail.productName),
+          convertUndefinedToNull(detail.quantity) || 0,
+          convertUndefinedToNull(detail.price) || 0,
+          convertUndefinedToNull(detail.discount) || 0,
+          convertUndefinedToNull(detail.discountRatio) || 0,
+          convertUndefinedToNull(detail.note),
         ]);
       }
     }

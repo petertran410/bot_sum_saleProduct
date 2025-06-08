@@ -1,5 +1,10 @@
-// src/db/returnService.js
+// src/db/returnService.js - FIXED VERSION
 const { getPool } = require("../db");
+
+// HELPER FUNCTION: Convert undefined to null for MySQL2 compatibility
+function convertUndefinedToNull(value) {
+  return value === undefined ? null : value;
+}
 
 // Add data validation and sanitization
 function validateAndSanitizeReturn(returnOrder) {
@@ -124,28 +129,27 @@ async function saveReturn(returnOrder, connection = null) {
   }
 
   try {
-    const {
-      id,
-      code,
-      returnDate,
-      branchId = null,
-      branchName = null,
-      customerId = null,
-      customerName = null,
-      createdById = null,
-      createdByName = null,
-      status = null,
-      statusValue = null,
-      total = null,
-      totalPayment = null,
-      discount = null,
-      description = null,
-      invoiceId = null,
-      invoiceCode = null,
-      retailerId,
-      createdDate = null,
-      modifiedDate = null,
-    } = returnOrder;
+    // FIXED: Extract and convert undefined to null
+    const id = convertUndefinedToNull(returnOrder.id);
+    const code = convertUndefinedToNull(returnOrder.code) || "";
+    const returnDate = convertUndefinedToNull(returnOrder.returnDate);
+    const branchId = convertUndefinedToNull(returnOrder.branchId);
+    const branchName = convertUndefinedToNull(returnOrder.branchName);
+    const customerId = convertUndefinedToNull(returnOrder.customerId);
+    const customerName = convertUndefinedToNull(returnOrder.customerName);
+    const createdById = convertUndefinedToNull(returnOrder.createdById);
+    const createdByName = convertUndefinedToNull(returnOrder.createdByName);
+    const status = convertUndefinedToNull(returnOrder.status);
+    const statusValue = convertUndefinedToNull(returnOrder.statusValue);
+    const total = convertUndefinedToNull(returnOrder.total);
+    const totalPayment = convertUndefinedToNull(returnOrder.totalPayment);
+    const discount = convertUndefinedToNull(returnOrder.discount);
+    const description = convertUndefinedToNull(returnOrder.description);
+    const invoiceId = convertUndefinedToNull(returnOrder.invoiceId);
+    const invoiceCode = convertUndefinedToNull(returnOrder.invoiceCode);
+    const retailerId = convertUndefinedToNull(returnOrder.retailerId);
+    const createdDate = convertUndefinedToNull(returnOrder.createdDate);
+    const modifiedDate = convertUndefinedToNull(returnOrder.modifiedDate);
 
     const jsonData = JSON.stringify(returnOrder);
 
@@ -213,15 +217,15 @@ async function saveReturn(returnOrder, connection = null) {
 
         await connection.execute(detailQuery, [
           id,
-          detail.productId,
-          detail.productCode,
-          detail.productName,
-          detail.quantity || 0,
-          detail.price || 0,
-          detail.discount || 0,
-          detail.discountRatio || 0,
-          detail.note || null,
-          detail.returnReason || null,
+          convertUndefinedToNull(detail.productId),
+          convertUndefinedToNull(detail.productCode),
+          convertUndefinedToNull(detail.productName),
+          convertUndefinedToNull(detail.quantity) || 0,
+          convertUndefinedToNull(detail.price) || 0,
+          convertUndefinedToNull(detail.discount) || 0,
+          convertUndefinedToNull(detail.discountRatio) || 0,
+          convertUndefinedToNull(detail.note),
+          convertUndefinedToNull(detail.returnReason),
         ]);
       }
     }

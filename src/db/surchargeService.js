@@ -1,4 +1,4 @@
-// src/db/surchargeService.js
+// src/db/surchargeService.js - FIXED VERSION
 const { getPool } = require("../db");
 
 // Add data validation and sanitization
@@ -105,6 +105,11 @@ async function saveSurcharges(surcharges) {
   };
 }
 
+// FIXED: Convert undefined to null
+function convertUndefinedToNull(value) {
+  return value === undefined ? null : value;
+}
+
 // Update saveSurcharge to accept connection parameter
 async function saveSurcharge(surcharge, connection = null) {
   const shouldReleaseConnection = !connection;
@@ -115,22 +120,21 @@ async function saveSurcharge(surcharge, connection = null) {
   }
 
   try {
-    const {
-      id,
-      code,
-      surchargeDate,
-      branchId = null,
-      branchName = null,
-      createdById = null,
-      createdByName = null,
-      type = null,
-      typeValue = null,
-      amount = null,
-      description = null,
-      retailerId,
-      createdDate = null,
-      modifiedDate = null,
-    } = surcharge;
+    // FIXED: Extract and convert undefined to null
+    const id = convertUndefinedToNull(surcharge.id);
+    const code = convertUndefinedToNull(surcharge.code) || "";
+    const surchargeDate = convertUndefinedToNull(surcharge.surchargeDate);
+    const branchId = convertUndefinedToNull(surcharge.branchId);
+    const branchName = convertUndefinedToNull(surcharge.branchName);
+    const createdById = convertUndefinedToNull(surcharge.createdById);
+    const createdByName = convertUndefinedToNull(surcharge.createdByName);
+    const type = convertUndefinedToNull(surcharge.type);
+    const typeValue = convertUndefinedToNull(surcharge.typeValue);
+    const amount = convertUndefinedToNull(surcharge.amount);
+    const description = convertUndefinedToNull(surcharge.description);
+    const retailerId = convertUndefinedToNull(surcharge.retailerId);
+    const createdDate = convertUndefinedToNull(surcharge.createdDate);
+    const modifiedDate = convertUndefinedToNull(surcharge.modifiedDate);
 
     const jsonData = JSON.stringify(surcharge);
 
