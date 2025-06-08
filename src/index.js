@@ -776,13 +776,8 @@ app.get("/get-damage-reports", async (req, res) => {
   }
 });
 
-// FIXED: Proper sync order to respect foreign key dependencies
 async function runSequentialSync() {
   try {
-    console.log("🔄 Starting sequential sync process...");
-
-    // PHASE 1: Master Data (Independent entities - no foreign keys)
-    console.log("📁 Phase 1: Syncing master data...");
     await Promise.all([
       runCategorySync(),
       runBranchSync(),
@@ -791,41 +786,32 @@ async function runSequentialSync() {
       runUserSync(),
     ]);
 
-    // PHASE 2: Customer and Product Data (Depends on categories, suppliers, users)
-    console.log("👥 Phase 2: Syncing customers and products...");
     await Promise.all([
       runCustomerSync(),
       runProductSync(),
       runPriceBookSync(),
     ]);
 
-    // PHASE 3: Transaction Documents (Depends on customers, products, users, branches)
-    console.log("📋 Phase 3: Syncing transaction documents...");
     await Promise.all([
       runOrderSync(),
       runInvoiceSync(),
       runPurchaseOrderSync(),
     ]);
 
-    // PHASE 4: Related Transactions (Depends on all above)
-    console.log("🔗 Phase 4: Syncing related transactions...");
     await Promise.all([
-      runTransferSync(),
+      // runTransferSync(),
       runReceiptSync(),
       runReturnSync(),
       runSurchargeSync(),
       runInventoryAdjustmentSync(),
       runDamageReportSync(),
     ]);
-
-    console.log("✅ Sequential sync completed successfully!");
   } catch (error) {
     console.error("❌ Error during sequential sync:", error);
     throw error;
   }
 }
 
-// Initialize and start the server
 async function startServer() {
   try {
     // Test database connection
@@ -842,98 +828,128 @@ async function startServer() {
     }
 
     const server = app.listen(PORT, async () => {
-      console.log(`🚀 Server started on port ${PORT}`);
-
-      // FIXED: Run proper sequential sync on startup
-      console.log("🔧 Starting initial sync process...");
-
-      // Run initial historical sync if needed
       const historicalDaysAgo = parseInt(process.env.INITIAL_SCAN_DAYS || "7");
 
-      // Check which entities need historical sync
-      const orderSyncStatus =
-        await require("./db/orderService").getSyncStatus();
-      const invoiceSyncStatus =
-        await require("./db/invoiceService").getSyncStatus();
-      const customerSyncStatus =
-        await require("./db/customerService").getSyncStatus();
-      const productSyncStatus =
-        await require("./db/productService").getSyncStatus();
-      const userSyncStatus = await require("./db/userService").getSyncStatus();
-      const categorySyncStatus =
-        await require("./db/categoryService").getSyncStatus();
-      const branchSyncStatus =
-        await require("./db/branchService").getSyncStatus();
-      const supplierSyncStatus =
-        await require("./db/supplierService").getSyncStatus();
       const bankAccountSyncStatus =
         await require("./db/backAccountService").getSyncStatus();
+      const branchSyncStatus =
+        await require("./db/branchService").getSyncStatus();
+      const categorySyncStatus =
+        await require("./db/categoryService").getSyncStatus();
+      const customerGroupSyncStatus =
+        await require("./db/customerGroupService").getSyncStatus();
+      const customerSyncStatus =
+        await require("./db/customerService").getSyncStatus();
+      const damageReportSyncStatus =
+        await require("./db/damageReportService").getSyncStatus();
+      const inventoryAdjustmentSyncStatus =
+        await require("./db/inventoryAdjustmentService").getSyncStatus();
+      const invoiceSyncStatus =
+        await require("./db/invoiceService").getSyncStatus();
+      const locationSyncStatus =
+        await require("./db/locationService").getSyncStatus();
+      const orderSyncStatus =
+        await require("./db/orderService").getSyncStatus();
+      const priceBookSyncStatus =
+        await require("./db/priceBookService").getSyncStatus();
+      const productSyncStatus =
+        await require("./db/productService").getSyncStatus();
+      const purchaseOrderSyncStatus =
+        await require("./db/purchaseOrderService").getSyncStatus();
+      const receiptSyncStatus =
+        await require("./db/receiptService").getSyncStatus();
+      const returnSyncStatus =
+        await require("./db/returnService").getSyncStatus();
+      const supplierSyncStatus =
+        await require("./db/supplierService").getSyncStatus();
+      const surchargeSyncStatus =
+        await require("./db/surchargeService").getSyncStatus();
+      const transferSyncStatus =
+        await require("./db/transferService").getSyncStatus();
+      const userSyncStatus = await require("./db/userService").getSyncStatus();
 
-      // Run historical sync for entities that haven't completed it yet
       if (
-        !categorySyncStatus.historicalCompleted ||
-        !branchSyncStatus.historicalCompleted ||
-        !supplierSyncStatus.historicalCompleted ||
         !bankAccountSyncStatus.historicalCompleted ||
-        !userSyncStatus.historicalCompleted ||
+        !branchSyncStatus.historicalCompleted ||
+        !categorySyncStatus.historicalCompleted ||
+        !customerGroupSyncStatus.historicalCompleted ||
         !customerSyncStatus.historicalCompleted ||
-        !productSyncStatus.historicalCompleted ||
+        !damageReportSyncStatus.historicalCompleted ||
+        !inventoryAdjustmentSyncStatus.historicalCompleted ||
+        !invoiceSyncStatus.historicalCompleted ||
+        !locationSyncStatus.historicalCompleted ||
         !orderSyncStatus.historicalCompleted ||
-        !invoiceSyncStatus.historicalCompleted
+        !priceBookSyncStatus.historicalCompleted ||
+        !productSyncStatus.historicalCompleted ||
+        !purchaseOrderSyncStatus.historicalCompleted ||
+        !receiptSyncStatus.historicalCompleted ||
+        !returnSyncStatus.historicalCompleted ||
+        !supplierSyncStatus.historicalCompleted ||
+        !surchargeSyncStatus.historicalCompleted ||
+        !transferSyncStatus.historicalCompleted ||
+        !userSyncStatus.historicalCompleted
       ) {
-        console.log("📚 Running historical sync for incomplete entities...");
-
-        // Run historical syncs in proper order
-        if (!categorySyncStatus.historicalCompleted) {
-          await runCategorySync();
+        if (!bankAccountSyncStatus.historicalCompleted) {
+          await require("../scheduler/bankAccountScheduler").bankAccountScheduler(
+            historicalDaysAgo
+          );
         }
         if (!branchSyncStatus.historicalCompleted) {
-          await runBranchSync();
+          await require("../scheduler/branchScheduler").branchScheduler(
+            historicalDaysAgo
+          );
         }
+        if (!categorySyncStatus.historicalCompleted) {
+          await require("../scheduler/categoryScheduler").categoryScheduler(
+            historicalDaysAgo
+          );
+        }
+        if (!customerGroupSyncStatus.historicalCompleted) {
+          await require("../scheduler/customerGroupScheduler").customerGroupScheduler(
+            historicalDaysAgo
+          );
+        }
+
         if (!supplierSyncStatus.historicalCompleted) {
-          await runSupplierSync();
+          await require("../scheduler/supplierScheduler").supplierScheduler(
+            historicalDaysAgo
+          );
         }
-        if (!bankAccountSyncStatus.historicalCompleted) {
-          await runBankAccountSync();
-        }
+
         if (!userSyncStatus.historicalCompleted) {
-          await require("./scheduler/userScheduler").userScheduler(
+          await require("../scheduler/userScheduler").userScheduler(
             historicalDaysAgo
           );
         }
         if (!customerSyncStatus.historicalCompleted) {
-          await require("./scheduler/customerScheduler").customerScheduler(
+          await require("../scheduler/customerScheduler").customerScheduler(
             historicalDaysAgo
           );
         }
         if (!productSyncStatus.historicalCompleted) {
-          await require("./scheduler/productScheduler").productScheduler(
+          await require("../scheduler/productScheduler").productScheduler(
             historicalDaysAgo
           );
         }
         if (!orderSyncStatus.historicalCompleted) {
-          await require("./scheduler/orderScheduler").orderScheduler(
+          await require("../scheduler/orderScheduler").orderScheduler(
             historicalDaysAgo
           );
         }
         if (!invoiceSyncStatus.historicalCompleted) {
-          await require("./scheduler/invoiceScheduler").invoiceScheduler(
+          await require("../scheduler/invoiceScheduler").invoiceScheduler(
             historicalDaysAgo
           );
         }
       }
 
-      // Run current sync
       await runSequentialSync();
 
-      // Set up periodic sync (every 10 minutes)
       const syncInterval = setInterval(runSequentialSync, 10 * 60 * 1000);
 
       process.on("SIGINT", () => {
-        console.log("🛑 Shutting down gracefully...");
         clearInterval(syncInterval);
         server.close(() => {
-          console.log("Server stopped");
           process.exit(0);
         });
       });
@@ -941,7 +957,6 @@ async function startServer() {
 
     return server;
   } catch (error) {
-    console.error("Error starting server:", error);
     process.exit(1);
   }
 }

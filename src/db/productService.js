@@ -1,22 +1,22 @@
 const { getPool } = require("../db.js");
+const {
+  convertUndefinedToNull,
+  validateString,
+  validateNumber,
+  validateBoolean,
+} = require("./utils");
 
 // Add data validation and sanitization
 function validateAndSanitizeProduct(product) {
   return {
     ...product,
-    code: product.code ? String(product.code).substring(0, 50) : "",
-    name: product.name ? String(product.name).substring(0, 255) : "",
-    fullName: product.fullName
-      ? String(product.fullName).substring(0, 255)
-      : null,
-    categoryName: product.categoryName
-      ? String(product.categoryName).substring(0, 100)
-      : null,
-    basePrice: isNaN(Number(product.basePrice)) ? 0 : Number(product.basePrice),
-    weight: isNaN(Number(product.weight)) ? 0 : Number(product.weight),
-    description: product.description
-      ? String(product.description).substring(0, 1000)
-      : "",
+    code: validateString(product.code, 50, ""),
+    name: validateString(product.name, 255, ""),
+    fullName: validateString(product.fullName, 255),
+    categoryName: validateString(product.categoryName, 100),
+    basePrice: validateNumber(product.basePrice, 0),
+    weight: validateNumber(product.weight, 0),
+    description: validateString(product.description, 1000, ""),
   };
 }
 
@@ -104,7 +104,7 @@ async function saveProducts(products) {
   };
 }
 
-// Update saveProduct to accept connection parameter
+// FIXED: Update saveProduct to accept connection parameter and handle undefined values
 async function saveProduct(product, connection = null) {
   const shouldReleaseConnection = !connection;
 
@@ -114,32 +114,34 @@ async function saveProduct(product, connection = null) {
   }
 
   try {
-    const {
-      id,
-      code,
-      barCode = "",
-      name,
-      fullName = null,
-      categoryId = null,
-      categoryName = null,
-      tradeMarkId = null,
-      tradeMarkName = null,
-      allowsSale = true,
-      type = 2,
-      hasVariants = false,
-      basePrice = null,
-      unit = null,
-      conversionValue = 1,
-      weight = 0,
-      description = "",
-      isActive = true,
-      orderTemplate = "",
-      isLotSerialControl = false,
-      isBatchExpireControl = false,
-      retailerId,
-      modifiedDate = null,
-      createdDate = null,
-    } = product;
+    // FIXED: Extract and convert all undefined to null
+    const id = convertUndefinedToNull(product.id);
+    const code = convertUndefinedToNull(product.code) || "";
+    const barCode = convertUndefinedToNull(product.barCode) || "";
+    const name = convertUndefinedToNull(product.name) || "";
+    const fullName = convertUndefinedToNull(product.fullName);
+    const categoryId = convertUndefinedToNull(product.categoryId);
+    const categoryName = convertUndefinedToNull(product.categoryName);
+    const tradeMarkId = convertUndefinedToNull(product.tradeMarkId);
+    const tradeMarkName = convertUndefinedToNull(product.tradeMarkName);
+    const allowsSale = convertUndefinedToNull(product.allowsSale) ?? true;
+    const type = convertUndefinedToNull(product.type) || 2;
+    const hasVariants = convertUndefinedToNull(product.hasVariants) ?? false;
+    const basePrice = convertUndefinedToNull(product.basePrice);
+    const unit = convertUndefinedToNull(product.unit);
+    const conversionValue =
+      convertUndefinedToNull(product.conversionValue) || 1;
+    const weight = convertUndefinedToNull(product.weight) || 0;
+    const description = convertUndefinedToNull(product.description) || "";
+    const isActive = convertUndefinedToNull(product.isActive) ?? true;
+    const orderTemplate = convertUndefinedToNull(product.orderTemplate) || "";
+    const isLotSerialControl =
+      convertUndefinedToNull(product.isLotSerialControl) ?? false;
+    const isBatchExpireControl =
+      convertUndefinedToNull(product.isBatchExpireControl) ?? false;
+    const retailerId = convertUndefinedToNull(product.retailerId);
+    const modifiedDate = convertUndefinedToNull(product.modifiedDate);
+    const createdDate = convertUndefinedToNull(product.createdDate);
 
     const jsonData = JSON.stringify(product);
 
@@ -221,19 +223,19 @@ async function saveProduct(product, connection = null) {
           `;
 
           await connection.execute(inventoryQuery, [
-            inventory.productId || id,
-            inventory.productCode || code,
-            inventory.productName || name,
-            inventory.branchId,
-            inventory.branchName,
-            inventory.cost || 0,
-            inventory.onHand || 0,
-            inventory.reserved || 0,
-            inventory.actualReserved || 0,
-            inventory.minQuantity || 0,
-            inventory.maxQuantity || 0,
-            inventory.isActive || true,
-            inventory.onOrder || 0,
+            convertUndefinedToNull(inventory.productId) || id,
+            convertUndefinedToNull(inventory.productCode) || code,
+            convertUndefinedToNull(inventory.productName) || name,
+            convertUndefinedToNull(inventory.branchId),
+            convertUndefinedToNull(inventory.branchName),
+            convertUndefinedToNull(inventory.cost) || 0,
+            convertUndefinedToNull(inventory.onHand) || 0,
+            convertUndefinedToNull(inventory.reserved) || 0,
+            convertUndefinedToNull(inventory.actualReserved) || 0,
+            convertUndefinedToNull(inventory.minQuantity) || 0,
+            convertUndefinedToNull(inventory.maxQuantity) || 0,
+            convertUndefinedToNull(inventory.isActive) ?? true,
+            convertUndefinedToNull(inventory.onOrder) || 0,
           ]);
         } catch (invError) {
           console.warn(
@@ -259,13 +261,13 @@ async function saveProduct(product, connection = null) {
           `;
 
           await connection.execute(priceBookQuery, [
-            priceBook.productId || id,
-            priceBook.priceBookId,
-            priceBook.priceBookName,
-            priceBook.price || 0,
-            priceBook.isActive || true,
-            priceBook.startDate || null,
-            priceBook.endDate || null,
+            convertUndefinedToNull(priceBook.productId) || id,
+            convertUndefinedToNull(priceBook.priceBookId),
+            convertUndefinedToNull(priceBook.priceBookName),
+            convertUndefinedToNull(priceBook.price) || 0,
+            convertUndefinedToNull(priceBook.isActive) ?? true,
+            convertUndefinedToNull(priceBook.startDate),
+            convertUndefinedToNull(priceBook.endDate),
           ]);
         } catch (pbError) {
           console.warn(

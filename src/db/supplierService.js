@@ -1,42 +1,31 @@
 const { getPool } = require("../db");
+const {
+  convertUndefinedToNull,
+  validateString,
+  validateNumber,
+  validateBoolean,
+} = require("./utils");
 
 // Add data validation and sanitization
 function validateAndSanitizeSupplier(supplier) {
   return {
     ...supplier,
-    code: supplier.code ? String(supplier.code).substring(0, 50) : "",
-    name: supplier.name ? String(supplier.name).substring(0, 255) : "",
-    contactNumber: supplier.contactNumber
-      ? String(supplier.contactNumber).substring(0, 50)
-      : null,
-    email: supplier.email ? String(supplier.email).substring(0, 100) : null,
-    address: supplier.address
-      ? String(supplier.address).substring(0, 500)
-      : null,
-    locationName: supplier.locationName
-      ? String(supplier.locationName).substring(0, 100)
-      : null,
-    wardName: supplier.wardName
-      ? String(supplier.wardName).substring(0, 100)
-      : null,
-    organization: supplier.organization
-      ? String(supplier.organization).substring(0, 255)
-      : null,
-    taxCode: supplier.taxCode
-      ? String(supplier.taxCode).substring(0, 50)
-      : null,
-    comments: supplier.comments
-      ? String(supplier.comments).substring(0, 1000)
-      : null,
-    debt: isNaN(Number(supplier.debt)) ? 0 : Number(supplier.debt),
-    totalInvoiced: isNaN(Number(supplier.totalInvoiced))
-      ? 0
-      : Number(supplier.totalInvoiced),
-    totalInvoicedWithoutReturn: isNaN(
-      Number(supplier.totalInvoicedWithoutReturn)
-    )
-      ? 0
-      : Number(supplier.totalInvoicedWithoutReturn),
+    code: validateString(supplier.code, 50, ""),
+    name: validateString(supplier.name, 255, ""),
+    contactNumber: validateString(supplier.contactNumber, 50),
+    email: validateString(supplier.email, 100),
+    address: validateString(supplier.address, 500),
+    locationName: validateString(supplier.locationName, 100),
+    wardName: validateString(supplier.wardName, 100),
+    organization: validateString(supplier.organization, 255),
+    taxCode: validateString(supplier.taxCode, 50),
+    comments: validateString(supplier.comments, 1000),
+    debt: validateNumber(supplier.debt, 0),
+    totalInvoiced: validateNumber(supplier.totalInvoiced, 0),
+    totalInvoicedWithoutReturn: validateNumber(
+      supplier.totalInvoicedWithoutReturn,
+      0
+    ),
   };
 }
 
@@ -126,7 +115,7 @@ async function saveSuppliers(suppliers) {
   };
 }
 
-// Update saveSupplier to accept connection parameter
+// FIXED: Update saveSupplier to properly handle undefined values
 async function saveSupplier(supplier, connection = null) {
   const shouldReleaseConnection = !connection;
 
@@ -136,29 +125,29 @@ async function saveSupplier(supplier, connection = null) {
   }
 
   try {
-    const {
-      id,
-      code,
-      name,
-      contactNumber = null,
-      email = null,
-      address = null,
-      locationName = null,
-      wardName = null,
-      organization = null,
-      taxCode = null,
-      comments = null,
-      groups = null,
-      isActive = true,
-      modifiedDate = null,
-      createdDate = null,
-      retailerId,
-      branchId = null,
-      createdBy = null,
-      debt = 0,
-      totalInvoiced = 0,
-      totalInvoicedWithoutReturn = 0,
-    } = supplier;
+    // FIXED: Extract and convert all undefined to null
+    const id = convertUndefinedToNull(supplier.id);
+    const code = convertUndefinedToNull(supplier.code) || "";
+    const name = convertUndefinedToNull(supplier.name) || "";
+    const contactNumber = convertUndefinedToNull(supplier.contactNumber);
+    const email = convertUndefinedToNull(supplier.email);
+    const address = convertUndefinedToNull(supplier.address);
+    const locationName = convertUndefinedToNull(supplier.locationName);
+    const wardName = convertUndefinedToNull(supplier.wardName);
+    const organization = convertUndefinedToNull(supplier.organization);
+    const taxCode = convertUndefinedToNull(supplier.taxCode);
+    const comments = convertUndefinedToNull(supplier.comments);
+    const groups = convertUndefinedToNull(supplier.groups);
+    const isActive = convertUndefinedToNull(supplier.isActive) ?? true;
+    const modifiedDate = convertUndefinedToNull(supplier.modifiedDate);
+    const createdDate = convertUndefinedToNull(supplier.createdDate);
+    const retailerId = convertUndefinedToNull(supplier.retailerId);
+    const branchId = convertUndefinedToNull(supplier.branchId);
+    const createdBy = convertUndefinedToNull(supplier.createdBy);
+    const debt = convertUndefinedToNull(supplier.debt) || 0;
+    const totalInvoiced = convertUndefinedToNull(supplier.totalInvoiced) || 0;
+    const totalInvoicedWithoutReturn =
+      convertUndefinedToNull(supplier.totalInvoicedWithoutReturn) || 0;
 
     const jsonData = JSON.stringify(supplier);
 

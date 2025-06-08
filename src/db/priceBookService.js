@@ -1,5 +1,10 @@
 const { getPool } = require("../db");
 
+// HELPER FUNCTION: Convert undefined to null for MySQL2 compatibility
+function convertUndefinedToNull(value) {
+  return value === undefined ? null : value;
+}
+
 // Add data validation and sanitization
 function validateAndSanitizePriceBook(priceBook) {
   return {
@@ -97,7 +102,7 @@ async function savePriceBooks(priceBooks) {
   };
 }
 
-// Update savePriceBook to accept connection parameter
+// FIXED: Update savePriceBook to properly handle undefined values
 async function savePriceBook(priceBook, connection = null) {
   const shouldReleaseConnection = !connection;
 
@@ -107,17 +112,16 @@ async function savePriceBook(priceBook, connection = null) {
   }
 
   try {
-    const {
-      id,
-      name,
-      description = null,
-      startDate = null,
-      endDate = null,
-      isActive = true,
-      retailerId,
-      createdDate = null,
-      modifiedDate = null,
-    } = priceBook;
+    // FIXED: Extract and convert all undefined to null
+    const id = convertUndefinedToNull(priceBook.id);
+    const name = convertUndefinedToNull(priceBook.name) || "";
+    const description = convertUndefinedToNull(priceBook.description);
+    const startDate = convertUndefinedToNull(priceBook.startDate);
+    const endDate = convertUndefinedToNull(priceBook.endDate);
+    const isActive = convertUndefinedToNull(priceBook.isActive) ?? true;
+    const retailerId = convertUndefinedToNull(priceBook.retailerId);
+    const createdDate = convertUndefinedToNull(priceBook.createdDate);
+    const modifiedDate = convertUndefinedToNull(priceBook.modifiedDate);
 
     const jsonData = JSON.stringify(priceBook);
 
@@ -168,8 +172,8 @@ async function savePriceBook(priceBook, connection = null) {
 
         await connection.execute(branchQuery, [
           id,
-          branch.branchId,
-          branch.branchName || null,
+          convertUndefinedToNull(branch.branchId),
+          convertUndefinedToNull(branch.branchName),
         ]);
       }
     }
@@ -193,8 +197,8 @@ async function savePriceBook(priceBook, connection = null) {
 
         await connection.execute(groupQuery, [
           id,
-          customerGroup.customerGroupId,
-          customerGroup.customerGroupName || null,
+          convertUndefinedToNull(customerGroup.customerGroupId),
+          convertUndefinedToNull(customerGroup.customerGroupName),
         ]);
       }
     }
@@ -215,8 +219,8 @@ async function savePriceBook(priceBook, connection = null) {
 
         await connection.execute(userQuery, [
           id,
-          user.userId,
-          user.userName || null,
+          convertUndefinedToNull(user.userId),
+          convertUndefinedToNull(user.userName),
         ]);
       }
     }

@@ -1206,6 +1206,7 @@ const getPurchaseOrders = async () => {
           orderBy: "createdDate",
           orderDirection: "DESC",
           includePayment: true,
+          includeOrderDelivery: true,
         },
         headers: {
           Retailer: process.env.KIOT_SHOP_NAME,
@@ -1307,7 +1308,6 @@ const getPurchaseOrdersByDate = async (daysAgo) => {
   }
 };
 
-// RECEIPTS - No changes needed
 const getReceipts = async () => {
   try {
     const token = await getToken();
@@ -1359,7 +1359,6 @@ const getReceipts = async () => {
   }
 };
 
-// RETURNS - No changes needed
 const getReturns = async () => {
   try {
     const token = await getToken();
@@ -1757,7 +1756,6 @@ const getCustomerGroups = async () => {
   }
 };
 
-// LOCATIONS - No changes needed
 const getLocations = async () => {
   try {
     const token = await getToken();
