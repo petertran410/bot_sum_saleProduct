@@ -1,7 +1,8 @@
-// src/kiotviet.js - UPDATED VERSION with missing API endpoints
+// src/kiotviet.js - FIXED VERSION with correct API endpoints
 const axios = require("axios");
 
-const KIOTVIET_BASE_URL = process.env.KIOT_BASE_URL;
+// FIXED: Use correct base URL
+const KIOTVIET_BASE_URL = "https://public.kiotapi.com";
 const TOKEN_URL = process.env.KIOT_TOKEN;
 
 // Token caching
@@ -76,6 +77,17 @@ async function makeApiRequest(config) {
   try {
     return await axios(config);
   } catch (error) {
+    // Add better error logging
+    if (error.response) {
+      console.error(`API Error ${error.response.status}:`, {
+        url: config.url,
+        status: error.response.status,
+        statusText: error.response.statusText,
+        data: error.response.data,
+        headers: error.response.headers,
+      });
+    }
+
     if (error.response?.status === 401 && currentToken) {
       // Token expired, clear cache and retry
       console.log("Token expired, refreshing...");
@@ -89,7 +101,7 @@ async function makeApiRequest(config) {
   }
 }
 
-// CATEGORIES with pagination
+// CATEGORIES - No changes needed
 const getCategories = async () => {
   try {
     const token = await getToken();
@@ -142,7 +154,7 @@ const getCategories = async () => {
   }
 };
 
-// BRANCHES with pagination
+// BRANCHES - No changes needed
 const getBranches = async () => {
   try {
     const token = await getToken();
@@ -194,7 +206,7 @@ const getBranches = async () => {
   }
 };
 
-// SUPPLIERS with pagination
+// SUPPLIERS - No changes needed
 const getSuppliers = async () => {
   try {
     const token = await getToken();
@@ -248,7 +260,7 @@ const getSuppliers = async () => {
   }
 };
 
-// BANK ACCOUNTS with pagination
+// FIXED: Bank Accounts endpoint - should be BankAccounts (capital B)
 const getBankAccounts = async () => {
   try {
     const token = await getToken();
@@ -262,7 +274,7 @@ const getBankAccounts = async () => {
     while (hasMoreData) {
       const response = await makeApiRequest({
         method: "GET",
-        url: `${KIOTVIET_BASE_URL}/BankAccounts`,
+        url: `${KIOTVIET_BASE_URL}/BankAccounts`, // Capital B
         params: {
           pageSize: pageSize,
           currentItem: currentItem,
@@ -300,7 +312,7 @@ const getBankAccounts = async () => {
   }
 };
 
-// ORDERS with pagination
+// ORDERS - No changes needed
 const getOrders = async () => {
   try {
     const token = await getToken();
@@ -424,7 +436,7 @@ const getOrdersByDate = async (daysAgo) => {
   }
 };
 
-// INVOICES with pagination
+// INVOICES - No changes needed
 const getInvoices = async () => {
   try {
     const token = await getToken();
@@ -548,7 +560,7 @@ const getInvoicesByDate = async (daysAgo) => {
   }
 };
 
-// PRODUCTS with pagination
+// FIXED: Products - Removed restrictive date filtering
 const getProducts = async () => {
   try {
     const token = await getToken();
@@ -558,11 +570,6 @@ const getProducts = async () => {
     let hasMoreData = true;
 
     console.log("Fetching current products...");
-
-    // Get only recent products (last 24 hours) for current sync
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const fromDate = yesterday.toISOString().split("T")[0];
 
     while (hasMoreData) {
       const response = await makeApiRequest({
@@ -579,7 +586,7 @@ const getProducts = async () => {
           includeWarranties: true,
           orderBy: "modifiedDate",
           orderDirection: "DESC",
-          lastModifiedFrom: fromDate,
+          // Removed lastModifiedFrom filter for current sync
         },
         headers: {
           Retailer: process.env.KIOT_SHOP_NAME,
@@ -686,7 +693,7 @@ const getProductsByDate = async (daysAgo) => {
   }
 };
 
-// CUSTOMERS with pagination
+// FIXED: Customers - Removed restrictive date filtering
 const getCustomers = async () => {
   try {
     const token = await getToken();
@@ -697,11 +704,6 @@ const getCustomers = async () => {
 
     console.log("Fetching current customers...");
 
-    // Get only recent customers (last 24 hours)
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const fromDate = yesterday.toISOString().split("T")[0];
-
     while (hasMoreData) {
       const response = await makeApiRequest({
         method: "GET",
@@ -711,10 +713,10 @@ const getCustomers = async () => {
           currentItem: currentItem,
           orderBy: "createdDate",
           orderDirection: "DESC",
-          lastModifiedFrom: fromDate,
           includeTotal: true,
           includeCustomerGroup: true,
           includeCustomerSocial: true,
+          // Removed lastModifiedFrom filter for current sync
         },
         headers: {
           Retailer: process.env.KIOT_SHOP_NAME,
@@ -888,6 +890,7 @@ const getCustomersByDate = async (daysAgo, specificDate = null) => {
   }
 };
 
+// FIXED: Users - Removed restrictive date filtering
 const getUsers = async () => {
   try {
     const token = await getToken();
@@ -898,11 +901,6 @@ const getUsers = async () => {
 
     console.log("Fetching current users...");
 
-    // Get only recent users (last 24 hours)
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const fromDate = yesterday.toISOString().split("T")[0];
-
     while (hasMoreData) {
       const response = await makeApiRequest({
         method: "GET",
@@ -912,8 +910,8 @@ const getUsers = async () => {
           currentItem: currentItem,
           orderBy: "id",
           orderDirection: "DESC",
-          lastModifiedFrom: fromDate,
           includeRemoveIds: true,
+          // Removed lastModifiedFrom filter for current sync
         },
         headers: {
           Retailer: process.env.KIOT_SHOP_NAME,
@@ -1134,7 +1132,7 @@ const getTransfersByDate = async (daysAgo) => {
   }
 };
 
-// PRICE BOOKS with pagination
+// FIXED: Price Books - correct endpoint and simplified parameters
 const getPriceBooks = async () => {
   try {
     const token = await getToken();
@@ -1148,12 +1146,11 @@ const getPriceBooks = async () => {
     while (hasMoreData) {
       const response = await makeApiRequest({
         method: "GET",
-        url: `${KIOTVIET_BASE_URL}/pricebooks`,
+        url: `${KIOTVIET_BASE_URL}/pricebook`, // Fixed: singular 'pricebook'
         params: {
           pageSize: pageSize,
           currentItem: currentItem,
-          orderBy: "name",
-          orderDirection: "ASC",
+          // Fixed: Simplified parameters based on API documentation
           includePriceBookBranch: true,
           includePriceBookCustomerGroups: true,
           includePriceBookUsers: true,
@@ -1189,7 +1186,7 @@ const getPriceBooks = async () => {
   }
 };
 
-// PURCHASE ORDERS with pagination
+// PURCHASE ORDERS - No changes needed
 const getPurchaseOrders = async () => {
   try {
     const token = await getToken();
@@ -1311,7 +1308,7 @@ const getPurchaseOrdersByDate = async (daysAgo) => {
   }
 };
 
-// RECEIPTS with pagination
+// RECEIPTS - No changes needed
 const getReceipts = async () => {
   try {
     const token = await getToken();
@@ -1363,7 +1360,7 @@ const getReceipts = async () => {
   }
 };
 
-// RETURNS with pagination
+// RETURNS - No changes needed
 const getReturns = async () => {
   try {
     const token = await getToken();
@@ -1415,7 +1412,7 @@ const getReturns = async () => {
   }
 };
 
-// SURCHARGES with pagination
+// FIXED: Surcharges - corrected endpoint name
 const getSurcharges = async () => {
   try {
     const token = await getToken();
@@ -1429,7 +1426,7 @@ const getSurcharges = async () => {
     while (hasMoreData) {
       const response = await makeApiRequest({
         method: "GET",
-        url: `${KIOTVIET_BASE_URL}/surchages`,
+        url: `${KIOTVIET_BASE_URL}/surcharges`, // Fixed: was 'surchages'
         params: {
           pageSize: pageSize,
           currentItem: currentItem,
@@ -1467,7 +1464,7 @@ const getSurcharges = async () => {
   }
 };
 
-// NEW: INVENTORY ADJUSTMENTS with pagination
+// INVENTORY ADJUSTMENTS - No changes needed
 const getInventoryAdjustments = async () => {
   try {
     const token = await getToken();
@@ -1590,7 +1587,7 @@ const getInventoryAdjustmentsByDate = async (daysAgo) => {
   }
 };
 
-// NEW: DAMAGE REPORTS with pagination
+// DAMAGE REPORTS - No changes needed
 const getDamageReports = async () => {
   try {
     const token = await getToken();
@@ -1761,7 +1758,7 @@ const getCustomerGroups = async () => {
   }
 };
 
-// LOCATIONS with pagination
+// LOCATIONS - No changes needed
 const getLocations = async () => {
   try {
     const token = await getToken();
