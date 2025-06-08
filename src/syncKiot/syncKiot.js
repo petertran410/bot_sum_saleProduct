@@ -1,4 +1,4 @@
-// src/syncKiot/syncKiot.js - Updated with all missing sync functions
+// src/syncKiot/syncKiot.js - COMPLETE VERSION with all sync functions
 
 const orderService = require("../db/orderService");
 const invoiceService = require("../db/invoiceService");
@@ -12,13 +12,17 @@ const branchService = require("../db/branchService");
 const supplierService = require("../db/supplierService");
 const bankAccountService = require("../db/backAccountService");
 
-// NEW MISSING SERVICES
+// Existing additional services
 const transferService = require("../db/transferService");
 const priceBookService = require("../db/priceBookService");
 const purchaseOrderService = require("../db/purchaseOrderService");
 const receiptService = require("../db/receiptService");
 const returnService = require("../db/returnService");
 const surchargeService = require("../db/surchargeService");
+
+// NEW MISSING SERVICES
+const inventoryAdjustmentService = require("../db/inventoryAdjustmentService");
+const damageReportService = require("../db/damageReportService");
 
 // Existing schedulers
 const {
@@ -66,7 +70,7 @@ const {
   bankAccountSchedulerCurrent,
 } = require("../../scheduler/bankAccountScheduler");
 
-// NEW MISSING SCHEDULERS
+// Existing additional schedulers
 const {
   transferScheduler,
   transferSchedulerCurrent,
@@ -96,6 +100,17 @@ const {
   surchargeScheduler,
   surchargeSchedulerCurrent,
 } = require("../../scheduler/surchargeScheduler");
+
+// NEW MISSING SCHEDULERS
+const {
+  inventoryAdjustmentScheduler,
+  inventoryAdjustmentSchedulerCurrent,
+} = require("../../scheduler/inventoryAdjustmentScheduler");
+
+const {
+  damageReportScheduler,
+  damageReportSchedulerCurrent,
+} = require("../../scheduler/damageReportScheduler");
 
 // EXISTING SYNC FUNCTIONS (keep as is)
 const runOrderSync = async () => {
@@ -390,7 +405,7 @@ const runBankAccountSync = async () => {
   }
 };
 
-// NEW MISSING SYNC FUNCTIONS
+// EXISTING ADDITIONAL SYNC FUNCTIONS
 
 const runTransferSync = async () => {
   try {
@@ -598,6 +613,84 @@ const runSurchargeSync = async () => {
   }
 };
 
+// NEW MISSING SYNC FUNCTIONS
+
+const runInventoryAdjustmentSync = async () => {
+  try {
+    const syncStatus = await inventoryAdjustmentService.getSyncStatus();
+
+    if (!syncStatus.historicalCompleted) {
+      console.log("Starting historical inventory adjustments data sync...");
+      const result = await inventoryAdjustmentScheduler(160);
+
+      if (result.success) {
+        console.log(
+          "Historical inventory adjustments data has been saved to database"
+        );
+      } else {
+        console.error(
+          "Error when saving historical inventory adjustments data:",
+          result.error
+        );
+      }
+    } else {
+      console.log("Running current inventory adjustments sync...");
+      const currentResult = await inventoryAdjustmentSchedulerCurrent();
+
+      if (currentResult.success) {
+        console.log(
+          `Current inventory adjustments data has been added: ${currentResult.savedCount} adjustments`
+        );
+      } else {
+        console.error(
+          "Error when adding current inventory adjustments:",
+          currentResult.error
+        );
+      }
+    }
+  } catch (error) {
+    console.error("Cannot get and save data inventory adjustments:", error);
+  }
+};
+
+const runDamageReportSync = async () => {
+  try {
+    const syncStatus = await damageReportService.getSyncStatus();
+
+    if (!syncStatus.historicalCompleted) {
+      console.log("Starting historical damage reports data sync...");
+      const result = await damageReportScheduler(160);
+
+      if (result.success) {
+        console.log(
+          "Historical damage reports data has been saved to database"
+        );
+      } else {
+        console.error(
+          "Error when saving historical damage reports data:",
+          result.error
+        );
+      }
+    } else {
+      console.log("Running current damage reports sync...");
+      const currentResult = await damageReportSchedulerCurrent();
+
+      if (currentResult.success) {
+        console.log(
+          `Current damage reports data has been added: ${currentResult.savedCount} reports`
+        );
+      } else {
+        console.error(
+          "Error when adding current damage reports:",
+          currentResult.error
+        );
+      }
+    }
+  } catch (error) {
+    console.error("Cannot get and save data damage reports:", error);
+  }
+};
+
 module.exports = {
   // Existing functions
   runOrderSync,
@@ -609,11 +702,14 @@ module.exports = {
   runBranchSync,
   runSupplierSync,
   runBankAccountSync,
-  // New missing functions
+  // Existing additional functions
   runTransferSync,
   runPriceBookSync,
   runPurchaseOrderSync,
   runReceiptSync,
   runReturnSync,
   runSurchargeSync,
+  // NEW missing functions
+  runInventoryAdjustmentSync,
+  runDamageReportSync,
 };

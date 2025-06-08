@@ -1,3 +1,4 @@
+// src/kiotviet.js - UPDATED VERSION with missing API endpoints
 const axios = require("axios");
 
 const KIOTVIET_BASE_URL = process.env.KIOT_BASE_URL;
@@ -1466,8 +1467,252 @@ const getSurcharges = async () => {
   }
 };
 
-// Add these to your module.exports:
+// NEW: INVENTORY ADJUSTMENTS with pagination
+const getInventoryAdjustments = async () => {
+  try {
+    const token = await getToken();
+    const pageSize = 100;
+    const allAdjustments = [];
+    let currentItem = 0;
+    let hasMoreData = true;
+
+    console.log("Fetching current inventory adjustments...");
+
+    while (hasMoreData) {
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/stockadjustments`,
+        params: {
+          pageSize: pageSize,
+          currentItem: currentItem,
+          orderBy: "createdDate",
+          orderDirection: "DESC",
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allAdjustments.push(...response.data.data);
+        currentItem += response.data.data.length;
+        hasMoreData = response.data.data.length === pageSize;
+
+        console.log(
+          `Fetched ${response.data.data.length} inventory adjustments, total: ${allAdjustments.length}`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        hasMoreData = false;
+      }
+    }
+
+    return { data: allAdjustments, total: allAdjustments.length };
+  } catch (error) {
+    console.error("Error getting inventory adjustments:", error.message);
+    throw error;
+  }
+};
+
+const getInventoryAdjustmentsByDate = async (daysAgo) => {
+  try {
+    const results = [];
+
+    for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() - currentDaysAgo);
+      const formattedDate = targetDate.toISOString().split("T")[0];
+
+      const token = await getToken();
+      const pageSize = 100;
+      const allAdjustmentsForDate = [];
+      let currentItem = 0;
+      let hasMoreData = true;
+
+      console.log(`Fetching inventory adjustments for ${formattedDate}...`);
+
+      while (hasMoreData) {
+        const response = await makeApiRequest({
+          method: "GET",
+          url: `${KIOTVIET_BASE_URL}/stockadjustments`,
+          params: {
+            pageSize: pageSize,
+            currentItem: currentItem,
+            orderBy: "createdDate",
+            orderDirection: "DESC",
+            lastModifiedFrom: formattedDate,
+          },
+          headers: {
+            Retailer: process.env.KIOT_SHOP_NAME,
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (
+          response.data &&
+          response.data.data &&
+          response.data.data.length > 0
+        ) {
+          allAdjustmentsForDate.push(...response.data.data);
+          currentItem += response.data.data.length;
+          hasMoreData = response.data.data.length === pageSize;
+
+          console.log(
+            `Date ${formattedDate}: Fetched ${response.data.data.length} inventory adjustments, total: ${allAdjustmentsForDate.length}`
+          );
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        } else {
+          hasMoreData = false;
+        }
+      }
+
+      results.push({
+        date: formattedDate,
+        daysAgo: currentDaysAgo,
+        data: { data: allAdjustmentsForDate },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+
+    return results;
+  } catch (error) {
+    console.error(
+      `Error getting inventory adjustments by date:`,
+      error.message
+    );
+    throw error;
+  }
+};
+
+// NEW: DAMAGE REPORTS with pagination
+const getDamageReports = async () => {
+  try {
+    const token = await getToken();
+    const pageSize = 100;
+    const allDamageReports = [];
+    let currentItem = 0;
+    let hasMoreData = true;
+
+    console.log("Fetching current damage reports...");
+
+    while (hasMoreData) {
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/damageItems`,
+        params: {
+          pageSize: pageSize,
+          currentItem: currentItem,
+          orderBy: "createdDate",
+          orderDirection: "DESC",
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allDamageReports.push(...response.data.data);
+        currentItem += response.data.data.length;
+        hasMoreData = response.data.data.length === pageSize;
+
+        console.log(
+          `Fetched ${response.data.data.length} damage reports, total: ${allDamageReports.length}`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        hasMoreData = false;
+      }
+    }
+
+    return { data: allDamageReports, total: allDamageReports.length };
+  } catch (error) {
+    console.error("Error getting damage reports:", error.message);
+    throw error;
+  }
+};
+
+const getDamageReportsByDate = async (daysAgo) => {
+  try {
+    const results = [];
+
+    for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() - currentDaysAgo);
+      const formattedDate = targetDate.toISOString().split("T")[0];
+
+      const token = await getToken();
+      const pageSize = 100;
+      const allDamageReportsForDate = [];
+      let currentItem = 0;
+      let hasMoreData = true;
+
+      console.log(`Fetching damage reports for ${formattedDate}...`);
+
+      while (hasMoreData) {
+        const response = await makeApiRequest({
+          method: "GET",
+          url: `${KIOTVIET_BASE_URL}/damageItems`,
+          params: {
+            pageSize: pageSize,
+            currentItem: currentItem,
+            orderBy: "createdDate",
+            orderDirection: "DESC",
+            lastModifiedFrom: formattedDate,
+          },
+          headers: {
+            Retailer: process.env.KIOT_SHOP_NAME,
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (
+          response.data &&
+          response.data.data &&
+          response.data.data.length > 0
+        ) {
+          allDamageReportsForDate.push(...response.data.data);
+          currentItem += response.data.data.length;
+          hasMoreData = response.data.data.length === pageSize;
+
+          console.log(
+            `Date ${formattedDate}: Fetched ${response.data.data.length} damage reports, total: ${allDamageReportsForDate.length}`
+          );
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        } else {
+          hasMoreData = false;
+        }
+      }
+
+      results.push({
+        date: formattedDate,
+        daysAgo: currentDaysAgo,
+        data: { data: allDamageReportsForDate },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+
+    return results;
+  } catch (error) {
+    console.error(`Error getting damage reports by date:`, error.message);
+    throw error;
+  }
+};
+
+// Export all functions
 module.exports = {
+  // Existing functions
   getOrders,
   getOrdersByDate,
   getInvoices,
@@ -1478,10 +1723,10 @@ module.exports = {
   getCustomersByDate,
   getUsers,
   getUsersByDate,
-  getCategories, // New
-  getBranches, // New
-  getSuppliers, // New
-  getBankAccounts, // New
+  getCategories,
+  getBranches,
+  getSuppliers,
+  getBankAccounts,
   getTransfers,
   getTransfersByDate,
   getPriceBooks,
@@ -1490,4 +1735,9 @@ module.exports = {
   getReceipts,
   getReturns,
   getSurcharges,
+  // NEW functions
+  getInventoryAdjustments,
+  getInventoryAdjustmentsByDate,
+  getDamageReports,
+  getDamageReportsByDate,
 };

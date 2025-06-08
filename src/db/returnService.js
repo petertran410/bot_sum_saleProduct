@@ -1,4 +1,4 @@
-// src/db/returnService.js - FIXED VERSION
+// src/db/returnService.js - FIXED VERSION with proper foreign key handling
 const { getPool } = require("../db");
 
 // HELPER FUNCTION: Convert undefined to null for MySQL2 compatibility
@@ -31,6 +31,69 @@ function validateAndSanitizeReturn(returnOrder) {
       ? 0
       : Number(returnOrder.discount),
   };
+}
+
+// FIXED: Function to check if foreign key references exist
+async function validateForeignKeys(returnOrder, connection) {
+  const validatedData = { ...returnOrder };
+
+  // Check if branchId exists
+  if (validatedData.branchId) {
+    const [branchExists] = await connection.execute(
+      "SELECT id FROM branches WHERE id = ?",
+      [validatedData.branchId]
+    );
+    if (branchExists.length === 0) {
+      console.warn(
+        `Branch ${validatedData.branchId} not found, setting to null`
+      );
+      validatedData.branchId = null;
+    }
+  }
+
+  // Check if customerId exists
+  if (validatedData.customerId) {
+    const [customerExists] = await connection.execute(
+      "SELECT id FROM customers WHERE id = ?",
+      [validatedData.customerId]
+    );
+    if (customerExists.length === 0) {
+      console.warn(
+        `Customer ${validatedData.customerId} not found, setting to null`
+      );
+      validatedData.customerId = null;
+    }
+  }
+
+  // Check if createdById exists
+  if (validatedData.createdById) {
+    const [userExists] = await connection.execute(
+      "SELECT id FROM users WHERE id = ?",
+      [validatedData.createdById]
+    );
+    if (userExists.length === 0) {
+      console.warn(
+        `User ${validatedData.createdById} not found, setting to null`
+      );
+      validatedData.createdById = null;
+    }
+  }
+
+  // Check if invoiceId exists
+  if (validatedData.invoiceId) {
+    const [invoiceExists] = await connection.execute(
+      "SELECT id FROM invoices WHERE id = ?",
+      [validatedData.invoiceId]
+    );
+    if (invoiceExists.length === 0) {
+      console.warn(
+        `Invoice ${validatedData.invoiceId} not found, setting to null`
+      );
+      validatedData.invoiceId = null;
+    }
+  }
+
+  return validatedData;
 }
 
 async function saveReturns(returns) {
@@ -129,27 +192,30 @@ async function saveReturn(returnOrder, connection = null) {
   }
 
   try {
+    // FIXED: Validate foreign keys before insertion
+    const validatedReturn = await validateForeignKeys(returnOrder, connection);
+
     // FIXED: Extract and convert undefined to null
-    const id = convertUndefinedToNull(returnOrder.id);
-    const code = convertUndefinedToNull(returnOrder.code) || "";
-    const returnDate = convertUndefinedToNull(returnOrder.returnDate);
-    const branchId = convertUndefinedToNull(returnOrder.branchId);
-    const branchName = convertUndefinedToNull(returnOrder.branchName);
-    const customerId = convertUndefinedToNull(returnOrder.customerId);
-    const customerName = convertUndefinedToNull(returnOrder.customerName);
-    const createdById = convertUndefinedToNull(returnOrder.createdById);
-    const createdByName = convertUndefinedToNull(returnOrder.createdByName);
-    const status = convertUndefinedToNull(returnOrder.status);
-    const statusValue = convertUndefinedToNull(returnOrder.statusValue);
-    const total = convertUndefinedToNull(returnOrder.total);
-    const totalPayment = convertUndefinedToNull(returnOrder.totalPayment);
-    const discount = convertUndefinedToNull(returnOrder.discount);
-    const description = convertUndefinedToNull(returnOrder.description);
-    const invoiceId = convertUndefinedToNull(returnOrder.invoiceId);
-    const invoiceCode = convertUndefinedToNull(returnOrder.invoiceCode);
-    const retailerId = convertUndefinedToNull(returnOrder.retailerId);
-    const createdDate = convertUndefinedToNull(returnOrder.createdDate);
-    const modifiedDate = convertUndefinedToNull(returnOrder.modifiedDate);
+    const id = convertUndefinedToNull(validatedReturn.id);
+    const code = convertUndefinedToNull(validatedReturn.code) || "";
+    const returnDate = convertUndefinedToNull(validatedReturn.returnDate);
+    const branchId = convertUndefinedToNull(validatedReturn.branchId);
+    const branchName = convertUndefinedToNull(validatedReturn.branchName);
+    const customerId = convertUndefinedToNull(validatedReturn.customerId);
+    const customerName = convertUndefinedToNull(validatedReturn.customerName);
+    const createdById = convertUndefinedToNull(validatedReturn.createdById);
+    const createdByName = convertUndefinedToNull(validatedReturn.createdByName);
+    const status = convertUndefinedToNull(validatedReturn.status);
+    const statusValue = convertUndefinedToNull(validatedReturn.statusValue);
+    const total = convertUndefinedToNull(validatedReturn.total);
+    const totalPayment = convertUndefinedToNull(validatedReturn.totalPayment);
+    const discount = convertUndefinedToNull(validatedReturn.discount);
+    const description = convertUndefinedToNull(validatedReturn.description);
+    const invoiceId = convertUndefinedToNull(validatedReturn.invoiceId);
+    const invoiceCode = convertUndefinedToNull(validatedReturn.invoiceCode);
+    const retailerId = convertUndefinedToNull(validatedReturn.retailerId);
+    const createdDate = convertUndefinedToNull(validatedReturn.createdDate);
+    const modifiedDate = convertUndefinedToNull(validatedReturn.modifiedDate);
 
     const jsonData = JSON.stringify(returnOrder);
 

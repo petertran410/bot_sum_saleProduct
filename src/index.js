@@ -1,3 +1,4 @@
+// src/index.js - FIXED VERSION with proper sync order
 require("dotenv").config();
 const express = require("express");
 const {
@@ -10,13 +11,15 @@ const {
   runBranchSync,
   runSupplierSync,
   runBankAccountSync,
-  // NEW MISSING SYNC FUNCTIONS
   runTransferSync,
   runPriceBookSync,
   runPurchaseOrderSync,
   runReceiptSync,
   runReturnSync,
   runSurchargeSync,
+  // NEW MISSING FUNCTIONS - ADD THESE TO syncKiot.js
+  runInventoryAdjustmentSync,
+  runDamageReportSync,
 } = require("./syncKiot/syncKiot");
 
 const {
@@ -27,13 +30,15 @@ const {
   getBranches,
   getSuppliers,
   getBankAccounts,
-  // NEW MISSING API FUNCTIONS
   getTransfers,
   getPriceBooks,
   getPurchaseOrders,
   getReceipts,
   getReturns,
   getSurcharges,
+  // NEW MISSING API FUNCTIONS - ADD THESE TO kiotviet.js
+  getInventoryAdjustments,
+  getDamageReports,
 } = require("./kiotviet");
 
 const { testConnection } = require("./db");
@@ -88,13 +93,14 @@ app.get("/", (req, res) => {
         branch: "/save-branch",
         supplier: "/save-supplier",
         bankAccount: "/save-bank-account",
-        // NEW MISSING SYNC ENDPOINTS
         transfer: "/save-transfer",
         priceBook: "/save-price-book",
         purchaseOrder: "/save-purchase-order",
         receipt: "/save-receipt",
         return: "/save-return",
         surcharge: "/save-surcharge",
+        inventoryAdjustment: "/save-inventory-adjustment",
+        damageReport: "/save-damage-report",
       },
       get: {
         products: "/get-products",
@@ -104,19 +110,21 @@ app.get("/", (req, res) => {
         branches: "/get-branches",
         suppliers: "/get-suppliers",
         bankAccounts: "/get-bank-accounts",
-        // NEW MISSING GET ENDPOINTS
         transfers: "/get-transfers",
         priceBooks: "/get-price-books",
         purchaseOrders: "/get-purchase-orders",
         receipts: "/get-receipts",
         returns: "/get-returns",
         surcharges: "/get-surcharges",
+        inventoryAdjustments: "/get-inventory-adjustments",
+        damageReports: "/get-damage-reports",
       },
     },
     timestamp: new Date().toISOString(),
   });
 });
 
+// CORS setup (keep existing)
 app.use((req, res, next) => {
   req.clientIP =
     req.headers["x-forwarded-for"] ||
@@ -127,13 +135,12 @@ app.use((req, res, next) => {
 });
 
 app.use((req, res, next) => {
-  // Allow your specific domain and common local development
   const allowedOrigins = [
     "https://www.traphuonghoang.com",
     "https://traphuonghoang.com",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "file://", // For local HTML files
+    "file://",
   ];
 
   const origin = req.headers.origin;
@@ -141,7 +148,6 @@ app.use((req, res, next) => {
     res.setHeader("Access-Control-Allow-Origin", origin);
   }
 
-  // Essential CORS headers
   res.setHeader(
     "Access-Control-Allow-Methods",
     "GET, POST, PUT, DELETE, OPTIONS"
@@ -151,9 +157,8 @@ app.use((req, res, next) => {
     "Origin, X-Requested-With, Content-Type, Accept, Authorization"
   );
   res.setHeader("Access-Control-Allow-Credentials", "true");
-  res.setHeader("Access-Control-Max-Age", "86400"); // 24 hours
+  res.setHeader("Access-Control-Max-Age", "86400");
 
-  // Handle preflight OPTIONS requests
   if (req.method === "OPTIONS") {
     console.log(`✅ CORS preflight handled for ${req.path}`);
     return res.status(200).end();
@@ -162,6 +167,7 @@ app.use((req, res, next) => {
   next();
 });
 
+// API endpoints (keep existing ones)
 app.get("/api/health", (req, res) => {
   console.log("🏥 Health check requested");
   res.json({
@@ -181,7 +187,6 @@ app.post("/api/submit-registration", async (req, res) => {
     console.log("📝 New registration received:", req.body);
     console.log("🌐 Client IP:", req.clientIP);
 
-    // Validate required fields
     const { name, phone, email, type, ticket, city } = req.body;
 
     if (!name || !phone || !email) {
@@ -192,14 +197,12 @@ app.post("/api/submit-registration", async (req, res) => {
       });
     }
 
-    // Add client info to form data
     const formDataWithIP = {
       ...req.body,
       clientIP: req.clientIP,
       userAgent: req.get("User-Agent"),
     };
 
-    // Add record to CRM Base
     const result = await addRecordToCRMBase(formDataWithIP);
 
     if (result.success) {
@@ -230,9 +233,6 @@ app.post("/api/submit-registration", async (req, res) => {
   }
 });
 
-/**
- * Get CRM statistics
- */
 app.get("/api/crm/stats", async (req, res) => {
   try {
     console.log("📊 CRM stats requested");
@@ -259,9 +259,6 @@ app.get("/api/crm/stats", async (req, res) => {
   }
 });
 
-/**
- * Test LarkSuite connection
- */
 app.get("/api/test-lark", async (req, res) => {
   try {
     console.log("🔧 LarkSuite test requested");
@@ -281,16 +278,9 @@ app.get("/api/test-lark", async (req, res) => {
   }
 });
 
-/**
- * Webhook endpoint for LarkSuite (optional)
- */
 app.post("/api/webhook/lark", (req, res) => {
   try {
     console.log("📨 LarkSuite webhook received:", req.body);
-
-    // Handle webhook events if needed
-    // For example: when someone updates a CRM record
-
     res.json({
       success: true,
       message: "Webhook processed",
@@ -304,7 +294,7 @@ app.post("/api/webhook/lark", (req, res) => {
   }
 });
 
-// EXISTING SYNC ENDPOINTS
+// EXISTING SYNC ENDPOINTS (keep all existing ones)
 app.get("/save-order", async (req, res) => {
   try {
     await runOrderSync();
@@ -382,7 +372,6 @@ app.get("/save-user", async (req, res) => {
   }
 });
 
-// NEW SYNC ENDPOINTS
 app.get("/save-category", async (req, res) => {
   try {
     await runCategorySync();
@@ -447,7 +436,136 @@ app.get("/save-bank-account", async (req, res) => {
   }
 });
 
-// EXISTING GET ENDPOINTS
+app.get("/save-transfer", async (req, res) => {
+  try {
+    await runTransferSync();
+    res.json({
+      success: true,
+      message: "Transfer synchronization completed",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error during transfer synchronization",
+      error: error.message,
+    });
+  }
+});
+
+app.get("/save-price-book", async (req, res) => {
+  try {
+    await runPriceBookSync();
+    res.json({
+      success: true,
+      message: "Price book synchronization completed",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error during price book synchronization",
+      error: error.message,
+    });
+  }
+});
+
+app.get("/save-purchase-order", async (req, res) => {
+  try {
+    await runPurchaseOrderSync();
+    res.json({
+      success: true,
+      message: "Purchase order synchronization completed",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error during purchase order synchronization",
+      error: error.message,
+    });
+  }
+});
+
+app.get("/save-receipt", async (req, res) => {
+  try {
+    await runReceiptSync();
+    res.json({
+      success: true,
+      message: "Receipt synchronization completed",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error during receipt synchronization",
+      error: error.message,
+    });
+  }
+});
+
+app.get("/save-return", async (req, res) => {
+  try {
+    await runReturnSync();
+    res.json({
+      success: true,
+      message: "Return synchronization completed",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error during return synchronization",
+      error: error.message,
+    });
+  }
+});
+
+app.get("/save-surcharge", async (req, res) => {
+  try {
+    await runSurchargeSync();
+    res.json({
+      success: true,
+      message: "Surcharge synchronization completed",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error during surcharge synchronization",
+      error: error.message,
+    });
+  }
+});
+
+// NEW ENDPOINTS FOR MISSING ENTITIES
+app.get("/save-inventory-adjustment", async (req, res) => {
+  try {
+    await runInventoryAdjustmentSync();
+    res.json({
+      success: true,
+      message: "Inventory adjustment synchronization completed",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error during inventory adjustment synchronization",
+      error: error.message,
+    });
+  }
+});
+
+app.get("/save-damage-report", async (req, res) => {
+  try {
+    await runDamageReportSync();
+    res.json({
+      success: true,
+      message: "Damage report synchronization completed",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error during damage report synchronization",
+      error: error.message,
+    });
+  }
+});
+
+// GET ENDPOINTS (keep all existing ones + add new ones)
 app.get("/get-products", async (req, res) => {
   try {
     const products = await getProducts();
@@ -490,7 +608,6 @@ app.get("/get-users", async (req, res) => {
   }
 });
 
-// NEW GET ENDPOINTS
 app.get("/get-categories", async (req, res) => {
   try {
     const categories = await getCategories();
@@ -547,6 +664,167 @@ app.get("/get-bank-accounts", async (req, res) => {
   }
 });
 
+app.get("/get-transfers", async (req, res) => {
+  try {
+    const transfers = await getTransfers();
+    res.json(transfers);
+  } catch (error) {
+    console.log("Cannot get transfers", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching transfers",
+      error: error.message,
+    });
+  }
+});
+
+app.get("/get-price-books", async (req, res) => {
+  try {
+    const priceBooks = await getPriceBooks();
+    res.json(priceBooks);
+  } catch (error) {
+    console.log("Cannot get price books", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching price books",
+      error: error.message,
+    });
+  }
+});
+
+app.get("/get-purchase-orders", async (req, res) => {
+  try {
+    const purchaseOrders = await getPurchaseOrders();
+    res.json(purchaseOrders);
+  } catch (error) {
+    console.log("Cannot get purchase orders", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching purchase orders",
+      error: error.message,
+    });
+  }
+});
+
+app.get("/get-receipts", async (req, res) => {
+  try {
+    const receipts = await getReceipts();
+    res.json(receipts);
+  } catch (error) {
+    console.log("Cannot get receipts", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching receipts",
+      error: error.message,
+    });
+  }
+});
+
+app.get("/get-returns", async (req, res) => {
+  try {
+    const returns = await getReturns();
+    res.json(returns);
+  } catch (error) {
+    console.log("Cannot get returns", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching returns",
+      error: error.message,
+    });
+  }
+});
+
+app.get("/get-surcharges", async (req, res) => {
+  try {
+    const surcharges = await getSurcharges();
+    res.json(surcharges);
+  } catch (error) {
+    console.log("Cannot get surcharges", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching surcharges",
+      error: error.message,
+    });
+  }
+});
+
+app.get("/get-inventory-adjustments", async (req, res) => {
+  try {
+    const inventoryAdjustments = await getInventoryAdjustments();
+    res.json(inventoryAdjustments);
+  } catch (error) {
+    console.log("Cannot get inventory adjustments", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching inventory adjustments",
+      error: error.message,
+    });
+  }
+});
+
+app.get("/get-damage-reports", async (req, res) => {
+  try {
+    const damageReports = await getDamageReports();
+    res.json(damageReports);
+  } catch (error) {
+    console.log("Cannot get damage reports", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching damage reports",
+      error: error.message,
+    });
+  }
+});
+
+// FIXED: Proper sync order to respect foreign key dependencies
+async function runSequentialSync() {
+  try {
+    console.log("🔄 Starting sequential sync process...");
+
+    // PHASE 1: Master Data (Independent entities - no foreign keys)
+    console.log("📁 Phase 1: Syncing master data...");
+    await Promise.all([
+      runCategorySync(),
+      runBranchSync(),
+      runSupplierSync(),
+      runBankAccountSync(),
+      runUserSync(),
+    ]);
+
+    // PHASE 2: Customer and Product Data (Depends on categories, suppliers, users)
+    console.log("👥 Phase 2: Syncing customers and products...");
+    await Promise.all([
+      runCustomerSync(),
+      runProductSync(),
+      runPriceBookSync(),
+    ]);
+
+    // PHASE 3: Transaction Documents (Depends on customers, products, users, branches)
+    console.log("📋 Phase 3: Syncing transaction documents...");
+    await Promise.all([
+      runOrderSync(),
+      runInvoiceSync(),
+      runPurchaseOrderSync(),
+    ]);
+
+    // PHASE 4: Related Transactions (Depends on all above)
+    console.log("🔗 Phase 4: Syncing related transactions...");
+    await Promise.all([
+      runTransferSync(),
+      runReceiptSync(),
+      runReturnSync(),
+      runSurchargeSync(),
+      runInventoryAdjustmentSync(),
+      runDamageReportSync(),
+    ]);
+
+    console.log("✅ Sequential sync completed successfully!");
+  } catch (error) {
+    console.error("❌ Error during sequential sync:", error);
+    throw error;
+  }
+}
+
 // Initialize and start the server
 async function startServer() {
   try {
@@ -564,123 +842,95 @@ async function startServer() {
     }
 
     const server = app.listen(PORT, async () => {
+      console.log(`🚀 Server started on port ${PORT}`);
+
+      // FIXED: Run proper sequential sync on startup
+      console.log("🔧 Starting initial sync process...");
+
+      // Run initial historical sync if needed
       const historicalDaysAgo = parseInt(process.env.INITIAL_SCAN_DAYS || "7");
 
-      // Get sync status for all entities
+      // Check which entities need historical sync
       const orderSyncStatus =
-        await require("../src/db/orderService").getSyncStatus();
+        await require("./db/orderService").getSyncStatus();
       const invoiceSyncStatus =
-        await require("../src/db/invoiceService").getSyncStatus();
+        await require("./db/invoiceService").getSyncStatus();
       const customerSyncStatus =
-        await require("../src/db/customerService").getSyncStatus();
+        await require("./db/customerService").getSyncStatus();
       const productSyncStatus =
-        await require("../src/db/productService").getSyncStatus();
-      const userSyncStatus =
-        await require("../src/db/userService").getSyncStatus();
+        await require("./db/productService").getSyncStatus();
+      const userSyncStatus = await require("./db/userService").getSyncStatus();
       const categorySyncStatus =
-        await require("../src/db/categoryService").getSyncStatus();
+        await require("./db/categoryService").getSyncStatus();
       const branchSyncStatus =
-        await require("../src/db/branchService").getSyncStatus();
+        await require("./db/branchService").getSyncStatus();
       const supplierSyncStatus =
-        await require("../src/db/supplierService").getSyncStatus();
+        await require("./db/supplierService").getSyncStatus();
       const bankAccountSyncStatus =
-        await require("../src/db/backAccountService").getSyncStatus();
+        await require("./db/backAccountService").getSyncStatus();
 
-      if (!categorySyncStatus.historicalCompleted) {
-        await runCategorySync();
-      }
+      // Run historical sync for entities that haven't completed it yet
+      if (
+        !categorySyncStatus.historicalCompleted ||
+        !branchSyncStatus.historicalCompleted ||
+        !supplierSyncStatus.historicalCompleted ||
+        !bankAccountSyncStatus.historicalCompleted ||
+        !userSyncStatus.historicalCompleted ||
+        !customerSyncStatus.historicalCompleted ||
+        !productSyncStatus.historicalCompleted ||
+        !orderSyncStatus.historicalCompleted ||
+        !invoiceSyncStatus.historicalCompleted
+      ) {
+        console.log("📚 Running historical sync for incomplete entities...");
 
-      if (!branchSyncStatus.historicalCompleted) {
-        await runBranchSync();
-      }
-
-      if (!supplierSyncStatus.historicalCompleted) {
-        await runSupplierSync();
-      }
-
-      if (!bankAccountSyncStatus.historicalCompleted) {
-        await runBankAccountSync();
-      }
-
-      // Sync users first since they're referenced by other entities
-      if (!userSyncStatus.historicalCompleted) {
-        await require("../scheduler/userScheduler").userScheduler(
-          historicalDaysAgo
-        );
-      }
-
-      if (!orderSyncStatus.historicalCompleted) {
-        await require("../scheduler/orderScheduler").orderScheduler(
-          historicalDaysAgo
-        );
-      }
-
-      if (!invoiceSyncStatus.historicalCompleted) {
-        await require("../scheduler/invoiceScheduler").invoiceScheduler(
-          historicalDaysAgo
-        );
-      }
-
-      if (!customerSyncStatus.historicalCompleted) {
-        await require("../scheduler/customerScheduler").customerScheduler(
-          historicalDaysAgo
-        );
-      }
-
-      if (!productSyncStatus.historicalCompleted) {
-        await require("../scheduler/productScheduler").productScheduler(
-          historicalDaysAgo
-        );
-      }
-
-      await Promise.all([
-        runCategorySync(),
-        runBranchSync(),
-        runSupplierSync(),
-        runBankAccountSync(),
-        runUserSync(),
-        runOrderSync(),
-        runInvoiceSync(),
-        runCustomerSync(),
-        runProductSync(),
-        // NEW MISSING SYNCS
-        runTransferSync(),
-        runPriceBookSync(),
-        runPurchaseOrderSync(),
-        runReceiptSync(),
-        runReturnSync(),
-        runSurchargeSync(),
-      ]);
-
-      const runAllSyncs = async () => {
-        try {
-          await Promise.all([
-            runCategorySync(),
-            runBranchSync(),
-            runSupplierSync(),
-            runBankAccountSync(),
-            runUserSync(),
-            runOrderSync(),
-            runInvoiceSync(),
-            runCustomerSync(),
-            runProductSync(),
-            // NEW MISSING SYNCS
-            runTransferSync(),
-            runPriceBookSync(),
-            runPurchaseOrderSync(),
-            runReceiptSync(),
-            runReturnSync(),
-            runSurchargeSync(),
-          ]);
-        } catch (error) {
-          console.error("Error during simultaneous sync:", error);
+        // Run historical syncs in proper order
+        if (!categorySyncStatus.historicalCompleted) {
+          await runCategorySync();
         }
-      };
+        if (!branchSyncStatus.historicalCompleted) {
+          await runBranchSync();
+        }
+        if (!supplierSyncStatus.historicalCompleted) {
+          await runSupplierSync();
+        }
+        if (!bankAccountSyncStatus.historicalCompleted) {
+          await runBankAccountSync();
+        }
+        if (!userSyncStatus.historicalCompleted) {
+          await require("./scheduler/userScheduler").userScheduler(
+            historicalDaysAgo
+          );
+        }
+        if (!customerSyncStatus.historicalCompleted) {
+          await require("./scheduler/customerScheduler").customerScheduler(
+            historicalDaysAgo
+          );
+        }
+        if (!productSyncStatus.historicalCompleted) {
+          await require("./scheduler/productScheduler").productScheduler(
+            historicalDaysAgo
+          );
+        }
+        if (!orderSyncStatus.historicalCompleted) {
+          await require("./scheduler/orderScheduler").orderScheduler(
+            historicalDaysAgo
+          );
+        }
+        if (!invoiceSyncStatus.historicalCompleted) {
+          await require("./scheduler/invoiceScheduler").invoiceScheduler(
+            historicalDaysAgo
+          );
+        }
+      }
 
-      // Run sync every 10 minutes (10 * 60 * 1000 ms)
-      const syncInterval = setInterval(runAllSyncs, 10 * 60 * 1000);
+      // Run current sync
+      await runSequentialSync();
+
+      // Set up periodic sync (every 10 minutes)
+      const syncInterval = setInterval(runSequentialSync, 10 * 60 * 1000);
 
       process.on("SIGINT", () => {
+        console.log("🛑 Shutting down gracefully...");
         clearInterval(syncInterval);
         server.close(() => {
           console.log("Server stopped");
