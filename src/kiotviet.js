@@ -928,62 +928,6 @@ const getSurchargesByDate = async (daysAgo) => {
   }
 };
 
-const getCustomerGroups = async () => {
-  try {
-    const token = await getToken();
-
-    console.log("Fetching customer groups...");
-
-    const response = await makeApiRequest({
-      method: "GET",
-      url: `${KIOTVIET_BASE_URL}/customers/group`,
-      headers: {
-        Retailer: process.env.KIOT_SHOP_NAME,
-        Authorization: `Bearer ${token}`,
-      },
-    });
-
-    if (response.data) {
-      console.log(`Retrieved ${response.data.total || 0} customer groups`);
-      return {
-        data: response.data.data || [],
-        total: response.data.total || response.data.data?.length || 0,
-      };
-    }
-
-    return { data: [], total: 0 };
-  } catch (error) {
-    console.error("Error getting customer groups:", error.message);
-    throw error;
-  }
-};
-
-const getCustomerGroupsByDate = async (daysAgo) => {
-  try {
-    // Customer groups don't support date filtering according to the API documentation
-    // So we'll just get all customer groups once
-    console.log(
-      `Note: Customer groups don't support date filtering. Getting all groups.`
-    );
-
-    const customerGroups = await getCustomerGroups();
-
-    // Return in the same format as other date-based functions for consistency
-    const results = [
-      {
-        date: new Date().toISOString().split("T")[0],
-        daysAgo: 0,
-        data: customerGroups,
-      },
-    ];
-
-    return results;
-  } catch (error) {
-    console.error("Error getting customer groups by date:", error.message);
-    return [];
-  }
-};
-
 const getCashflow = async () => {
   try {
     const token = await getToken();
@@ -1006,6 +950,7 @@ const getCashflow = async () => {
         url: `${KIOTVIET_BASE_URL}/cashflow`,
         params: {
           pageSize: pageSize,
+          currentItem: currentItem,
           startDate: startDate,
           endDate: endDate,
           includeAccount: true,
@@ -1024,20 +969,15 @@ const getCashflow = async () => {
         response.data.data.length > 0
       ) {
         allCashflows.push(...response.data.data);
+        currentItem += response.data.data.length;
 
-        // Check if we got a full page, indicating there might be more data
-        if (
-          response.data.data.length === pageSize &&
-          response.data.total > allCashflows.length
-        ) {
-          currentItem += response.data.data.length;
-          hasMoreData = true;
-        } else {
-          hasMoreData = false;
-        }
+        // Check if we have more data based on total count
+        hasMoreData =
+          response.data.total > allCashflows.length &&
+          response.data.data.length === pageSize;
 
         console.log(
-          `Fetched ${response.data.data.length} cashflows, total: ${allCashflows.length}`
+          `Fetched ${response.data.data.length} cashflows, total: ${allCashflows.length}/${response.data.total}`
         );
         await new Promise((resolve) => setTimeout(resolve, 100));
       } else {
@@ -1069,41 +1009,55 @@ const getCashflowByDate = async (daysAgo) => {
       const token = await getToken();
       const pageSize = 100;
       const allCashflowsForDate = [];
+      let currentItem = 0;
+      let hasMoreData = true;
 
       console.log(`Fetching cashflows for ${formattedDate}...`);
 
-      // Since the cashflow API doesn't support pagination in the same way,
-      // we'll fetch all data for the specific date
-      const response = await makeApiRequest({
-        method: "GET",
-        url: `${KIOTVIET_BASE_URL}/cashflow`,
-        params: {
-          pageSize: pageSize,
-          startDate: formattedDate,
-          endDate: formattedDate,
-          includeAccount: true,
-          includeBranch: true,
-          includeUser: true,
-        },
-        headers: {
-          Retailer: process.env.KIOT_SHOP_NAME,
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      while (hasMoreData) {
+        const response = await makeApiRequest({
+          method: "GET",
+          url: `${KIOTVIET_BASE_URL}/cashflow`,
+          params: {
+            pageSize: pageSize,
+            currentItem: currentItem,
+            startDate: formattedDate,
+            endDate: formattedDate,
+            includeAccount: true,
+            includeBranch: true,
+            includeUser: true,
+          },
+          headers: {
+            Retailer: process.env.KIOT_SHOP_NAME,
+            Authorization: `Bearer ${token}`,
+          },
+        });
 
-      if (
-        response.data &&
-        response.data.data &&
-        response.data.data.length > 0
-      ) {
-        allCashflowsForDate.push(...response.data.data);
-        console.log(
-          `Date ${formattedDate}: Fetched ${response.data.data.length} cashflows, total: ${allCashflowsForDate.length}`
-        );
-      } else {
-        console.log(`Date ${formattedDate}: No cashflows found`);
+        if (
+          response.data &&
+          response.data.data &&
+          response.data.data.length > 0
+        ) {
+          allCashflowsForDate.push(...response.data.data);
+          currentItem += response.data.data.length;
+
+          // Check if we have more data
+          hasMoreData =
+            response.data.total > allCashflowsForDate.length &&
+            response.data.data.length === pageSize;
+
+          console.log(
+            `Date ${formattedDate}: Fetched ${response.data.data.length} cashflows, total: ${allCashflowsForDate.length}/${response.data.total}`
+          );
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        } else {
+          hasMoreData = false;
+        }
       }
 
+      console.log(
+        `Found ${allCashflowsForDate.length} cashflows for ${formattedDate}`
+      );
       results.push({
         date: formattedDate,
         daysAgo: currentDaysAgo,
@@ -1134,8 +1088,6 @@ module.exports = {
   getUsersByDate,
   getSurcharges,
   getSurchargesByDate,
-  getCustomerGroups,
-  getCustomerGroupsByDate,
   getCashflow,
   getCashflowByDate,
 };

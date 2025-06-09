@@ -232,34 +232,41 @@ const runSurchargeSync = async () => {
 
 const runCashflowSync = async () => {
   try {
+    console.log("🚀 Starting Cashflow Sync Process...");
     const syncStatus = await cashFlowService.getSyncStatus();
+    console.log("Cashflow Sync Status:", syncStatus);
 
     if (!syncStatus.historicalCompleted) {
-      const result = await cashflowScheduler(250);
+      console.log("📅 Running historical cashflow sync...");
+      // Start with fewer days for testing, then increase gradually
+      const result = await cashflowScheduler(30); // Reduced from 250 to 30 days for initial testing
 
       if (result.success) {
-        console.log("✅ Historical cashflow data has been saved to database");
+        console.log("✅ Historical cashflows data has been saved to database");
       } else {
         console.error(
-          "❌ Error when saving historical cashflow data:",
+          "❌ Error when saving historical cashflows data:",
           result.error
         );
       }
     } else {
-      console.log("🔄 Running current customer sync...");
+      console.log("🔄 Running current cashflow sync...");
       const currentResult = await cashflowSchedulerCurrent();
 
       if (currentResult.success) {
-        console.log(`✅ Current cashflow data has been added`);
+        console.log(
+          `✅ Current cashflows data has been added: ${currentResult.savedCount} cashflows`
+        );
       } else {
         console.error(
-          "❌ Error when adding current cashflow:",
+          "❌ Error when adding current cashflows:",
           currentResult.error
         );
       }
     }
   } catch (error) {
     console.error("❌ Error during cashflow sync:", error);
+    console.error("Stack trace:", error.stack);
     return { success: false, error: error.message };
   }
 };

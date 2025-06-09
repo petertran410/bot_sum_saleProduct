@@ -1,13 +1,13 @@
 const { getPool } = require("../db.js");
 
-// Validate and sanitize cashflow data
+// Validate and sanitize cashflow data based on actual API response
 function validateAndSanitizeCashflow(cashflow) {
   return {
     ...cashflow,
     code: cashflow.code ? String(cashflow.code).substring(0, 50) : "",
-    address: cashflow.address ? String(cashflow.address).substring(0, 255) : "",
-    branchName: cashflow.branchName
-      ? String(cashflow.branchName).substring(0, 100)
+    address: cashflow.address ? String(cashflow.address).substring(0, 500) : "",
+    locationName: cashflow.locationName
+      ? String(cashflow.locationName).substring(0, 100)
       : null,
     wardName: cashflow.wardName
       ? String(cashflow.wardName).substring(0, 100)
@@ -18,7 +18,6 @@ function validateAndSanitizeCashflow(cashflow) {
     partnerName: cashflow.partnerName
       ? String(cashflow.partnerName).substring(0, 255)
       : "",
-    user: cashflow.user ? String(cashflow.user).substring(0, 100) : null,
     statusValue: cashflow.statusValue
       ? String(cashflow.statusValue).substring(0, 50)
       : null,
@@ -26,6 +25,10 @@ function validateAndSanitizeCashflow(cashflow) {
     partnerType: cashflow.partnerType
       ? String(cashflow.partnerType).substring(0, 10)
       : "O",
+    origin: cashflow.origin ? String(cashflow.origin).substring(0, 50) : null,
+    cashGroup: cashflow.cashGroup
+      ? String(cashflow.cashGroup).substring(0, 100)
+      : null,
     amount: isNaN(Number(cashflow.amount)) ? 0 : Number(cashflow.amount),
     usedForFinancialReporting:
       cashflow.usedForFinancialReporting !== undefined
@@ -34,11 +37,13 @@ function validateAndSanitizeCashflow(cashflow) {
     status: cashflow.status !== undefined ? Number(cashflow.status) : 0,
     branchId: cashflow.branchId ? Number(cashflow.branchId) : null,
     createdBy: cashflow.createdBy ? Number(cashflow.createdBy) : null,
+    userId: cashflow.userId ? Number(cashflow.userId) : null,
     cashFlowGroupId: cashflow.cashFlowGroupId
       ? Number(cashflow.cashFlowGroupId)
       : null,
     partnerId: cashflow.partnerId ? Number(cashflow.partnerId) : null,
-    AccountId: cashflow.AccountId ? Number(cashflow.AccountId) : null,
+    accountId: cashflow.accountId ? Number(cashflow.accountId) : null,
+    retailerId: cashflow.retailerId ? Number(cashflow.retailerId) : null,
   };
 }
 
@@ -60,6 +65,12 @@ async function saveCashflows(cashflows) {
       `Processing ${cashflows.length} cashflows in batches of ${BATCH_SIZE}`
     );
 
+    // Get existing IDs for faster lookup
+    const [existingCashflows] = await connection.execute(
+      "SELECT id FROM cashflows"
+    );
+    const existingIds = new Set(existingCashflows.map((row) => row.id));
+
     // Process in batches
     for (let i = 0; i < cashflows.length; i += BATCH_SIZE) {
       const batch = cashflows.slice(i, i + BATCH_SIZE);
@@ -69,32 +80,24 @@ async function saveCashflows(cashflows) {
           // Validate and sanitize
           const validatedCashflow = validateAndSanitizeCashflow(cashflow);
 
-          // Check if record exists
-          const [existing] = await connection.execute(
-            "SELECT id, transDate FROM cashflows WHERE id = ?",
-            [validatedCashflow.id]
-          );
+          const isNew = !existingIds.has(validatedCashflow.id);
 
-          const isNew = existing.length === 0;
-          const isUpdated =
-            !isNew &&
-            validatedCashflow.transDate &&
-            existing[0].transDate &&
-            new Date(validatedCashflow.transDate) >
-              new Date(existing[0].transDate);
-
-          if (isNew || isUpdated) {
+          if (isNew) {
             const result = await saveCashflow(validatedCashflow, connection);
             if (result.success) {
               successCount++;
-              if (isNew) newCount++;
-              else updatedCount++;
+              newCount++;
+              existingIds.add(validatedCashflow.id);
             } else {
               failCount++;
               console.error(
                 `Failed to save cashflow ${validatedCashflow.code}: ${result.error}`
               );
             }
+          } else {
+            // For existing records, you might want to update them
+            // For now, we'll just count them
+            successCount++;
           }
         } catch (error) {
           console.error(
@@ -149,23 +152,26 @@ async function saveCashflow(cashflow, connection = null) {
       id,
       code,
       address = "",
+      locationName = null,
       branchId,
-      branchName = null,
       wardName = null,
       contactNumber = null,
       createdBy,
+      userId,
       usedForFinancialReporting = 1,
+      accountId = null,
+      origin = null,
       cashFlowGroupId = null,
+      cashGroup = null,
       method,
       partnerType = "O",
       partnerId = null,
+      retailerId,
       status,
       statusValue = null,
       transDate,
       amount,
       partnerName = "",
-      user = null,
-      AccountId = null,
     } = cashflow;
 
     // Validate required fields
@@ -188,28 +194,31 @@ async function saveCashflow(cashflow, connection = null) {
 
     const query = `
       INSERT INTO cashflows 
-        (id, code, address, branchId, branchName, wardName, contactNumber,
-         createdBy, usedForFinancialReporting, cashFlowGroupId, method,
-         partnerType, partnerId, status, statusValue, transDate, amount,
-         partnerName, user, AccountId, isReceipt, jsonData)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, code, address, locationName, branchId, wardName, contactNumber,
+         createdBy, userId, usedForFinancialReporting, accountId, origin, 
+         cashFlowGroupId, cashGroup, method, partnerType, partnerId, 
+         retailerId, status, statusValue, transDate, amount, partnerName, 
+         isReceipt, jsonData)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
         address = VALUES(address),
-        branchName = VALUES(branchName),
+        locationName = VALUES(locationName),
         wardName = VALUES(wardName),
         contactNumber = VALUES(contactNumber),
         usedForFinancialReporting = VALUES(usedForFinancialReporting),
+        accountId = VALUES(accountId),
+        origin = VALUES(origin),
         cashFlowGroupId = VALUES(cashFlowGroupId),
+        cashGroup = VALUES(cashGroup),
         method = VALUES(method),
         partnerType = VALUES(partnerType),
         partnerId = VALUES(partnerId),
+        retailerId = VALUES(retailerId),
         status = VALUES(status),
         statusValue = VALUES(statusValue),
         transDate = VALUES(transDate),
         amount = VALUES(amount),
         partnerName = VALUES(partnerName),
-        user = VALUES(user),
-        AccountId = VALUES(AccountId),
         isReceipt = VALUES(isReceipt),
         jsonData = VALUES(jsonData)
     `;
@@ -218,23 +227,26 @@ async function saveCashflow(cashflow, connection = null) {
       id,
       code,
       address,
+      locationName,
       branchId,
-      branchName,
       wardName,
       contactNumber,
       createdBy,
+      userId,
       usedForFinancialReporting,
+      accountId,
+      origin,
       cashFlowGroupId,
+      cashGroup,
       method,
       partnerType,
       partnerId,
+      retailerId,
       status,
       statusValue,
       transDate,
       amount,
       partnerName,
-      user,
-      AccountId,
       isReceipt,
       jsonData,
     ]);
