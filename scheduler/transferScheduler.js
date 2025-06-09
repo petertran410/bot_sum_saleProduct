@@ -8,17 +8,20 @@ const transferSchedulerCurrent = async () => {
   while (retryCount < MAX_RETRIES) {
     try {
       console.log(
-        `Fetching current transfers (attempt ${
+        `🚀 Fetching current transfers (attempt ${
           retryCount + 1
         }/${MAX_RETRIES})...`
       );
 
-      // Add debugging on first attempt
+      // Test API connectivity first
       if (retryCount === 0) {
-        const testResult = await testTransferAPI();
+        const testResult = await testTransferAPIConnectivity();
         if (!testResult.success) {
           throw new Error(`API connectivity test failed: ${testResult.error}`);
         }
+        console.log(
+          `📊 API reports ${testResult.total} total transfers available`
+        );
       }
 
       const currentTransfers = await getTransfers();
@@ -29,36 +32,37 @@ const transferSchedulerCurrent = async () => {
         Array.isArray(currentTransfers.data)
       ) {
         if (currentTransfers.data.length === 0) {
-          console.log("No new transfers to process");
+          console.log(
+            "⚠️  No transfers found - this might indicate an API issue"
+          );
           return { success: true, savedCount: 0, hasNewData: false };
         }
 
-        console.log(`Processing ${currentTransfers.data.length} transfers...`);
-
-        // Enhanced logging to see what data we're getting
-        console.log("Sample transfer data:", {
-          id: currentTransfers.data[0]?.id,
-          code: currentTransfers.data[0]?.code,
-          status: currentTransfers.data[0]?.status,
-          hasDetails: !!(
-            currentTransfers.data[0]?.details ||
-            currentTransfers.data[0]?.transferDetails
-          ),
-          detailsCount: (
-            currentTransfers.data[0]?.details ||
-            currentTransfers.data[0]?.transferDetails ||
-            []
-          ).length,
-        });
-
-        const result = await transferService.saveTransfers(
-          currentTransfers.data
+        console.log(
+          `📦 Processing ${currentTransfers.data.length} transfers...`
         );
 
+        // Log sample transfer structure for debugging
+        if (currentTransfers.data.length > 0) {
+          const sample = currentTransfers.data[0];
+          console.log("🔍 Sample transfer structure:", {
+            id: sample.id,
+            code: sample.code,
+            status: sample.status,
+            dispatchedDate: sample.dispatchedDate,
+            transferredDate: sample.transferredDate,
+            receivedDate: sample.receivedDate,
+            transferDetailsCount: sample.transferDetails?.length || 0,
+            hasTransferDetails: !!sample.transferDetails,
+            hasDetails: !!sample.details,
+          });
+        }
+
+        const result = await saveTransfers(currentTransfers.data);
         await transferService.updateSyncStatus(true, new Date());
 
         console.log(
-          `Transfer sync completed: ${result.stats.success} processed, ${result.stats.newRecords} new`
+          `✅ Transfer sync completed: ${result.stats.success} processed, ${result.stats.newRecords} new, ${result.stats.updatedRecords} updated`
         );
 
         return {
@@ -72,16 +76,16 @@ const transferSchedulerCurrent = async () => {
     } catch (error) {
       retryCount++;
       console.error(
-        `Transfer sync attempt ${retryCount} failed:`,
+        `❌ Transfer sync attempt ${retryCount} failed:`,
         error.message
       );
 
       if (retryCount < MAX_RETRIES) {
         const waitTime = Math.pow(2, retryCount) * 1000;
-        console.log(`Waiting ${waitTime}ms before retry...`);
+        console.log(`⏳ Waiting ${waitTime}ms before retry...`);
         await new Promise((resolve) => setTimeout(resolve, waitTime));
       } else {
-        console.error("Max retries reached. Transfer sync failed.");
+        console.error("💥 Max retries reached. Transfer sync failed.");
         return { success: false, error: error.message, hasNewData: false };
       }
     }

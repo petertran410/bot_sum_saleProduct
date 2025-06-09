@@ -1273,18 +1273,12 @@ const getPurchaseOrdersByDate = async (daysAgo) => {
 const getTransfers = async () => {
   try {
     const token = await getToken();
-    const pageSize = 100;
+    const pageSize = 100; // Use 100 like in the working purchase orders
     const allTransfers = [];
     let currentItem = 0;
     let hasMoreData = true;
 
     console.log("Fetching current transfers...");
-
-    // Fixed: Expand date range for transfers
-    const today = new Date();
-    const lastMonth = new Date();
-    lastMonth.setMonth(lastMonth.getMonth() - 1); // Get last month of data
-    const fromDate = lastMonth.toISOString().split("T")[0];
 
     while (hasMoreData) {
       try {
@@ -1294,7 +1288,8 @@ const getTransfers = async () => {
           params: {
             pageSize: pageSize,
             currentItem: currentItem,
-            fromTransferDate: fromDate,
+            // REMOVED: Date filtering that's causing 0 results
+            // fromTransferDate: fromDate,
           },
           headers: {
             Retailer: process.env.KIOT_SHOP_NAME,
@@ -1307,39 +1302,7 @@ const getTransfers = async () => {
           response.data.data &&
           response.data.data.length > 0
         ) {
-          // Get detailed info for each transfer
-          for (const transfer of response.data.data) {
-            try {
-              const detailResponse = await makeApiRequest({
-                method: "GET",
-                url: `${KIOTVIET_BASE_URL}/transfers/${transfer.id}`,
-                headers: {
-                  Retailer: process.env.KIOT_SHOP_NAME,
-                  Authorization: `Bearer ${token}`,
-                },
-              });
-
-              if (detailResponse.data) {
-                // Merge basic data with detailed data
-                allTransfers.push({
-                  ...transfer,
-                  ...detailResponse.data,
-                });
-              } else {
-                allTransfers.push(transfer);
-              }
-
-              // Rate limiting
-              await new Promise((resolve) => setTimeout(resolve, 200));
-            } catch (detailError) {
-              console.warn(
-                `Warning: Could not get details for transfer ${transfer.id}: ${detailError.message}`
-              );
-              // Still add the basic transfer data
-              allTransfers.push(transfer);
-            }
-          }
-
+          allTransfers.push(...response.data.data);
           currentItem += response.data.data.length;
           hasMoreData = response.data.data.length === pageSize;
 
@@ -1362,6 +1325,7 @@ const getTransfers = async () => {
       }
     }
 
+    console.log(`✅ Total transfers fetched: ${allTransfers.length}`);
     return { data: allTransfers, total: allTransfers.length };
   } catch (error) {
     console.error("Error getting transfers:", error.message);
@@ -1373,23 +1337,36 @@ const getTransfers = async () => {
   }
 };
 
-// Fixed Transfer by Date Implementation
+// Fix 2: Historical transfers - Use broader date ranges, not day-by-day
 const getTransfersByDate = async (daysAgo) => {
   try {
     const results = [];
+    const CHUNK_SIZE = 30; // Process 30 days at a time instead of day-by-day
 
-    for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
-      const targetDate = new Date();
-      targetDate.setDate(targetDate.getDate() - currentDaysAgo);
-      const formattedDate = targetDate.toISOString().split("T")[0];
+    for (
+      let startDaysAgo = daysAgo;
+      startDaysAgo >= 0;
+      startDaysAgo -= CHUNK_SIZE
+    ) {
+      const endDaysAgo = Math.max(0, startDaysAgo - CHUNK_SIZE + 1);
+
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - startDaysAgo);
+      const formattedStartDate = startDate.toISOString().split("T")[0];
+
+      const endDate = new Date();
+      endDate.setDate(endDate.getDate() - endDaysAgo);
+      const formattedEndDate = endDate.toISOString().split("T")[0];
 
       const token = await getToken();
       const pageSize = 100;
-      const allTransfersForDate = [];
+      const allTransfersForPeriod = [];
       let currentItem = 0;
       let hasMoreData = true;
 
-      console.log(`Fetching transfers for ${formattedDate}...`);
+      console.log(
+        `Fetching transfers from ${formattedStartDate} to ${formattedEndDate}...`
+      );
 
       while (hasMoreData) {
         try {
@@ -1399,8 +1376,8 @@ const getTransfersByDate = async (daysAgo) => {
             params: {
               pageSize: pageSize,
               currentItem: currentItem,
-              fromTransferDate: formattedDate,
-              toTransferDate: formattedDate,
+              fromTransferDate: formattedStartDate,
+              toTransferDate: formattedEndDate,
             },
             headers: {
               Retailer: process.env.KIOT_SHOP_NAME,
@@ -1413,13 +1390,12 @@ const getTransfersByDate = async (daysAgo) => {
             response.data.data &&
             response.data.data.length > 0
           ) {
-            // Add transfers to the list first
-            allTransfersForDate.push(...response.data.data);
+            allTransfersForPeriod.push(...response.data.data);
             currentItem += response.data.data.length;
             hasMoreData = response.data.data.length === pageSize;
 
             console.log(
-              `Date ${formattedDate}: Fetched ${response.data.data.length} transfers, total: ${allTransfersForDate.length}`
+              `Period ${formattedStartDate} to ${formattedEndDate}: Fetched ${response.data.data.length} transfers, total: ${allTransfersForPeriod.length}`
             );
             await new Promise((resolve) => setTimeout(resolve, 100));
           } else {
@@ -1427,51 +1403,56 @@ const getTransfersByDate = async (daysAgo) => {
           }
         } catch (error) {
           console.error(
-            `Error fetching transfers for ${formattedDate}:`,
+            `Error fetching transfers for period ${formattedStartDate} to ${formattedEndDate}:`,
             error.message
           );
-          break; // Skip this date on error
+          break; // Skip this period on error
         }
       }
 
-      // Get detailed information for each transfer (after getting all basic data)
-      for (let i = 0; i < allTransfersForDate.length; i++) {
-        try {
-          const detailResponse = await makeApiRequest({
-            method: "GET",
-            url: `${KIOTVIET_BASE_URL}/transfers/${allTransfersForDate[i].id}`,
-            headers: {
-              Retailer: process.env.KIOT_SHOP_NAME,
-              Authorization: `Bearer ${token}`,
-            },
-          });
+      // Distribute transfers by actual date for compatibility with scheduler
+      const transfersByDate = new Map();
 
-          if (detailResponse.data) {
-            // Merge the detailed data with the list data
-            allTransfersForDate[i] = {
-              ...allTransfersForDate[i],
-              ...detailResponse.data,
-            };
+      allTransfersForPeriod.forEach((transfer) => {
+        // Use dispatchedDate as primary, fallback to other date fields
+        const transferDate =
+          transfer.dispatchedDate ||
+          transfer.transferredDate ||
+          transfer.createdDate;
+        if (transferDate) {
+          const dateKey = transferDate.split("T")[0]; // YYYY-MM-DD format
+          if (!transfersByDate.has(dateKey)) {
+            transfersByDate.set(dateKey, []);
           }
-
-          // Add delay to avoid rate limiting
-          await new Promise((resolve) => setTimeout(resolve, 200));
-        } catch (detailError) {
-          console.warn(
-            `Warning: Could not get details for transfer ${allTransfersForDate[i].id}: ${detailError.message}`
-          );
-          // Continue with basic data
+          transfersByDate.get(dateKey).push(transfer);
         }
-      }
-
-      results.push({
-        date: formattedDate,
-        daysAgo: currentDaysAgo,
-        data: { data: allTransfersForDate },
       });
+
+      // Add results for each day in this period
+      for (let dayOffset = startDaysAgo; dayOffset >= endDaysAgo; dayOffset--) {
+        const targetDate = new Date();
+        targetDate.setDate(targetDate.getDate() - dayOffset);
+        const formattedDate = targetDate.toISOString().split("T")[0];
+
+        const transfersForDate = transfersByDate.get(formattedDate) || [];
+
+        results.push({
+          date: formattedDate,
+          daysAgo: dayOffset,
+          data: { data: transfersForDate },
+        });
+      }
 
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
+
+    const totalTransfers = results.reduce(
+      (sum, result) => sum + result.data.data.length,
+      0
+    );
+    console.log(
+      `✅ Historical transfer fetch completed: ${totalTransfers} transfers across ${results.length} days`
+    );
 
     return results;
   } catch (error) {

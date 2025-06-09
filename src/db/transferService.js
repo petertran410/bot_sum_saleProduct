@@ -4,144 +4,74 @@ const { getPool } = require("../db.js");
 function validateAndSanitizeTransfer(transfer) {
   return {
     ...transfer,
+    id: transfer.id ? Number(transfer.id) : null,
     code: transfer.code ? String(transfer.code).substring(0, 50) : "",
     status: isNaN(Number(transfer.status)) ? 0 : Number(transfer.status),
     description: transfer.description
       ? String(transfer.description).substring(0, 1000)
       : "",
-    noteBySource: transfer.noteBySource
-      ? String(transfer.noteBySource).substring(0, 1000)
-      : "",
-    noteByDestination: transfer.noteByDestination
-      ? String(transfer.noteByDestination).substring(0, 1000)
-      : "",
+    fromBranchId: transfer.fromBranchId ? Number(transfer.fromBranchId) : null,
+    toBranchId: transfer.toBranchId ? Number(transfer.toBranchId) : null,
+    createdById: transfer.createdById ? Number(transfer.createdById) : null,
+    retailerId: transfer.retailerId ? Number(transfer.retailerId) : null,
+    isActive: transfer.isActive !== undefined ? transfer.isActive : true,
+    // Handle multiple date field names from actual KiotViet response
+    transferredDate:
+      transfer.transferredDate || transfer.dispatchedDate || null,
+    receivedDate: transfer.receivedDate || null,
+    createdDate: transfer.createdDate || new Date(),
+    modifiedDate: transfer.modifiedDate || new Date(),
   };
 }
 
-async function saveTransfers(transfers) {
-  const pool = getPool();
-  const connection = await pool.getConnection();
-
-  let successCount = 0;
-  let failCount = 0;
-  let newCount = 0;
-  let updatedCount = 0;
-
-  const BATCH_SIZE = 50;
-
-  try {
-    await connection.beginTransaction();
-
-    // Process in batches
-    for (let i = 0; i < transfers.length; i += BATCH_SIZE) {
-      const batch = transfers.slice(i, i + BATCH_SIZE);
-
-      for (const transfer of batch) {
-        try {
-          // Validate and sanitize
-          const validatedTransfer = validateAndSanitizeTransfer(transfer);
-
-          const [existing] = await connection.execute(
-            "SELECT id, modifiedDate FROM transfers WHERE id = ?",
-            [validatedTransfer.id]
-          );
-
-          const isNew = existing.length === 0;
-          const isUpdated =
-            !isNew &&
-            validatedTransfer.modifiedDate &&
-            existing[0].modifiedDate &&
-            new Date(validatedTransfer.modifiedDate) >
-              new Date(existing[0].modifiedDate);
-
-          if (isNew || isUpdated) {
-            const result = await saveTransfer(validatedTransfer, connection);
-            if (result.success) {
-              successCount++;
-              if (isNew) newCount++;
-              else updatedCount++;
-            } else {
-              failCount++;
-            }
-          }
-        } catch (error) {
-          console.error(
-            `Error processing transfer ${transfer.code}:`,
-            error.message
-          );
-          failCount++;
-        }
-      }
-
-      console.log(
-        `Processed transfer batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(
-          transfers.length / BATCH_SIZE
-        )}`
-      );
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-
-    await connection.commit();
-    console.log(
-      `Transfer sync completed: ${newCount} new, ${updatedCount} updated, ${failCount} failed`
-    );
-  } catch (error) {
-    await connection.rollback();
-    console.error("Transfer transaction failed:", error.message);
-  } finally {
-    connection.release();
-  }
-
-  return {
-    success: failCount === 0,
-    stats: {
-      total: transfers.length,
-      success: successCount,
-      newRecords: newCount,
-      updated: updatedCount,
-      failed: failCount,
-    },
-  };
-}
-
-// Update saveTransfer to accept connection parameter
 async function saveTransfer(transfer, connection = null) {
   const shouldReleaseConnection = !connection;
-
   if (!connection) {
     const pool = getPool();
     connection = await pool.getConnection();
   }
 
   try {
+    const validatedTransfer = validateAndSanitizeTransfer(transfer);
+
     const {
       id,
       code,
-      status = 0,
-      transferredDate = null,
-      receivedDate = null,
-      createdById = null,
-      createdByName = null,
-      fromBranchId = null,
-      fromBranchName = null,
-      toBranchId = null,
-      toBranchName = null,
-      noteBySource = null,
-      noteByDestination = null,
-      description = null,
-      retailerId = null,
-      createdDate = null,
-      modifiedDate = null,
-    } = transfer;
+      status,
+      transferredDate,
+      receivedDate,
+      createdById,
+      createdByName,
+      fromBranchId,
+      fromBranchName,
+      toBranchId,
+      toBranchName,
+      noteBySource,
+      noteByDestination,
+      description,
+      retailerId,
+      createdDate,
+      modifiedDate,
+    } = validatedTransfer;
+
+    if (!id || !code) {
+      throw new Error("Transfer ID and code are required");
+    }
+
+    // Check if transfer already exists
+    const [existing] = await connection.execute(
+      "SELECT id, modifiedDate FROM transfers WHERE id = ?",
+      [id]
+    );
 
     const jsonData = JSON.stringify(transfer);
 
+    // Insert or update main transfer record
     const query = `
       INSERT INTO transfers 
-        (id, code, status, transferredDate, receivedDate, createdById, 
-         createdByName, fromBranchId, fromBranchName, toBranchId, toBranchName,
-         noteBySource, noteByDestination, description, retailerId, 
-         createdDate, modifiedDate, jsonData)
+        (id, code, status, transferredDate, receivedDate, createdById, createdByName,
+         fromBranchId, fromBranchName, toBranchId, toBranchName, noteBySource, 
+         noteByDestination, description, retailerId, createdDate, modifiedDate, jsonData)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
         code = VALUES(code),
@@ -182,32 +112,44 @@ async function saveTransfer(transfer, connection = null) {
       jsonData,
     ]);
 
-    // Handle transfer details if present
-    if (transfer.details && Array.isArray(transfer.details)) {
+    // Handle transferDetails from actual KiotViet response structure
+    const detailsArray = transfer.transferDetails || transfer.details || [];
+
+    if (
+      detailsArray &&
+      Array.isArray(detailsArray) &&
+      detailsArray.length > 0
+    ) {
+      // Delete existing details first
       await connection.execute(
         "DELETE FROM transfer_details WHERE transferId = ?",
         [id]
       );
 
-      for (const detail of transfer.details) {
+      // Insert new details based on actual KiotViet response structure
+      for (const detail of detailsArray) {
         try {
           const detailQuery = `
             INSERT INTO transfer_details 
-              (transferId, detailId, productId, productCode, productName, 
-               transferredQuantity, price, totalTransfer, totalReceive)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+              (transferId, productId, productCode, productName, 
+               transferredQuantity, price, sendQuantity, receiveQuantity,
+               sendPrice, receivePrice, totalTransfer, totalReceive)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `;
 
           await connection.execute(detailQuery, [
             id,
-            detail.id || null,
             detail.productId || null,
             detail.productCode || null,
             detail.productName || null,
-            detail.transferredQuantity || 0,
+            detail.transferredQuantity || detail.sendQuantity || 0,
             detail.price || 0,
-            detail.totalTransfer || 0,
-            detail.totalReceive || 0,
+            detail.sendQuantity || 0,
+            detail.receiveQuantity || 0,
+            detail.sendPrice || 0,
+            detail.receivePrice || 0,
+            detail.totalTransfer || detail.sendPrice || 0,
+            detail.totalReceive || detail.receivePrice || 0,
           ]);
         } catch (detailError) {
           console.warn(
@@ -217,52 +159,96 @@ async function saveTransfer(transfer, connection = null) {
       }
     }
 
-    // Handle transferDetails (legacy format) if present
-    if (transfer.transferDetails && Array.isArray(transfer.transferDetails)) {
-      // Only process if details array is empty (to avoid duplicates)
-      const [existingDetails] = await connection.execute(
-        "SELECT COUNT(*) as count FROM transfer_details WHERE transferId = ?",
-        [id]
-      );
-
-      if (existingDetails[0].count === 0) {
-        for (const detail of transfer.transferDetails) {
-          try {
-            const detailQuery = `
-              INSERT INTO transfer_details 
-                (transferId, productId, productCode, transferredQuantity, 
-                 price, sendPrice, receivePrice, sendQuantity, receiveQuantity)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `;
-
-            await connection.execute(detailQuery, [
-              id,
-              detail.productId || null,
-              detail.ProductCode || detail.productCode || null,
-              detail.transferredQuantity || detail.sendQuantity || 0,
-              detail.price || 0,
-              detail.sendPrice || 0,
-              detail.receivePrice || 0,
-              detail.sendQuantity || 0,
-              detail.recieveQuantity || detail.receiveQuantity || 0,
-            ]);
-          } catch (detailError) {
-            console.warn(
-              `Warning: Could not save transfer detail for transfer ${id}: ${detailError.message}`
-            );
-          }
-        }
-      }
-    }
-
-    return { success: true };
+    return {
+      success: true,
+      isNew: existing.length === 0,
+      transferId: id,
+    };
   } catch (error) {
-    console.error(`Error saving transfer ${transfer.code}:`, error);
+    console.error(
+      `Error saving transfer ${transfer.code || transfer.id}:`,
+      error
+    );
     return { success: false, error: error.message };
   } finally {
     if (shouldReleaseConnection) {
       connection.release();
     }
+  }
+}
+
+// Enhanced batch save function (same as product sync pattern)
+async function saveTransfers(transfers) {
+  const pool = getPool();
+  const connection = await pool.getConnection();
+
+  let successCount = 0;
+  let failCount = 0;
+  let newCount = 0;
+  let updatedCount = 0;
+
+  try {
+    await connection.beginTransaction();
+
+    for (const transfer of transfers) {
+      try {
+        const result = await saveTransfer(transfer, connection);
+
+        if (result.success) {
+          successCount++;
+          if (result.isNew) {
+            newCount++;
+          } else {
+            updatedCount++;
+          }
+        } else {
+          failCount++;
+          console.error(
+            `Failed to save transfer ${transfer.code || transfer.id}:`,
+            result.error
+          );
+        }
+      } catch (error) {
+        failCount++;
+        console.error(
+          `Exception saving transfer ${transfer.code || transfer.id}:`,
+          error.message
+        );
+      }
+    }
+
+    await connection.commit();
+
+    console.log(
+      `Transfer batch save completed: ${successCount} success, ${failCount} failed, ${newCount} new, ${updatedCount} updated`
+    );
+
+    return {
+      success: true,
+      stats: {
+        total: transfers.length,
+        success: successCount,
+        failed: failCount,
+        newRecords: newCount,
+        updatedRecords: updatedCount,
+      },
+    };
+  } catch (error) {
+    await connection.rollback();
+    console.error("Transfer batch save failed:", error);
+    return {
+      success: false,
+      error: error.message,
+      stats: {
+        total: transfers.length,
+        success: successCount,
+        failed: failCount,
+        newRecords: newCount,
+        updatedRecords: updatedCount,
+      },
+    };
+  } finally {
+    connection.release();
   }
 }
 
