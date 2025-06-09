@@ -189,13 +189,20 @@ async function saveCustomer(customer, connection = null) {
       jsonData,
     ]);
 
-    // Handle customer groups
+    // Handle customer groups with proper duplicate prevention
     if (customer.groups) {
-      await connection.execute(
-        "DELETE FROM customer_group_details WHERE customerId = ?",
+      // Instead of deleting all and re-inserting, we'll use a more robust approach
+
+      // Get existing groups for this customer
+      const [existingGroupLinks] = await connection.execute(
+        "SELECT groupId FROM customer_group_details WHERE customerId = ?",
         [id]
       );
+      const existingGroupIds = new Set(
+        existingGroupLinks.map((row) => row.groupId)
+      );
 
+      // Get all available groups
       const [existingGroups] = await connection.execute(
         "SELECT id, name FROM customer_groups WHERE retailerId = ?",
         [retailerId]
@@ -206,6 +213,7 @@ async function saveCustomer(customer, connection = null) {
         groupMap.set(group.name.toLowerCase(), group.id);
       }
 
+      // Process group names
       let groupNames = [];
       if (typeof customer.groups === "string") {
         groupNames = customer.groups
@@ -222,36 +230,55 @@ async function saveCustomer(customer, connection = null) {
         }
       }
 
+      // Process each group
       for (const groupName of groupNames) {
         if (!groupName) continue;
 
         let groupId = groupMap.get(groupName.toLowerCase());
 
+        // Create group if it doesn't exist
         if (!groupId) {
-          const [maxIdResult] = await connection.execute(
-            "SELECT COALESCE(MAX(id), 0) + 1 as nextId FROM customer_groups"
-          );
+          try {
+            const [maxIdResult] = await connection.execute(
+              "SELECT COALESCE(MAX(id), 0) + 1 as nextId FROM customer_groups"
+            );
 
-          const nextId = Math.max(maxIdResult[0].nextId, 1000);
+            const nextId = Math.max(maxIdResult[0].nextId, 1000);
 
-          await connection.execute(
-            "INSERT INTO customer_groups (id, name, retailerId, createdDate) VALUES (?, ?, ?, NOW())",
-            [nextId, groupName, retailerId]
-          );
+            await connection.execute(
+              "INSERT INTO customer_groups (id, name, retailerId, createdDate) VALUES (?, ?, ?, NOW())",
+              [nextId, groupName, retailerId]
+            );
 
-          groupId = nextId;
-          groupMap.set(groupName.toLowerCase(), groupId);
+            groupId = nextId;
+            groupMap.set(groupName.toLowerCase(), groupId);
+          } catch (groupError) {
+            console.warn(
+              `Warning: Could not create group ${groupName}: ${groupError.message}`
+            );
+            continue;
+          }
         }
 
-        try {
-          await connection.execute(
-            "INSERT INTO customer_group_details (customerId, groupId) VALUES (?, ?)",
-            [id, groupId]
-          );
-        } catch (detailError) {
-          console.warn(
-            `Warning: Could not link customer ${id} to group ${groupId}: ${detailError.message}`
-          );
+        // Link customer to group only if not already linked
+        if (!existingGroupIds.has(groupId)) {
+          try {
+            await connection.execute(
+              "INSERT INTO customer_group_details (customerId, groupId) VALUES (?, ?) ON DUPLICATE KEY UPDATE customerId = customerId",
+              [id, groupId]
+            );
+          } catch (linkError) {
+            // This should now be rare, but we'll handle it gracefully
+            if (linkError.code === "ER_DUP_ENTRY") {
+              console.log(
+                `Customer ${id} already linked to group ${groupId}, skipping...`
+              );
+            } else {
+              console.warn(
+                `Warning: Could not link customer ${id} to group ${groupId}: ${linkError.message}`
+              );
+            }
+          }
         }
       }
     }

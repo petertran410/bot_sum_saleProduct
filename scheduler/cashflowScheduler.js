@@ -42,6 +42,7 @@ const cashflowSchedulerCurrent = async () => {
         };
       }
 
+      console.log("No cashflow data received from API");
       return { success: true, savedCount: 0, hasNewData: false };
     } catch (error) {
       retryCount++;
@@ -64,6 +65,7 @@ const cashflowSchedulerCurrent = async () => {
 
 const cashflowScheduler = async (daysAgo) => {
   try {
+    console.log(`Starting cashflow historical sync for ${daysAgo} days...`);
     const cashflowsByDate = await getCashflowByDate(daysAgo);
     let totalSaved = 0;
 
@@ -78,6 +80,8 @@ const cashflowScheduler = async (daysAgo) => {
         );
         const result = await cashflowService.saveCashflows(dateData.data.data);
         totalSaved += result.stats.success;
+      } else {
+        console.log(`No cashflows found for ${dateData.date}`);
       }
     }
 

@@ -352,17 +352,17 @@ async function initializeDatabase() {
         id BIGINT PRIMARY KEY,
         code VARCHAR(50) NOT NULL,
         address VARCHAR(255),
-        branchId INT NOT NULL,
+        branchId INT,
         branchName VARCHAR(100),
         wardName VARCHAR(100),
         contactNumber VARCHAR(20),
-        createdBy BIGINT NOT NULL,
+        createdBy BIGINT,
         usedForFinancialReporting INT DEFAULT 1,
         cashFlowGroupId INT,
         method VARCHAR(50) NOT NULL,
         partnerType VARCHAR(10) DEFAULT 'O',
         partnerId BIGINT,
-        status INT NOT NULL,
+        status INT DEFAULT 0,
         statusValue VARCHAR(50),
         transDate DATETIME NOT NULL,
         amount DECIMAL(15,2) NOT NULL,
@@ -372,13 +372,15 @@ async function initializeDatabase() {
         isReceipt TINYINT DEFAULT 0,
         jsonData JSON,
         createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE       CURRENT_TIMESTAMP,
+        updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         INDEX idx_code (code),
         INDEX idx_branch (branchId),
         INDEX idx_trans_date (transDate),
         INDEX idx_partner (partnerId),
         INDEX idx_method (method),
-        INDEX idx_status (status)
+        INDEX idx_status (status),
+        INDEX idx_amount (amount),
+        INDEX idx_receipt (isReceipt)
       )
     `);
 
@@ -393,7 +395,6 @@ async function initializeDatabase() {
     const entities = [
       "users",
       "customers",
-      "customer_groups",
       "surcharges",
       "orders",
       "invoices",

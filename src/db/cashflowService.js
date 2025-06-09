@@ -6,6 +6,9 @@ function validateAndSanitizeCashflow(cashflow) {
     ...cashflow,
     code: cashflow.code ? String(cashflow.code).substring(0, 50) : "",
     address: cashflow.address ? String(cashflow.address).substring(0, 255) : "",
+    branchName: cashflow.branchName
+      ? String(cashflow.branchName).substring(0, 100)
+      : null,
     wardName: cashflow.wardName
       ? String(cashflow.wardName).substring(0, 100)
       : null,
@@ -16,7 +19,26 @@ function validateAndSanitizeCashflow(cashflow) {
       ? String(cashflow.partnerName).substring(0, 255)
       : "",
     user: cashflow.user ? String(cashflow.user).substring(0, 100) : null,
+    statusValue: cashflow.statusValue
+      ? String(cashflow.statusValue).substring(0, 50)
+      : null,
+    method: cashflow.method ? String(cashflow.method).substring(0, 50) : "",
+    partnerType: cashflow.partnerType
+      ? String(cashflow.partnerType).substring(0, 10)
+      : "O",
     amount: isNaN(Number(cashflow.amount)) ? 0 : Number(cashflow.amount),
+    usedForFinancialReporting:
+      cashflow.usedForFinancialReporting !== undefined
+        ? Number(cashflow.usedForFinancialReporting)
+        : 1,
+    status: cashflow.status !== undefined ? Number(cashflow.status) : 0,
+    branchId: cashflow.branchId ? Number(cashflow.branchId) : null,
+    createdBy: cashflow.createdBy ? Number(cashflow.createdBy) : null,
+    cashFlowGroupId: cashflow.cashFlowGroupId
+      ? Number(cashflow.cashFlowGroupId)
+      : null,
+    partnerId: cashflow.partnerId ? Number(cashflow.partnerId) : null,
+    AccountId: cashflow.AccountId ? Number(cashflow.AccountId) : null,
   };
 }
 
@@ -34,6 +56,10 @@ async function saveCashflows(cashflows) {
   try {
     await connection.beginTransaction();
 
+    console.log(
+      `Processing ${cashflows.length} cashflows in batches of ${BATCH_SIZE}`
+    );
+
     // Process in batches
     for (let i = 0; i < cashflows.length; i += BATCH_SIZE) {
       const batch = cashflows.slice(i, i + BATCH_SIZE);
@@ -43,6 +69,7 @@ async function saveCashflows(cashflows) {
           // Validate and sanitize
           const validatedCashflow = validateAndSanitizeCashflow(cashflow);
 
+          // Check if record exists
           const [existing] = await connection.execute(
             "SELECT id, transDate FROM cashflows WHERE id = ?",
             [validatedCashflow.id]
@@ -51,6 +78,8 @@ async function saveCashflows(cashflows) {
           const isNew = existing.length === 0;
           const isUpdated =
             !isNew &&
+            validatedCashflow.transDate &&
+            existing[0].transDate &&
             new Date(validatedCashflow.transDate) >
               new Date(existing[0].transDate);
 
@@ -62,11 +91,14 @@ async function saveCashflows(cashflows) {
               else updatedCount++;
             } else {
               failCount++;
+              console.error(
+                `Failed to save cashflow ${validatedCashflow.code}: ${result.error}`
+              );
             }
           }
         } catch (error) {
           console.error(
-            `Error processing cashflow ${cashflow.code}:`,
+            `Error processing cashflow ${cashflow.code || cashflow.id}:`,
             error.message
           );
           failCount++;
@@ -78,7 +110,7 @@ async function saveCashflows(cashflows) {
           cashflows.length / BATCH_SIZE
         )}`
       );
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 50));
     }
 
     await connection.commit();
@@ -128,13 +160,28 @@ async function saveCashflow(cashflow, connection = null) {
       partnerType = "O",
       partnerId = null,
       status,
-      statusValue,
+      statusValue = null,
       transDate,
       amount,
       partnerName = "",
       user = null,
       AccountId = null,
     } = cashflow;
+
+    // Validate required fields
+    if (
+      !id ||
+      !code ||
+      !method ||
+      !transDate ||
+      amount === undefined ||
+      amount === null
+    ) {
+      return {
+        success: false,
+        error: `Missing required fields: id=${id}, code=${code}, method=${method}, transDate=${transDate}, amount=${amount}`,
+      };
+    }
 
     const isReceipt = amount > 0 ? 1 : 0;
     const jsonData = JSON.stringify(cashflow);
@@ -194,7 +241,10 @@ async function saveCashflow(cashflow, connection = null) {
 
     return { success: true };
   } catch (error) {
-    console.error(`Error saving cashflow ${cashflow.code}:`, error);
+    console.error(
+      `Error saving cashflow ${cashflow.code || cashflow.id}:`,
+      error
+    );
     return { success: false, error: error.message };
   } finally {
     if (shouldReleaseConnection) {
