@@ -5,6 +5,7 @@ const productService = require("../db/productService");
 const customerService = require("../db/customerService");
 const surchargeService = require("../db/surchagesService");
 const cashFlowService = require("../db/cashflowService");
+const purchaseOrderService = require("../db/purchaseOrderService");
 
 const {
   cashflowScheduler,
@@ -40,6 +41,11 @@ const {
   surchargeScheduler,
   surchargeSchedulerCurrent,
 } = require("../../scheduler/surchargeScheduler");
+
+const {
+  purchaseOrderScheduler,
+  purchaseOrderSchedulerCurrent,
+} = require("../../scheduler/purchaseOrderScheduler");
 
 const runOrderSync = async () => {
   try {
@@ -271,6 +277,47 @@ const runCashflowSync = async () => {
   }
 };
 
+const runPurchaseOrderSync = async () => {
+  try {
+    console.log("🚀 Starting Purchase Order Sync Process...");
+    const syncStatus = await purchaseOrderService.getSyncStatus();
+    console.log("Purchase Order Sync Status:", syncStatus);
+
+    if (!syncStatus.historicalCompleted) {
+      console.log("📅 Running historical purchase order sync...");
+      const result = await purchaseOrderScheduler(160);
+
+      if (result.success) {
+        console.log(
+          "✅ Historical purchase orders data has been saved to database"
+        );
+      } else {
+        console.error(
+          "❌ Error when saving historical purchase orders data:",
+          result.error
+        );
+      }
+    } else {
+      console.log("🔄 Running current purchase order sync...");
+      const currentResult = await purchaseOrderSchedulerCurrent();
+
+      if (currentResult.success) {
+        console.log(
+          `✅ Current purchase orders data has been added: ${currentResult.savedCount} purchase orders`
+        );
+      } else {
+        console.error(
+          "❌ Error when adding current purchase orders:",
+          currentResult.error
+        );
+      }
+    }
+  } catch (error) {
+    console.error("❌ Cannot get and save purchase orders data:", error);
+    console.error("Stack trace:", error.stack);
+  }
+};
+
 module.exports = {
   runOrderSync,
   runInvoiceSync,
@@ -279,4 +326,5 @@ module.exports = {
   runUserSync,
   runSurchargeSync,
   runCashflowSync,
+  runPurchaseOrderSync,
 };

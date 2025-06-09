@@ -928,8 +928,6 @@ const getSurchargesByDate = async (daysAgo) => {
   }
 };
 
-// Replace the getCashflow and getCashflowByDate functions in src/kiotviet.js with these:
-
 const getCashflow = async () => {
   try {
     const token = await getToken();
@@ -997,7 +995,6 @@ const getCashflowByDate = async (daysAgo) => {
   try {
     const results = [];
 
-    // For historical sync, let's try to get all data first, then filter by date in memory
     console.log("Attempting to fetch all cashflow data...");
 
     const token = await getToken();
@@ -1113,6 +1110,134 @@ const getCashflowByDate = async (daysAgo) => {
   }
 };
 
+const getPurchaseOrders = async () => {
+  try {
+    const token = await getToken();
+    const pageSize = 100;
+    const allPurchaseOrders = [];
+    let currentItem = 0;
+    let hasMoreData = true;
+
+    console.log("Fetching current purchase orders...");
+
+    // Get only recent purchase orders (last 24 hours) for current sync
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const fromDate = yesterday.toISOString().split("T")[0];
+
+    while (hasMoreData) {
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/purchaseorders`,
+        params: {
+          pageSize: pageSize,
+          currentItem: currentItem,
+          orderBy: "modifiedDate",
+          orderDirection: "DESC",
+          fromPurchaseDate: fromDate,
+          includePayment: true,
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allPurchaseOrders.push(...response.data.data);
+        currentItem += response.data.data.length;
+        hasMoreData = response.data.data.length === pageSize;
+
+        console.log(
+          `Fetched ${response.data.data.length} purchase orders, total: ${allPurchaseOrders.length}`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        hasMoreData = false;
+      }
+    }
+
+    return { data: allPurchaseOrders, total: allPurchaseOrders.length };
+  } catch (error) {
+    console.error("Error getting purchase orders:", error.message);
+    throw error;
+  }
+};
+
+const getPurchaseOrdersByDate = async (daysAgo) => {
+  try {
+    const results = [];
+
+    for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() - currentDaysAgo);
+      const formattedDate = targetDate.toISOString().split("T")[0];
+
+      const token = await getToken();
+      const pageSize = 100;
+      const allPurchaseOrdersForDate = [];
+      let currentItem = 0;
+      let hasMoreData = true;
+
+      console.log(`Fetching purchase orders for ${formattedDate}...`);
+
+      while (hasMoreData) {
+        const response = await makeApiRequest({
+          method: "GET",
+          url: `${KIOTVIET_BASE_URL}/purchaseorders`,
+          params: {
+            pageSize: pageSize,
+            currentItem: currentItem,
+            orderBy: "id",
+            orderDirection: "ASC",
+            fromPurchaseDate: formattedDate,
+            toPurchaseDate: formattedDate,
+            includePayment: true,
+          },
+          headers: {
+            Retailer: process.env.KIOT_SHOP_NAME,
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (
+          response.data &&
+          response.data.data &&
+          response.data.data.length > 0
+        ) {
+          allPurchaseOrdersForDate.push(...response.data.data);
+          currentItem += response.data.data.length;
+          hasMoreData = response.data.data.length === pageSize;
+
+          console.log(
+            `Date ${formattedDate}: Fetched ${response.data.data.length} purchase orders, total: ${allPurchaseOrdersForDate.length}`
+          );
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        } else {
+          hasMoreData = false;
+        }
+      }
+
+      results.push({
+        date: formattedDate,
+        daysAgo: currentDaysAgo,
+        data: { data: allPurchaseOrdersForDate },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+
+    return results;
+  } catch (error) {
+    console.error(`Error getting purchase orders by date:`, error.message);
+    throw error;
+  }
+};
+
 module.exports = {
   getOrders,
   getOrdersByDate,
@@ -1128,4 +1253,6 @@ module.exports = {
   getSurchargesByDate,
   getCashflow,
   getCashflowByDate,
+  getPurchaseOrders,
+  getPurchaseOrdersByDate,
 };

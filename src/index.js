@@ -8,6 +8,7 @@ const {
   runUserSync,
   runSurchargeSync,
   runCashflowSync,
+  runPurchaseOrderSync,
 } = require("./syncKiot/syncKiot");
 const { testConnection } = require("./db");
 const { initializeDatabase } = require("./db/init");
@@ -249,6 +250,8 @@ async function startServer() {
         await require("../src/db/surchagesService").getSyncStatus();
       const cashflowSyncStatus =
         await require("../src/db/cashflowService").getSyncStatus();
+      const purchaseOrderSyncStatus =
+        await require("../src/db/purchaseOrderService").getSyncStatus();
 
       if (!userSyncStatus.historicalCompleted) {
         console.log("Starting historical user sync...");
@@ -299,12 +302,20 @@ async function startServer() {
         );
       }
 
+      if (!purchaseOrderSyncStatus.historicalCompleted) {
+        console.log("Starting historical purchase order sync...");
+        await require("../scheduler/purchaseOrderScheduler").purchaseOrderScheduler(
+          historicalDaysAgo
+        );
+      }
+
       // Current sync (maintain same order)
       console.log("Starting current sync cycle...");
       await runUserSync();
       await runProductSync();
       await runSurchargeSync();
       await runCustomerSync();
+      await runPurchaseOrderSync();
       await runOrderSync();
       await runInvoiceSync();
       await runCashflowSync();
@@ -316,6 +327,7 @@ async function startServer() {
           await runProductSync();
           await runSurchargeSync();
           await runCustomerSync();
+          await runPurchaseOrderSync();
           await runOrderSync();
           await runInvoiceSync();
           await runCashflowSync();

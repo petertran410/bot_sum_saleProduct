@@ -392,6 +392,105 @@ async function initializeDatabase() {
     `);
 
     await connection.query(`
+      CREATE TABLE IF NOT EXISTS purchase_orders (
+        id BIGINT PRIMARY KEY,
+        code VARCHAR(50) NOT NULL,
+        branchId INT,
+        branchName VARCHAR(100),
+        purchaseDate DATETIME,
+        discountRatio DECIMAL(5,2),
+        discount DECIMAL(15,2),
+        total DECIMAL(15,2),
+        supplierId BIGINT,
+        supplierName VARCHAR(255),
+        supplierCode VARCHAR(50),
+        partnerType VARCHAR(10),
+        purchaseById BIGINT,
+        purchaseName VARCHAR(100),
+        status INT DEFAULT 0,
+        statusValue VARCHAR(50),
+        description TEXT,
+        isDraft BOOLEAN DEFAULT FALSE,
+        paidAmount DECIMAL(15,2),
+        paymentMethod VARCHAR(50),
+        accountId BIGINT,
+        retailerId INT,
+        createdDate DATETIME,
+        modifiedDate DATETIME,
+        jsonData JSON,
+        UNIQUE INDEX (code),
+        INDEX idx_branchId (branchId),
+        INDEX idx_supplierId (supplierId),
+        INDEX idx_purchaseById (purchaseById),
+        INDEX idx_purchaseDate (purchaseDate),
+        INDEX idx_retailerId (retailerId)
+      )
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS purchase_order_details (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        purchaseOrderId BIGINT,
+        productId BIGINT,
+        productCode VARCHAR(50),
+        productName VARCHAR(255),
+        quantity DECIMAL(15,2),
+        price DECIMAL(15,2),
+        discount DECIMAL(15,2),
+        discountRatio DECIMAL(5,2),
+        description TEXT,
+        serialNumbers TEXT,
+        FOREIGN KEY (purchaseOrderId) REFERENCES purchase_orders(id) ON DELETE CASCADE,
+        INDEX idx_productId (productId),
+        INDEX idx_productCode (productCode)
+      )
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS purchase_order_batch_expires (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        purchaseOrderDetailId BIGINT,
+        productId BIGINT,
+        batchName VARCHAR(100),
+        fullNameVirgule VARCHAR(255),
+        expireDate DATETIME,
+        createdDate DATETIME,
+        FOREIGN KEY (purchaseOrderDetailId) REFERENCES purchase_order_details (id) ON DELETE CASCADE
+      )
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS purchase_order_payments (
+        id BIGINT PRIMARY KEY,
+        purchaseOrderId BIGINT,
+        code VARCHAR(50),
+        amount DECIMAL(15,2),
+        method VARCHAR(50),
+        status INT,
+        statusValue VARCHAR(50),
+        transDate DATETIME,
+        accountId BIGINT,
+        bankAccount VARCHAR(100),
+        description TEXT,
+        FOREIGN KEY (purchaseOrderId) REFERENCES purchase_orders(id) ON DELETE CASCADE
+      )
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS purchase_order_surcharges (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        purchaseOrderId BIGINT,
+        code VARCHAR(50),
+        name VARCHAR(255),
+        value DECIMAL(15,2),
+        valueRatio DECIMAL(10,4),
+        isSupplierExpense BOOLEAN DEFAULT FALSE,
+        type INT,
+        FOREIGN KEY (purchaseOrderId) REFERENCES purchase_orders(id) ON DELETE CASCADE
+      )
+    `);
+
+    await connection.query(`
       CREATE TABLE IF NOT EXISTS sync_status (
         entity_type VARCHAR(50) PRIMARY KEY,
         last_sync DATETIME,
@@ -407,6 +506,7 @@ async function initializeDatabase() {
       "invoices",
       "products",
       "cashflows",
+      "purchase_orders",
     ];
 
     for (const entity of entities) {
