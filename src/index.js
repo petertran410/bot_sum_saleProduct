@@ -1,4 +1,3 @@
-// src/index.js - FIXED VERSION with proper sync order
 require("dotenv").config();
 const express = require("express");
 const {
@@ -7,46 +6,17 @@ const {
   runProductSync,
   runCustomerSync,
   runUserSync,
-  runCategorySync,
-  runBranchSync,
-  runSupplierSync,
-  runBankAccountSync,
-  runTransferSync,
-  runPriceBookSync,
-  runPurchaseOrderSync,
-  runReceiptSync,
-  runReturnSync,
-  runSurchargeSync,
-  // NEW MISSING FUNCTIONS - ADD THESE TO syncKiot.js
-  runInventoryAdjustmentSync,
-  runDamageReportSync,
 } = require("./syncKiot/syncKiot");
-
-const {
-  getProducts,
-  getCustomers,
-  getUsers,
-  getCategories,
-  getBranches,
-  getSuppliers,
-  getBankAccounts,
-  getTransfers,
-  getPriceBooks,
-  getPurchaseOrders,
-  getReceipts,
-  getReturns,
-  getSurcharges,
-  // NEW MISSING API FUNCTIONS - ADD THESE TO kiotviet.js
-  getInventoryAdjustments,
-  getDamageReports,
-} = require("./kiotviet");
-
+const { getProducts } = require("./kiotviet");
+const { getCustomers } = require("./kiotviet");
+const { getUsers } = require("./kiotviet");
 const { testConnection } = require("./db");
 const { initializeDatabase } = require("./db/init");
 const { addRecordToCRMBase, getCRMStats, sendTestMessage } = require("./lark");
 
 const app = express();
 const PORT = process.env.PORT || 3690;
+console.log(PORT);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -83,48 +53,11 @@ app.get("/", (req, res) => {
       registration: "/api/submit-registration",
       stats: "/api/crm/stats",
       test: "/api/test-lark",
-      sync: {
-        order: "/save-order",
-        invoice: "/save-invoice",
-        product: "/save-product",
-        customer: "/save-customer",
-        user: "/save-user",
-        category: "/save-category",
-        branch: "/save-branch",
-        supplier: "/save-supplier",
-        bankAccount: "/save-bank-account",
-        transfer: "/save-transfer",
-        priceBook: "/save-price-book",
-        purchaseOrder: "/save-purchase-order",
-        receipt: "/save-receipt",
-        return: "/save-return",
-        surcharge: "/save-surcharge",
-        inventoryAdjustment: "/save-inventory-adjustment",
-        damageReport: "/save-damage-report",
-      },
-      get: {
-        products: "/get-products",
-        customers: "/get-customers",
-        users: "/get-users",
-        categories: "/get-categories",
-        branches: "/get-branches",
-        suppliers: "/get-suppliers",
-        bankAccounts: "/get-bank-accounts",
-        transfers: "/get-transfers",
-        priceBooks: "/get-price-books",
-        purchaseOrders: "/get-purchase-orders",
-        receipts: "/get-receipts",
-        returns: "/get-returns",
-        surcharges: "/get-surcharges",
-        inventoryAdjustments: "/get-inventory-adjustments",
-        damageReports: "/get-damage-reports",
-      },
     },
     timestamp: new Date().toISOString(),
   });
 });
 
-// CORS setup (keep existing)
 app.use((req, res, next) => {
   req.clientIP =
     req.headers["x-forwarded-for"] ||
@@ -135,12 +68,13 @@ app.use((req, res, next) => {
 });
 
 app.use((req, res, next) => {
+  // Allow your specific domain and common local development
   const allowedOrigins = [
     "https://www.traphuonghoang.com",
     "https://traphuonghoang.com",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "file://",
+    "file://", // For local HTML files
   ];
 
   const origin = req.headers.origin;
@@ -148,6 +82,7 @@ app.use((req, res, next) => {
     res.setHeader("Access-Control-Allow-Origin", origin);
   }
 
+  // Essential CORS headers
   res.setHeader(
     "Access-Control-Allow-Methods",
     "GET, POST, PUT, DELETE, OPTIONS"
@@ -157,8 +92,9 @@ app.use((req, res, next) => {
     "Origin, X-Requested-With, Content-Type, Accept, Authorization"
   );
   res.setHeader("Access-Control-Allow-Credentials", "true");
-  res.setHeader("Access-Control-Max-Age", "86400");
+  res.setHeader("Access-Control-Max-Age", "86400"); // 24 hours
 
+  // Handle preflight OPTIONS requests
   if (req.method === "OPTIONS") {
     console.log(`✅ CORS preflight handled for ${req.path}`);
     return res.status(200).end();
@@ -167,7 +103,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// API endpoints (keep existing ones)
 app.get("/api/health", (req, res) => {
   console.log("🏥 Health check requested");
   res.json({
@@ -187,6 +122,7 @@ app.post("/api/submit-registration", async (req, res) => {
     console.log("📝 New registration received:", req.body);
     console.log("🌐 Client IP:", req.clientIP);
 
+    // Validate required fields
     const { name, phone, email, type, ticket, city } = req.body;
 
     if (!name || !phone || !email) {
@@ -197,12 +133,14 @@ app.post("/api/submit-registration", async (req, res) => {
       });
     }
 
+    // Add client info to form data
     const formDataWithIP = {
       ...req.body,
       clientIP: req.clientIP,
       userAgent: req.get("User-Agent"),
     };
 
+    // Add record to CRM Base
     const result = await addRecordToCRMBase(formDataWithIP);
 
     if (result.success) {
@@ -233,6 +171,9 @@ app.post("/api/submit-registration", async (req, res) => {
   }
 });
 
+/**
+ * Get CRM statistics
+ */
 app.get("/api/crm/stats", async (req, res) => {
   try {
     console.log("📊 CRM stats requested");
@@ -259,6 +200,9 @@ app.get("/api/crm/stats", async (req, res) => {
   }
 });
 
+/**
+ * Test LarkSuite connection
+ */
 app.get("/api/test-lark", async (req, res) => {
   try {
     console.log("🔧 LarkSuite test requested");
@@ -278,9 +222,16 @@ app.get("/api/test-lark", async (req, res) => {
   }
 });
 
+/**
+ * Webhook endpoint for LarkSuite (optional)
+ */
 app.post("/api/webhook/lark", (req, res) => {
   try {
     console.log("📨 LarkSuite webhook received:", req.body);
+
+    // Handle webhook events if needed
+    // For example: when someone updates a CRM record
+
     res.json({
       success: true,
       message: "Webhook processed",
@@ -294,7 +245,6 @@ app.post("/api/webhook/lark", (req, res) => {
   }
 });
 
-// EXISTING SYNC ENDPOINTS (keep all existing ones)
 app.get("/save-order", async (req, res) => {
   try {
     await runOrderSync();
@@ -372,200 +322,6 @@ app.get("/save-user", async (req, res) => {
   }
 });
 
-app.get("/save-category", async (req, res) => {
-  try {
-    await runCategorySync();
-    res.json({
-      success: true,
-      message: "Category synchronization completed",
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Error during category synchronization",
-      error: error.message,
-    });
-  }
-});
-
-app.get("/save-branch", async (req, res) => {
-  try {
-    await runBranchSync();
-    res.json({
-      success: true,
-      message: "Branch synchronization completed",
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Error during branch synchronization",
-      error: error.message,
-    });
-  }
-});
-
-app.get("/save-supplier", async (req, res) => {
-  try {
-    await runSupplierSync();
-    res.json({
-      success: true,
-      message: "Supplier synchronization completed",
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Error during supplier synchronization",
-      error: error.message,
-    });
-  }
-});
-
-app.get("/save-bank-account", async (req, res) => {
-  try {
-    await runBankAccountSync();
-    res.json({
-      success: true,
-      message: "Bank account synchronization completed",
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Error during bank account synchronization",
-      error: error.message,
-    });
-  }
-});
-
-app.get("/save-transfer", async (req, res) => {
-  try {
-    await runTransferSync();
-    res.json({
-      success: true,
-      message: "Transfer synchronization completed",
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Error during transfer synchronization",
-      error: error.message,
-    });
-  }
-});
-
-app.get("/save-price-book", async (req, res) => {
-  try {
-    await runPriceBookSync();
-    res.json({
-      success: true,
-      message: "Price book synchronization completed",
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Error during price book synchronization",
-      error: error.message,
-    });
-  }
-});
-
-app.get("/save-purchase-order", async (req, res) => {
-  try {
-    await runPurchaseOrderSync();
-    res.json({
-      success: true,
-      message: "Purchase order synchronization completed",
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Error during purchase order synchronization",
-      error: error.message,
-    });
-  }
-});
-
-app.get("/save-receipt", async (req, res) => {
-  try {
-    await runReceiptSync();
-    res.json({
-      success: true,
-      message: "Receipt synchronization completed",
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Error during receipt synchronization",
-      error: error.message,
-    });
-  }
-});
-
-app.get("/save-return", async (req, res) => {
-  try {
-    await runReturnSync();
-    res.json({
-      success: true,
-      message: "Return synchronization completed",
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Error during return synchronization",
-      error: error.message,
-    });
-  }
-});
-
-app.get("/save-surcharge", async (req, res) => {
-  try {
-    await runSurchargeSync();
-    res.json({
-      success: true,
-      message: "Surcharge synchronization completed",
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Error during surcharge synchronization",
-      error: error.message,
-    });
-  }
-});
-
-// NEW ENDPOINTS FOR MISSING ENTITIES
-app.get("/save-inventory-adjustment", async (req, res) => {
-  try {
-    await runInventoryAdjustmentSync();
-    res.json({
-      success: true,
-      message: "Inventory adjustment synchronization completed",
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Error during inventory adjustment synchronization",
-      error: error.message,
-    });
-  }
-});
-
-app.get("/save-damage-report", async (req, res) => {
-  try {
-    await runDamageReportSync();
-    res.json({
-      success: true,
-      message: "Damage report synchronization completed",
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Error during damage report synchronization",
-      error: error.message,
-    });
-  }
-});
-
-// GET ENDPOINTS (keep all existing ones + add new ones)
 app.get("/get-products", async (req, res) => {
   try {
     const products = await getProducts();
@@ -608,310 +364,126 @@ app.get("/get-users", async (req, res) => {
   }
 });
 
-app.get("/get-categories", async (req, res) => {
-  try {
-    const categories = await getCategories();
-    res.json(categories);
-  } catch (error) {
-    console.log("Cannot get categories", error);
-    res.status(500).json({
-      success: false,
-      message: "Error fetching categories",
-      error: error.message,
-    });
-  }
-});
-
-app.get("/get-branches", async (req, res) => {
-  try {
-    const branches = await getBranches();
-    res.json(branches);
-  } catch (error) {
-    console.log("Cannot get branches", error);
-    res.status(500).json({
-      success: false,
-      message: "Error fetching branches",
-      error: error.message,
-    });
-  }
-});
-
-app.get("/get-suppliers", async (req, res) => {
-  try {
-    const suppliers = await getSuppliers();
-    res.json(suppliers);
-  } catch (error) {
-    console.log("Cannot get suppliers", error);
-    res.status(500).json({
-      success: false,
-      message: "Error fetching suppliers",
-      error: error.message,
-    });
-  }
-});
-
-app.get("/get-bank-accounts", async (req, res) => {
-  try {
-    const bankAccounts = await getBankAccounts();
-    res.json(bankAccounts);
-  } catch (error) {
-    console.log("Cannot get bank accounts", error);
-    res.status(500).json({
-      success: false,
-      message: "Error fetching bank accounts",
-      error: error.message,
-    });
-  }
-});
-
-app.get("/get-transfers", async (req, res) => {
-  try {
-    const transfers = await getTransfers();
-    res.json(transfers);
-  } catch (error) {
-    console.log("Cannot get transfers", error);
-    res.status(500).json({
-      success: false,
-      message: "Error fetching transfers",
-      error: error.message,
-    });
-  }
-});
-
-app.get("/get-price-books", async (req, res) => {
-  try {
-    const priceBooks = await getPriceBooks();
-    res.json(priceBooks);
-  } catch (error) {
-    console.log("Cannot get price books", error);
-    res.status(500).json({
-      success: false,
-      message: "Error fetching price books",
-      error: error.message,
-    });
-  }
-});
-
-app.get("/get-purchase-orders", async (req, res) => {
-  try {
-    const purchaseOrders = await getPurchaseOrders();
-    res.json(purchaseOrders);
-  } catch (error) {
-    console.log("Cannot get purchase orders", error);
-    res.status(500).json({
-      success: false,
-      message: "Error fetching purchase orders",
-      error: error.message,
-    });
-  }
-});
-
-app.get("/get-receipts", async (req, res) => {
-  try {
-    const receipts = await getReceipts();
-    res.json(receipts);
-  } catch (error) {
-    console.log("Cannot get receipts", error);
-    res.status(500).json({
-      success: false,
-      message: "Error fetching receipts",
-      error: error.message,
-    });
-  }
-});
-
-app.get("/get-returns", async (req, res) => {
-  try {
-    const returns = await getReturns();
-    res.json(returns);
-  } catch (error) {
-    console.log("Cannot get returns", error);
-    res.status(500).json({
-      success: false,
-      message: "Error fetching returns",
-      error: error.message,
-    });
-  }
-});
-
-app.get("/get-surcharges", async (req, res) => {
-  try {
-    const surcharges = await getSurcharges();
-    res.json(surcharges);
-  } catch (error) {
-    console.log("Cannot get surcharges", error);
-    res.status(500).json({
-      success: false,
-      message: "Error fetching surcharges",
-      error: error.message,
-    });
-  }
-});
-
-app.get("/get-inventory-adjustments", async (req, res) => {
-  try {
-    const inventoryAdjustments = await getInventoryAdjustments();
-    res.json(inventoryAdjustments);
-  } catch (error) {
-    console.log("Cannot get inventory adjustments", error);
-    res.status(500).json({
-      success: false,
-      message: "Error fetching inventory adjustments",
-      error: error.message,
-    });
-  }
-});
-
-app.get("/get-damage-reports", async (req, res) => {
-  try {
-    const damageReports = await getDamageReports();
-    res.json(damageReports);
-  } catch (error) {
-    console.log("Cannot get damage reports", error);
-    res.status(500).json({
-      success: false,
-      message: "Error fetching damage reports",
-      error: error.message,
-    });
-  }
-});
-
+// Initialize and start the server
 async function startServer() {
   try {
     // Test database connection
     const dbConnected = await testConnection();
 
     if (!dbConnected) {
+      console.error(
+        "Failed to connect to database. Please check your database configuration."
+      );
       process.exit(1);
     }
 
     const dbInitialized = await initializeDatabase();
 
     if (!dbInitialized) {
+      console.error("Failed to initialize database schema.");
       process.exit(1);
     }
+    console.log("Database schema initialization completed.");
 
     const server = app.listen(PORT, async () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`📊 CRM Health: http://localhost:${PORT}/api/health`);
+      console.log(
+        `📝 CRM Registration: http://localhost:${PORT}/api/submit-registration`
+      );
+      console.log(`📈 CRM Stats: http://localhost:${PORT}/api/crm/stats`);
+      console.log(`🔧 LarkSuite Test: http://localhost:${PORT}/api/test-lark`);
+
       const historicalDaysAgo = parseInt(process.env.INITIAL_SCAN_DAYS || "7");
 
-      const bankAccountSyncStatus =
-        await require("./db/backAccountService").getSyncStatus();
-      const branchSyncStatus =
-        await require("./db/branchService").getSyncStatus();
-      const categorySyncStatus =
-        await require("./db/categoryService").getSyncStatus();
-      const customerGroupSyncStatus =
-        await require("./db/customerGroupService").getSyncStatus();
-      const customerSyncStatus =
-        await require("./db/customerService").getSyncStatus();
-      const damageReportSyncStatus =
-        await require("./db/damageReportService").getSyncStatus();
-      const inventoryAdjustmentSyncStatus =
-        await require("./db/inventoryAdjustmentService").getSyncStatus();
-      const invoiceSyncStatus =
-        await require("./db/invoiceService").getSyncStatus();
-      const locationSyncStatus =
-        await require("./db/locationService").getSyncStatus();
       const orderSyncStatus =
-        await require("./db/orderService").getSyncStatus();
-      const priceBookSyncStatus =
-        await require("./db/priceBookService").getSyncStatus();
+        await require("../src/db/orderService").getSyncStatus();
+      const invoiceSyncStatus =
+        await require("../src/db/invoiceService").getSyncStatus();
+      const customerSyncStatus =
+        await require("../src/db/customerService").getSyncStatus();
       const productSyncStatus =
-        await require("./db/productService").getSyncStatus();
-      const purchaseOrderSyncStatus =
-        await require("./db/purchaseOrderService").getSyncStatus();
-      const receiptSyncStatus =
-        await require("./db/receiptService").getSyncStatus();
-      const returnSyncStatus =
-        await require("./db/returnService").getSyncStatus();
-      const supplierSyncStatus =
-        await require("./db/supplierService").getSyncStatus();
-      const surchargeSyncStatus =
-        await require("./db/surchargeService").getSyncStatus();
-      const transferSyncStatus =
-        await require("./db/transferService").getSyncStatus();
-      const userSyncStatus = await require("./db/userService").getSyncStatus();
+        await require("../src/db/productService").getSyncStatus();
+      const userSyncStatus =
+        await require("../src/db/userService").getSyncStatus();
 
-      if (
-        !bankAccountSyncStatus.historicalCompleted ||
-        !branchSyncStatus.historicalCompleted ||
-        !categorySyncStatus.historicalCompleted ||
-        !customerGroupSyncStatus.historicalCompleted ||
-        !customerSyncStatus.historicalCompleted ||
-        !damageReportSyncStatus.historicalCompleted ||
-        !inventoryAdjustmentSyncStatus.historicalCompleted ||
-        !invoiceSyncStatus.historicalCompleted ||
-        !locationSyncStatus.historicalCompleted ||
-        !orderSyncStatus.historicalCompleted ||
-        !priceBookSyncStatus.historicalCompleted ||
-        !productSyncStatus.historicalCompleted ||
-        !purchaseOrderSyncStatus.historicalCompleted ||
-        !receiptSyncStatus.historicalCompleted ||
-        !returnSyncStatus.historicalCompleted ||
-        !supplierSyncStatus.historicalCompleted ||
-        !surchargeSyncStatus.historicalCompleted ||
-        !transferSyncStatus.historicalCompleted ||
-        !userSyncStatus.historicalCompleted
-      ) {
-        if (!bankAccountSyncStatus.historicalCompleted) {
-          await require("../scheduler/bankAccountScheduler").bankAccountScheduler(
-            historicalDaysAgo
-          );
-        }
-        if (!branchSyncStatus.historicalCompleted) {
-          await require("../scheduler/branchScheduler").branchScheduler(
-            historicalDaysAgo
-          );
-        }
-        if (!categorySyncStatus.historicalCompleted) {
-          await require("../scheduler/categoryScheduler").categoryScheduler(
-            historicalDaysAgo
-          );
-        }
-        if (!customerGroupSyncStatus.historicalCompleted) {
-          await require("../scheduler/customerGroupScheduler").customerGroupScheduler(
-            historicalDaysAgo
-          );
-        }
-
-        if (!supplierSyncStatus.historicalCompleted) {
-          await require("../scheduler/supplierScheduler").supplierScheduler(
-            historicalDaysAgo
-          );
-        }
-
-        if (!userSyncStatus.historicalCompleted) {
-          await require("../scheduler/userScheduler").userScheduler(
-            historicalDaysAgo
-          );
-        }
-        if (!customerSyncStatus.historicalCompleted) {
-          await require("../scheduler/customerScheduler").customerScheduler(
-            historicalDaysAgo
-          );
-        }
-        if (!productSyncStatus.historicalCompleted) {
-          await require("../scheduler/productScheduler").productScheduler(
-            historicalDaysAgo
-          );
-        }
-        if (!orderSyncStatus.historicalCompleted) {
-          await require("../scheduler/orderScheduler").orderScheduler(
-            historicalDaysAgo
-          );
-        }
-        if (!invoiceSyncStatus.historicalCompleted) {
-          await require("../scheduler/invoiceScheduler").invoiceScheduler(
-            historicalDaysAgo
-          );
-        }
+      if (!userSyncStatus.historicalCompleted) {
+        console.log(
+          `Syncing ${historicalDaysAgo} days of historical user data...`
+        );
+        await require("../scheduler/userScheduler").userScheduler(
+          historicalDaysAgo
+        );
       }
 
-      const syncInterval = setInterval(runSequentialSync, 10 * 60 * 1000);
+      if (!orderSyncStatus.historicalCompleted) {
+        console.log(
+          `Syncing ${historicalDaysAgo} days of historical order data...`
+        );
+        await require("../scheduler/orderScheduler").orderScheduler(
+          historicalDaysAgo
+        );
+      }
+
+      if (!invoiceSyncStatus.historicalCompleted) {
+        console.log(
+          `Syncing ${historicalDaysAgo} days of historical invoice data...`
+        );
+        await require("../scheduler/invoiceScheduler").invoiceScheduler(
+          historicalDaysAgo
+        );
+      }
+
+      if (!customerSyncStatus.historicalCompleted) {
+        console.log(
+          `Syncing ${historicalDaysAgo} days of historical customer data...`
+        );
+        await require("../scheduler/customerScheduler").customerScheduler(
+          historicalDaysAgo
+        );
+      }
+
+      if (!productSyncStatus.historicalCompleted) {
+        console.log(
+          `Syncing ${historicalDaysAgo} days of historical product data...`
+        );
+        await require("../scheduler/productScheduler").productScheduler(
+          historicalDaysAgo
+        );
+      }
+
+      // Now run the current data sync
+      await runUserSync();
+      await runOrderSync();
+      await runInvoiceSync();
+      await runCustomerSync();
+      await runProductSync();
+
+      const runAllSyncs = async () => {
+        try {
+          console.log(`[${new Date().toISOString()}] Starting sync cycle...`);
+
+          await Promise.all([
+            runUserSync(),
+            runOrderSync(),
+            runInvoiceSync(),
+            runCustomerSync(),
+            runProductSync(),
+          ]);
+
+          console.log(`[${new Date().toISOString()}] Sync cycle completed.`);
+        } catch (error) {
+          console.error("Error during simultaneous sync:", error);
+        }
+      };
+
+      // Run sync every 10 minutes (10 * 60 * 1000 ms)
+      const syncInterval = setInterval(runAllSyncs, 10 * 60 * 1000);
 
       process.on("SIGINT", () => {
         clearInterval(syncInterval);
         server.close(() => {
+          console.log("Server stopped");
           process.exit(0);
         });
       });
@@ -919,8 +491,10 @@ async function startServer() {
 
     return server;
   } catch (error) {
+    console.error("Error starting server:", error);
     process.exit(1);
   }
 }
 
+// Start the server
 startServer();
