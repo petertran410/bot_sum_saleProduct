@@ -234,6 +234,8 @@ async function startServer() {
     const server = app.listen(PORT, async () => {
       const historicalDaysAgo = parseInt(process.env.INITIAL_SCAN_DAYS || "7");
 
+      const customerGroupSyncStatus =
+        await require("../src/db/customerGroupService").getSyncStatus();
       const orderSyncStatus =
         await require("../src/db/orderService").getSyncStatus();
       const invoiceSyncStatus =
@@ -246,8 +248,6 @@ async function startServer() {
         await require("../src/db/userService").getSyncStatus();
       const surchargeSyncStatus =
         await require("../src/db/surchagesService").getSyncStatus();
-      const customerGroupSyncStatus =
-        await require("../src/db/customerGroupService").getSyncStatus();
 
       if (!userSyncStatus.historicalCompleted) {
         await require("../scheduler/userScheduler").userScheduler(

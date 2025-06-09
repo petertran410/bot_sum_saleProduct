@@ -38,33 +38,53 @@ async function saveCustomerGroups(customerGroups) {
             validateAndSanitizeCustomerGroup(customerGroup);
 
           const [existing] = await connection.execute(
-            "SELECT id FROM customer_groups WHERE id = ?",
-            [validatedCustomerGroup.id]
+            "SELECT id, source FROM customer_groups WHERE id = ? OR (name = ? AND retailerId = ? AND source = 'kiotviet')",
+            [
+              validatedCustomerGroup.id,
+              validatedCustomerGroup.name,
+              validatedCustomerGroup.retailerId,
+            ]
           );
 
           const isNew = existing.length === 0;
+          const isKiotVietGroup =
+            existing.length > 0 && existing[0].source === "kiotviet";
 
-          const result = await saveCustomerGroup(
-            validatedCustomerGroup,
-            connection
-          );
-          if (result.success) {
-            successCount++;
-            if (isNew) newCount++;
-            else updatedCount++;
+          if (isNew || isKiotVietGroup) {
+            const result = await saveCustomerGroup(
+              validatedCustomerGroup,
+              connection
+            );
+            if (result.success) {
+              successCount++;
+              if (isNew) newCount++;
+              else updatedCount++;
+            } else {
+              failCount++;
+            }
           } else {
-            failCount++;
+            console.log(
+              `Skipping local group with same name: ${validatedCustomerGroup.name}`
+            );
           }
         } catch (error) {
+          console.error(
+            `Error processing customer group ${
+              customerGroup.name || customerGroup.id
+            }:`,
+            error.message
+          );
           failCount++;
         }
       }
+
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
 
     await connection.commit();
   } catch (error) {
     await connection.rollback();
+    console.error("Customer group transaction failed:", error.message);
   } finally {
     connection.release();
   }
@@ -106,14 +126,15 @@ async function saveCustomerGroup(customerGroup, connection = null) {
     const query = `
       INSERT INTO customer_groups 
         (id, name, description, discount, retailerId, createdBy, 
-         createdDate, modifiedDate, jsonData)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         createdDate, modifiedDate, jsonData, source)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'kiotviet')
       ON DUPLICATE KEY UPDATE
         name = VALUES(name),
         description = VALUES(description),
         discount = VALUES(discount),
         modifiedDate = VALUES(modifiedDate),
-        jsonData = VALUES(jsonData)
+        jsonData = VALUES(jsonData),
+        source = 'kiotviet'
     `;
 
     await connection.execute(query, [
@@ -159,6 +180,7 @@ async function saveCustomerGroup(customerGroup, connection = null) {
 
     return { success: true };
   } catch (error) {
+    console.error(`Error saving customer group ${customerGroup.name}:`, error);
     return { success: false, error: error.message };
   } finally {
     if (shouldReleaseConnection) {

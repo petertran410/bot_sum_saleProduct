@@ -317,8 +317,10 @@ async function initializeDatabase() {
         createdDate DATETIME,
         modifiedDate DATETIME,
         jsonData JSON,
-        UNIQUE KEY (name, retailerId),
-        INDEX idx_retailerId (retailerId)
+        source ENUM('kiotviet', 'local') DEFAULT 'kiotviet',
+        UNIQUE KEY unique_name_retailer (name, retailerId),
+        INDEX idx_retailerId (retailerId),
+        INDEX idx_source (source)
       )
     `);
 

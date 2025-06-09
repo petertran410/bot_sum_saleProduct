@@ -1,6 +1,5 @@
 const { getPool } = require("../db");
 
-// Add data validation and sanitization
 function validateAndSanitizeCustomer(customer) {
   return {
     ...customer,
@@ -43,7 +42,6 @@ async function saveCustomers(customers) {
   try {
     await connection.beginTransaction();
 
-    // Get existing IDs for faster lookup
     const [existingCustomers] = await connection.execute(
       "SELECT id FROM customers"
     );
@@ -59,7 +57,6 @@ async function saveCustomers(customers) {
 
       for (const customer of batch) {
         try {
-          // Validate and sanitize
           const validatedCustomer = validateAndSanitizeCustomer(customer);
           const isNew = !existingIds.has(validatedCustomer.id);
 
@@ -110,7 +107,33 @@ async function saveCustomers(customers) {
   };
 }
 
-// Update saveCustomer to accept connection parameter
+async function getOrCreateCustomerGroup(groupName, retailerId, connection) {
+  const [existingGroups] = await connection.execute(
+    "SELECT id, source FROM customer_groups WHERE name = ? AND retailerId = ?",
+    [groupName, retailerId]
+  );
+
+  if (existingGroups.length > 0) {
+    return existingGroups[0].id;
+  }
+
+  const [maxIdResult] = await connection.execute(
+    "SELECT COALESCE(MAX(id), 100000) + 1 as nextId FROM customer_groups WHERE source = 'local'"
+  );
+
+  const nextId = Math.max(maxIdResult[0].nextId, 100000);
+
+  await connection.execute(
+    `INSERT INTO customer_groups 
+     (id, name, retailerId, source, createdDate, modifiedDate) 
+     VALUES (?, ?, ?, 'local', NOW(), NOW())`,
+    [nextId, groupName, retailerId]
+  );
+
+  console.log(`Created local customer group: ${groupName} (ID: ${nextId})`);
+  return nextId;
+}
+
 async function saveCustomer(customer, connection = null) {
   const shouldReleaseConnection = !connection;
 
@@ -189,22 +212,11 @@ async function saveCustomer(customer, connection = null) {
       jsonData,
     ]);
 
-    // Handle customer groups
     if (customer.groups) {
       await connection.execute(
         "DELETE FROM customer_group_details WHERE customerId = ?",
         [id]
       );
-
-      const [existingGroups] = await connection.execute(
-        "SELECT id, name FROM customer_groups WHERE retailerId = ?",
-        [retailerId]
-      );
-
-      const groupMap = new Map();
-      for (const group of existingGroups) {
-        groupMap.set(group.name.toLowerCase(), group.id);
-      }
 
       let groupNames = [];
       if (typeof customer.groups === "string") {
@@ -225,32 +237,20 @@ async function saveCustomer(customer, connection = null) {
       for (const groupName of groupNames) {
         if (!groupName) continue;
 
-        let groupId = groupMap.get(groupName.toLowerCase());
-
-        if (!groupId) {
-          const [maxIdResult] = await connection.execute(
-            "SELECT COALESCE(MAX(id), 0) + 1 as nextId FROM customer_groups"
-          );
-
-          const nextId = Math.max(maxIdResult[0].nextId, 1000);
-
-          await connection.execute(
-            "INSERT INTO customer_groups (id, name, retailerId, createdDate) VALUES (?, ?, ?, NOW())",
-            [nextId, groupName, retailerId]
-          );
-
-          groupId = nextId;
-          groupMap.set(groupName.toLowerCase(), groupId);
-        }
-
         try {
+          const groupId = await getOrCreateCustomerGroup(
+            groupName,
+            retailerId,
+            connection
+          );
+
           await connection.execute(
             "INSERT INTO customer_group_details (customerId, groupId) VALUES (?, ?)",
             [id, groupId]
           );
         } catch (detailError) {
           console.warn(
-            `Warning: Could not link customer ${id} to group ${groupId}: ${detailError.message}`
+            `Warning: Could not link customer ${id} to group ${groupName}: ${detailError.message}`
           );
         }
       }
@@ -267,7 +267,6 @@ async function saveCustomer(customer, connection = null) {
   }
 }
 
-// Keep existing updateSyncStatus and getSyncStatus functions
 async function updateSyncStatus(completed = false, lastSync = new Date()) {
   const pool = getPool();
 
