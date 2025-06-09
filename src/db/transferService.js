@@ -1,5 +1,9 @@
 const { getPool } = require("../db.js");
 
+const safeValue = (value) => {
+  return value === undefined ? null : value;
+};
+
 // Add data validation and sanitization
 function validateAndSanitizeTransfer(transfer) {
   return {
@@ -92,24 +96,24 @@ async function saveTransfer(transfer, connection = null) {
     `;
 
     await connection.execute(query, [
-      id,
-      code,
-      status,
-      transferredDate,
-      receivedDate,
-      createdById,
-      createdByName,
-      fromBranchId,
-      fromBranchName,
-      toBranchId,
-      toBranchName,
-      noteBySource,
-      noteByDestination,
-      description,
-      retailerId,
-      createdDate,
-      modifiedDate,
-      jsonData,
+      safeValue(id),
+      safeValue(code),
+      safeValue(status),
+      safeValue(transferredDate),
+      safeValue(receivedDate),
+      safeValue(createdById),
+      safeValue(createdByName),
+      safeValue(fromBranchId),
+      safeValue(fromBranchName),
+      safeValue(toBranchId),
+      safeValue(toBranchName),
+      safeValue(noteBySource),
+      safeValue(noteByDestination),
+      safeValue(description),
+      safeValue(retailerId),
+      safeValue(createdDate),
+      safeValue(modifiedDate),
+      safeValue(jsonData),
     ]);
 
     // Handle transferDetails from actual KiotViet response structure
