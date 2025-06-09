@@ -315,12 +315,11 @@ async function initializeDatabase() {
         retailerId INT,
         createdBy BIGINT,
         createdDate DATETIME,
-        modifiedDate DATETIME,
         jsonData JSON,
-        source ENUM('kiotviet', 'local') DEFAULT 'kiotviet',
-        UNIQUE KEY unique_name_retailer (name, retailerId),
+        UNIQUE KEY unique_id (id),
         INDEX idx_retailerId (retailerId),
-        INDEX idx_source (source)
+        INDEX idx_name (name),
+        INDEX idx_createdBy (createdBy)
       )
     `);
 
@@ -330,8 +329,10 @@ async function initializeDatabase() {
         customerId BIGINT,
         groupId INT,
         FOREIGN KEY (customerId) REFERENCES customers(id) ON DELETE CASCADE,
-        FOREIGN KEY (groupId) REFERENCES customer_groups(id) ON DELETE CASCADE,
-        UNIQUE KEY (customerId, groupId)
+        FOREIGN KEY (groupId) REFERENCES customer_groups(id) ON DELETE    CASCADE,
+        UNIQUE KEY (customerId, groupId),
+        INDEX idx_customerId (customerId),
+        INDEX idx_groupId (groupId)
       )
     `);
 

@@ -957,17 +957,25 @@ const getCustomerGroups = async () => {
 
 const getCustomerGroupsByDate = async (daysAgo) => {
   try {
-    const customerGroups = await getCustomerGroups();
+    const results = [];
 
-    const currentDate = new Date().toISOString().split("T")[0];
+    for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() - currentDaysAgo);
+      const formattedDate = targetDate.toISOString().split("T")[0];
 
-    return [
-      {
-        date: currentDate,
-        daysAgo: 0,
+      const customerGroups = await getCustomerGroups();
+
+      results.push({
+        date: formattedDate,
+        daysAgo: currentDaysAgo,
         data: customerGroups,
-      },
-    ];
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+
+    return results;
   } catch (error) {
     console.error("Error getting customer groups by date:", error.message);
     return [];
