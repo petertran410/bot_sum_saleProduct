@@ -9,6 +9,7 @@ const {
   runSurchargeSync,
   runCashflowSync,
   runPurchaseOrderSync,
+  runTransferSync,
 } = require("./syncKiot/syncKiot");
 const { testConnection } = require("./db");
 const { initializeDatabase } = require("./db/init");
@@ -252,6 +253,8 @@ async function startServer() {
         await require("../src/db/cashflowService").getSyncStatus();
       const purchaseOrderSyncStatus =
         await require("../src/db/purchaseOrderService").getSyncStatus();
+      const transferSyncStatus =
+        await require("../src/db/transferService").getSyncStatus();
 
       if (!userSyncStatus.historicalCompleted) {
         console.log("Starting historical user sync...");
@@ -309,6 +312,13 @@ async function startServer() {
         );
       }
 
+      if (!transferSyncStatus.historicalCompleted) {
+        console.log("Starting historical transfer sync...");
+        await require("../scheduler/transferScheduler").transferScheduler(
+          historicalDaysAgo
+        );
+      }
+
       // Current sync (maintain same order)
       console.log("Starting current sync cycle...");
       await runUserSync();
@@ -319,6 +329,7 @@ async function startServer() {
       await runOrderSync();
       await runInvoiceSync();
       await runCashflowSync();
+      await runTransferSync();
 
       const runAllSyncs = async () => {
         try {
@@ -331,6 +342,7 @@ async function startServer() {
           await runOrderSync();
           await runInvoiceSync();
           await runCashflowSync();
+          await runTransferSync();
         } catch (error) {
           console.error("Error during simultaneous sync:", error);
         }

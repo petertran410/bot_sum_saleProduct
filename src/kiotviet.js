@@ -1238,6 +1238,157 @@ const getPurchaseOrdersByDate = async (daysAgo) => {
   }
 };
 
+const getTransfers = async () => {
+  try {
+    const token = await getToken();
+    const pageSize = 100;
+    const allTransfers = [];
+    let currentItem = 0;
+    let hasMoreData = true;
+
+    console.log("Fetching current transfers...");
+
+    // Get only recent transfers (last 24 hours) for current sync
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const fromDate = yesterday.toISOString().split("T")[0];
+
+    while (hasMoreData) {
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/transfers`,
+        params: {
+          pageSize: pageSize,
+          currentItem: currentItem,
+          fromTransferDate: fromDate,
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allTransfers.push(...response.data.data);
+        currentItem += response.data.data.length;
+        hasMoreData = response.data.data.length === pageSize;
+
+        console.log(
+          `Fetched ${response.data.data.length} transfers, total: ${allTransfers.length}`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        hasMoreData = false;
+      }
+    }
+
+    return { data: allTransfers, total: allTransfers.length };
+  } catch (error) {
+    console.error("Error getting transfers:", error.message);
+    throw error;
+  }
+};
+
+const getTransfersByDate = async (daysAgo) => {
+  try {
+    const results = [];
+
+    for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() - currentDaysAgo);
+      const formattedDate = targetDate.toISOString().split("T")[0];
+
+      const token = await getToken();
+      const pageSize = 100;
+      const allTransfersForDate = [];
+      let currentItem = 0;
+      let hasMoreData = true;
+
+      console.log(`Fetching transfers for ${formattedDate}...`);
+
+      while (hasMoreData) {
+        const response = await makeApiRequest({
+          method: "GET",
+          url: `${KIOTVIET_BASE_URL}/transfers`,
+          params: {
+            pageSize: pageSize,
+            currentItem: currentItem,
+            fromTransferDate: formattedDate,
+            toTransferDate: formattedDate,
+          },
+          headers: {
+            Retailer: process.env.KIOT_SHOP_NAME,
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (
+          response.data &&
+          response.data.data &&
+          response.data.data.length > 0
+        ) {
+          allTransfersForDate.push(...response.data.data);
+          currentItem += response.data.data.length;
+          hasMoreData = response.data.data.length === pageSize;
+
+          console.log(
+            `Date ${formattedDate}: Fetched ${response.data.data.length} transfers, total: ${allTransfersForDate.length}`
+          );
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        } else {
+          hasMoreData = false;
+        }
+      }
+
+      // For each transfer, get detailed information
+      for (let i = 0; i < allTransfersForDate.length; i++) {
+        try {
+          const detailResponse = await makeApiRequest({
+            method: "GET",
+            url: `${KIOTVIET_BASE_URL}/transfers/${allTransfersForDate[i].id}`,
+            headers: {
+              Retailer: process.env.KIOT_SHOP_NAME,
+              Authorization: `Bearer ${token}`,
+            },
+          });
+
+          if (detailResponse.data) {
+            // Merge the detailed data with the list data
+            allTransfersForDate[i] = {
+              ...allTransfersForDate[i],
+              ...detailResponse.data,
+            };
+          }
+
+          // Add delay to avoid rate limiting
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        } catch (detailError) {
+          console.warn(
+            `Warning: Could not get details for transfer ${allTransfersForDate[i].id}: ${detailError.message}`
+          );
+        }
+      }
+
+      results.push({
+        date: formattedDate,
+        daysAgo: currentDaysAgo,
+        data: { data: allTransfersForDate },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+
+    return results;
+  } catch (error) {
+    console.error(`Error getting transfers by date:`, error.message);
+    throw error;
+  }
+};
+
 module.exports = {
   getOrders,
   getOrdersByDate,
@@ -1255,4 +1406,6 @@ module.exports = {
   getCashflowByDate,
   getPurchaseOrders,
   getPurchaseOrdersByDate,
+  getTransfers,
+  getTransfersByDate,
 };

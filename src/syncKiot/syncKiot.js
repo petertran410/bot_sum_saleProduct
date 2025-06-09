@@ -6,6 +6,7 @@ const customerService = require("../db/customerService");
 const surchargeService = require("../db/surchagesService");
 const cashFlowService = require("../db/cashflowService");
 const purchaseOrderService = require("../db/purchaseOrderService");
+const transferService = require("../db/transferService");
 
 const {
   cashflowScheduler,
@@ -46,6 +47,11 @@ const {
   purchaseOrderScheduler,
   purchaseOrderSchedulerCurrent,
 } = require("../../scheduler/purchaseOrderScheduler");
+
+const {
+  transferScheduler,
+  transferSchedulerCurrent,
+} = require("../../scheduler/transferScheduler");
 
 const runOrderSync = async () => {
   try {
@@ -318,6 +324,45 @@ const runPurchaseOrderSync = async () => {
   }
 };
 
+const runTransferSync = async () => {
+  try {
+    console.log("🚀 Starting Transfer Sync Process...");
+    const syncStatus = await transferService.getSyncStatus();
+    console.log("Transfer Sync Status:", syncStatus);
+
+    if (!syncStatus.historicalCompleted) {
+      console.log("📅 Running historical transfer sync...");
+      const result = await transferScheduler(160);
+
+      if (result.success) {
+        console.log("✅ Historical transfers data has been saved to database");
+      } else {
+        console.error(
+          "❌ Error when saving historical transfers data:",
+          result.error
+        );
+      }
+    } else {
+      console.log("🔄 Running current transfer sync...");
+      const currentResult = await transferSchedulerCurrent();
+
+      if (currentResult.success) {
+        console.log(
+          `✅ Current transfers data has been added: ${currentResult.savedCount} transfers`
+        );
+      } else {
+        console.error(
+          "❌ Error when adding current transfers:",
+          currentResult.error
+        );
+      }
+    }
+  } catch (error) {
+    console.error("❌ Cannot get and save transfers data:", error);
+    console.error("Stack trace:", error.stack);
+  }
+};
+
 module.exports = {
   runOrderSync,
   runInvoiceSync,
@@ -327,4 +372,5 @@ module.exports = {
   runSurchargeSync,
   runCashflowSync,
   runPurchaseOrderSync,
+  runTransferSync,
 };

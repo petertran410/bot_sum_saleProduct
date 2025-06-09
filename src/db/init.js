@@ -491,6 +491,60 @@ async function initializeDatabase() {
     `);
 
     await connection.query(`
+      CREATE TABLE IF NOT EXISTS transfers (
+        id BIGINT PRIMARY KEY,
+        code VARCHAR(50) NOT NULL,
+        status INT DEFAULT 0,
+        transferredDate DATETIME,
+        receivedDate DATETIME,
+        createdById BIGINT,
+        createdByName VARCHAR(255),
+        fromBranchId BIGINT,
+        fromBranchName VARCHAR(255),
+        toBranchId BIGINT,
+        toBranchName VARCHAR(255),
+        noteBySource TEXT,
+        noteByDestination TEXT,
+        description TEXT,
+        retailerId BIGINT,
+        createdDate DATETIME,
+        modifiedDate DATETIME,
+        jsonData JSON,
+        UNIQUE INDEX (code),
+        INDEX idx_fromBranchId (fromBranchId),
+        INDEX idx_toBranchId (toBranchId),
+        INDEX idx_transferredDate (transferredDate),
+        INDEX idx_receivedDate (receivedDate),
+        INDEX idx_status (status),
+        INDEX idx_retailerId (retailerId),
+        INDEX idx_createdById (createdById)
+      )
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS transfer_details (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        transferId BIGINT,
+        detailId BIGINT,
+        productId BIGINT,
+        productCode VARCHAR(50),
+        productName VARCHAR(255),
+        transferredQuantity DECIMAL(15,2) DEFAULT 0,
+        price DECIMAL(15,2) DEFAULT 0,
+        totalTransfer DECIMAL(15,2) DEFAULT 0,
+        totalReceive DECIMAL(15,2) DEFAULT 0,
+        sendQuantity DECIMAL(15,2) DEFAULT 0,
+        receiveQuantity DECIMAL(15,2) DEFAULT 0,
+        sendPrice DECIMAL(15,2) DEFAULT 0,
+        receivePrice DECIMAL(15,2) DEFAULT 0,
+        FOREIGN KEY (transferId) REFERENCES transfers(id) ON DELETE CASCADE,
+        INDEX idx_transferId (transferId),
+        INDEX idx_productId (productId),
+        INDEX idx_productCode (productCode)
+      )
+    `);
+
+    await connection.query(`
       CREATE TABLE IF NOT EXISTS sync_status (
         entity_type VARCHAR(50) PRIMARY KEY,
         last_sync DATETIME,
@@ -507,6 +561,7 @@ async function initializeDatabase() {
       "products",
       "cashflows",
       "purchase_orders",
+      "transfers",
     ];
 
     for (const entity of entities) {
