@@ -282,6 +282,22 @@ async function initializeDatabase() {
     `);
 
     await connection.query(`
+      CREATE TABLE IF NOT EXISTS customer_groups (
+        id INT PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        description TEXT,
+        discount DECIMAL(15,2),
+        retailerId INT,
+        createdBy BIGINT,
+        createdDate DATETIME,
+        jsonData JSON,
+        UNIQUE KEY unique_id (id),
+        INDEX idx_retailerId (retailerId),
+        INDEX idx_name (name)
+      )
+    `);
+
+    await connection.query(`
       CREATE TABLE IF NOT EXISTS customers (
         id BIGINT PRIMARY KEY,
         code VARCHAR(50) NOT NULL,
@@ -306,22 +322,6 @@ async function initializeDatabase() {
         UNIQUE INDEX (code),
         FOREIGN KEY (groupId) REFERENCES customer_groups(id) ON DELETE SET NULL,
         INDEX idx_groupId (groupId)
-      )
-    `);
-
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS customer_groups (
-        id INT PRIMARY KEY,
-        name VARCHAR(100) NOT NULL,
-        description TEXT,
-        discount DECIMAL(15,2),
-        retailerId INT,
-        createdBy BIGINT,
-        createdDate DATETIME,
-        jsonData JSON,
-        UNIQUE KEY unique_id (id),
-        INDEX idx_retailerId (retailerId),
-        INDEX idx_name (name)
       )
     `);
 

@@ -32,61 +32,64 @@ async function saveCustomers(customers) {
   let successCount = 0;
   let failCount = 0;
   let newCount = 0;
-  let existingCount = 0;
+  let updatedCount = 0;
 
   const BATCH_SIZE = 50;
-  console.log(
-    `Processing ${customers.length} customers in batches of ${BATCH_SIZE}`
-  );
 
   try {
     await connection.beginTransaction();
 
-    const [existingCustomers] = await connection.execute(
-      "SELECT id FROM customers"
-    );
-    const existingIds = new Set(existingCustomers.map((row) => row.id));
-
+    // Process in batches
     for (let i = 0; i < customers.length; i += BATCH_SIZE) {
       const batch = customers.slice(i, i + BATCH_SIZE);
-      console.log(
-        `Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(
-          customers.length / BATCH_SIZE
-        )}`
-      );
 
       for (const customer of batch) {
         try {
+          // Validate and sanitize
           const validatedCustomer = validateAndSanitizeCustomer(customer);
-          const isNew = !existingIds.has(validatedCustomer.id);
 
-          const result = await saveCustomer(validatedCustomer, connection);
-          if (result.success) {
-            successCount++;
-            if (isNew) {
-              newCount++;
-              existingIds.add(validatedCustomer.id);
+          const [existing] = await connection.execute(
+            "SELECT id, modifiedDate FROM customers WHERE id = ?",
+            [validatedCustomer.id]
+          );
+
+          const isNew = existing.length === 0;
+          const isUpdated =
+            !isNew &&
+            validatedCustomer.modifiedDate &&
+            new Date(validatedCustomer.modifiedDate) >
+              new Date(existing[0].modifiedDate);
+
+          if (isNew || isUpdated) {
+            const result = await saveCustomer(validatedCustomer, connection);
+            if (result.success) {
+              successCount++;
+              if (isNew) newCount++;
+              else updatedCount++;
             } else {
-              existingCount++;
+              failCount++;
             }
-          } else {
-            failCount++;
           }
         } catch (error) {
           console.error(
             `Error processing customer ${customer.code || customer.id}:`,
-            error
+            error.message
           );
           failCount++;
         }
       }
 
+      console.log(
+        `Processed customer batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(
+          customers.length / BATCH_SIZE
+        )}`
+      );
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
 
     await connection.commit();
     console.log(
-      `Customer sync completed: ${newCount} new, ${existingCount} updated, ${failCount} failed`
+      `Customer sync completed: ${newCount} new, ${updatedCount} updated, ${failCount} failed`
     );
   } catch (error) {
     await connection.rollback();
@@ -101,45 +104,10 @@ async function saveCustomers(customers) {
       total: customers.length,
       success: successCount,
       newRecords: newCount,
-      existing: existingCount,
+      updated: updatedCount,
       failed: failCount,
     },
   };
-}
-
-async function getOrCreateCustomerGroupByName(
-  groupName,
-  retailerId,
-  connection
-) {
-  try {
-    // First try to find existing group
-    const [existingGroups] = await connection.execute(
-      "SELECT id FROM customer_groups WHERE name = ? AND retailerId = ?",
-      [groupName, retailerId]
-    );
-
-    if (existingGroups.length > 0) {
-      return existingGroups[0].id;
-    }
-
-    // Create new group if not found
-    await connection.execute(
-      "INSERT INTO customer_groups (name, retailerId, createdDate) VALUES (?, ?, NOW())",
-      [groupName, retailerId]
-    );
-
-    const [newGroup] = await connection.execute(
-      "SELECT LAST_INSERT_ID() as id"
-    );
-    return newGroup[0].id;
-  } catch (error) {
-    console.warn(
-      `Could not create/find customer group ${groupName}:`,
-      error.message
-    );
-    return null;
-  }
 }
 
 async function saveCustomer(customer, connection = null) {
@@ -172,7 +140,7 @@ async function saveCustomer(customer, connection = null) {
       modifiedDate = null,
     } = customer;
 
-    // Determine the primary group ID
+    // Determine the primary group ID from API data
     let primaryGroupId = null;
 
     // From API: customer might have groupIds array or groups string
@@ -182,19 +150,6 @@ async function saveCustomer(customer, connection = null) {
       customer.groupIds.length > 0
     ) {
       primaryGroupId = customer.groupIds[0]; // Take first group as primary
-    } else if (customer.groups && typeof customer.groups === "string") {
-      // Parse group names and find/create the first one
-      const groupNames = customer.groups
-        .split(",")
-        .map((g) => g.trim())
-        .filter((g) => g);
-      if (groupNames.length > 0) {
-        primaryGroupId = await getOrCreateCustomerGroupByName(
-          groupNames[0],
-          retailerId,
-          connection
-        );
-      }
     }
 
     const jsonData = JSON.stringify(customer);
@@ -246,6 +201,30 @@ async function saveCustomer(customer, connection = null) {
       modifiedDate,
       jsonData,
     ]);
+
+    // Handle customer group details if present (many-to-many relationship)
+    if (customer.groupIds && Array.isArray(customer.groupIds)) {
+      // Delete existing group relationships
+      await connection.execute(
+        "DELETE FROM customer_group_details WHERE customerId = ?",
+        [id]
+      );
+
+      // Insert new group relationships
+      for (const groupId of customer.groupIds) {
+        try {
+          await connection.execute(
+            `INSERT INTO customer_group_details (customerId, groupId, createdDate) 
+             VALUES (?, ?, NOW())`,
+            [id, groupId]
+          );
+        } catch (groupError) {
+          console.warn(
+            `Warning: Could not save customer group relationship for customer ${id}, group ${groupId}: ${groupError.message}`
+          );
+        }
+      }
+    }
 
     return { success: true };
   } catch (error) {

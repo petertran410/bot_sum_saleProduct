@@ -237,10 +237,10 @@ async function startServer() {
       // Get sync status for all entities
       const userSyncStatus =
         await require("../src/db/userService").getSyncStatus();
-      const customerSyncStatus =
-        await require("../src/db/customerService").getSyncStatus();
       const customerGroupSyncStatus =
         await require("../src/db/customerGroupService").getSyncStatus();
+      const customerSyncStatus =
+        await require("../src/db/customerService").getSyncStatus();
       const productSyncStatus =
         await require("../src/db/productService").getSyncStatus();
       const orderSyncStatus =
@@ -250,9 +250,6 @@ async function startServer() {
       const surchargeSyncStatus =
         await require("../src/db/surchagesService").getSyncStatus();
 
-      // IMPORTANT: Sync in proper order to avoid foreign key constraint issues
-
-      // 1. First sync users (independent entity)
       if (!userSyncStatus.historicalCompleted) {
         console.log("Starting historical user sync...");
         await require("../scheduler/userScheduler").userScheduler(
@@ -260,7 +257,6 @@ async function startServer() {
         );
       }
 
-      // 2. Then sync products (independent entity)
       if (!productSyncStatus.historicalCompleted) {
         console.log("Starting historical product sync...");
         await require("../scheduler/productScheduler").productScheduler(
@@ -268,7 +264,6 @@ async function startServer() {
         );
       }
 
-      // 3. Then sync surcharges (independent entity)
       if (!surchargeSyncStatus.historicalCompleted) {
         console.log("Starting historical surcharge sync...");
         await require("../scheduler/surchargeScheduler").surchargeScheduler(
@@ -276,15 +271,6 @@ async function startServer() {
         );
       }
 
-      // 4. Sync customers BEFORE customer groups (customer groups reference customers)
-      if (!customerSyncStatus.historicalCompleted) {
-        console.log("Starting historical customer sync...");
-        await require("../scheduler/customerScheduler").customerScheduler(
-          historicalDaysAgo
-        );
-      }
-
-      // 5. Sync customer groups AFTER customers (depends on customers existing)
       if (!customerGroupSyncStatus.historicalCompleted) {
         console.log("Starting historical customer group sync...");
         await require("../scheduler/customerGroupScheduler").customerGroupScheduler(
@@ -292,7 +278,13 @@ async function startServer() {
         );
       }
 
-      // 6. Finally sync orders and invoices (depend on customers, products, users)
+      if (!customerSyncStatus.historicalCompleted) {
+        console.log("Starting historical customer sync...");
+        await require("../scheduler/customerScheduler").customerScheduler(
+          historicalDaysAgo
+        );
+      }
+
       if (!orderSyncStatus.historicalCompleted) {
         console.log("Starting historical order sync...");
         await require("../scheduler/orderScheduler").orderScheduler(
@@ -312,8 +304,8 @@ async function startServer() {
       await runUserSync();
       await runProductSync();
       await runSurchargeSync();
+      await runCustomerGroupSync();
       await runCustomerSync();
-      await runCustomerGroupSync(); // After customers
       await runOrderSync();
       await runInvoiceSync();
 
@@ -323,8 +315,8 @@ async function startServer() {
           await runUserSync();
           await runProductSync();
           await runSurchargeSync();
+          await runCustomerGroupSync();
           await runCustomerSync();
-          await runCustomerGroupSync(); // After customers
           await runOrderSync();
           await runInvoiceSync();
         } catch (error) {
