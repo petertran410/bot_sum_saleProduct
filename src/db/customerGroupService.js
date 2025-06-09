@@ -19,7 +19,6 @@ function validateAndSanitizeCustomerGroup(customerGroup) {
       : null,
     createdBy: customerGroup.createdBy ? Number(customerGroup.createdBy) : null,
     createdDate: customerGroup.createdDate || null,
-    modifiedDate: customerGroup.modifiedDate || null,
   };
 }
 
@@ -37,7 +36,7 @@ async function saveCustomerGroups(customerGroups) {
   try {
     await connection.beginTransaction();
 
-    // Process in batches - exactly like products
+    // Process in batches
     for (let i = 0; i < customerGroups.length; i += BATCH_SIZE) {
       const batch = customerGroups.slice(i, i + BATCH_SIZE);
 
@@ -48,18 +47,14 @@ async function saveCustomerGroups(customerGroups) {
             validateAndSanitizeCustomerGroup(customerGroup);
 
           const [existing] = await connection.execute(
-            "SELECT id, modifiedDate FROM customer_groups WHERE id = ?",
+            "SELECT id FROM customer_groups WHERE id = ?",
             [validatedCustomerGroup.id]
           );
 
           const isNew = existing.length === 0;
-          const isUpdated =
-            !isNew &&
-            validatedCustomerGroup.modifiedDate &&
-            new Date(validatedCustomerGroup.modifiedDate) >
-              new Date(existing[0].modifiedDate);
 
-          if (isNew || isUpdated) {
+          // Since customer groups don't have modifiedDate, always update existing ones
+          if (isNew || !isNew) {
             const result = await saveCustomerGroup(
               validatedCustomerGroup,
               connection
@@ -115,7 +110,6 @@ async function saveCustomerGroups(customerGroups) {
   };
 }
 
-// Update saveCustomerGroup to accept connection parameter - matching product pattern
 async function saveCustomerGroup(customerGroup, connection = null) {
   const shouldReleaseConnection = !connection;
 
@@ -133,7 +127,6 @@ async function saveCustomerGroup(customerGroup, connection = null) {
       retailerId,
       createdBy = null,
       createdDate = null,
-      modifiedDate = null,
     } = customerGroup;
 
     const jsonData = JSON.stringify(customerGroup);
@@ -142,12 +135,12 @@ async function saveCustomerGroup(customerGroup, connection = null) {
       INSERT INTO customer_groups 
         (id, name, description, discount, retailerId, createdBy, 
          createdDate, modifiedDate, jsonData)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?)
       ON DUPLICATE KEY UPDATE
         name = VALUES(name),
         description = VALUES(description),
         discount = VALUES(discount),
-        modifiedDate = VALUES(modifiedDate),
+        modifiedDate = NOW(),
         jsonData = VALUES(jsonData)
     `;
 
@@ -159,15 +152,18 @@ async function saveCustomerGroup(customerGroup, connection = null) {
       retailerId,
       createdBy,
       createdDate,
-      modifiedDate,
       jsonData,
     ]);
 
-    // Handle customerGroupDetails if present (from API)
+    // Handle customerGroupDetails if present
     if (
       customerGroup.customerGroupDetails &&
       Array.isArray(customerGroup.customerGroupDetails)
     ) {
+      console.log(
+        `Processing ${customerGroup.customerGroupDetails.length} customer group details for group ${id}`
+      );
+
       // Delete existing customer group details for this group
       await connection.execute(
         "DELETE FROM customer_group_details WHERE groupId = ?",
@@ -206,7 +202,6 @@ async function saveCustomerGroup(customerGroup, connection = null) {
   }
 }
 
-// Keep existing updateSyncStatus and getSyncStatus functions - matching product pattern
 async function updateSyncStatus(completed = false, lastSync = new Date()) {
   const pool = getPool();
 
@@ -231,6 +226,7 @@ async function updateSyncStatus(completed = false, lastSync = new Date()) {
       await pool.execute(insertQuery, [lastSync, completed]);
     }
 
+    console.log("Customer group sync status updated successfully");
     return { success: true };
   } catch (error) {
     console.error("Error updating customer group sync status:", error);

@@ -290,6 +290,7 @@ async function initializeDatabase() {
         retailerId INT,
         createdBy BIGINT,
         createdDate DATETIME,
+        modifiedDate DATETIME,
         jsonData JSON,
         UNIQUE KEY unique_id (id),
         INDEX idx_retailerId (retailerId),

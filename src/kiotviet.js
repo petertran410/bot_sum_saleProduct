@@ -932,6 +932,8 @@ const getCustomerGroups = async () => {
   try {
     const token = await getToken();
 
+    console.log("Fetching customer groups...");
+
     const response = await makeApiRequest({
       method: "GET",
       url: `${KIOTVIET_BASE_URL}/customers/group`,
@@ -941,10 +943,11 @@ const getCustomerGroups = async () => {
       },
     });
 
-    if (response.data && response.data.data) {
+    if (response.data) {
+      console.log(`Retrieved ${response.data.total || 0} customer groups`);
       return {
-        data: response.data.data,
-        total: response.data.total || response.data.data.length,
+        data: response.data.data || [],
+        total: response.data.total || response.data.data?.length || 0,
       };
     }
 
@@ -957,23 +960,22 @@ const getCustomerGroups = async () => {
 
 const getCustomerGroupsByDate = async (daysAgo) => {
   try {
-    const results = [];
+    // Customer groups don't support date filtering according to the API documentation
+    // So we'll just get all customer groups once
+    console.log(
+      `Note: Customer groups don't support date filtering. Getting all groups.`
+    );
 
-    for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
-      const targetDate = new Date();
-      targetDate.setDate(targetDate.getDate() - currentDaysAgo);
-      const formattedDate = targetDate.toISOString().split("T")[0];
+    const customerGroups = await getCustomerGroups();
 
-      const customerGroups = await getCustomerGroups();
-
-      results.push({
-        date: formattedDate,
-        daysAgo: currentDaysAgo,
+    // Return in the same format as other date-based functions for consistency
+    const results = [
+      {
+        date: new Date().toISOString().split("T")[0],
+        daysAgo: 0,
         data: customerGroups,
-      });
-
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
+      },
+    ];
 
     return results;
   } catch (error) {
