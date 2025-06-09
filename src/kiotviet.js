@@ -989,45 +989,30 @@ const getCashflow = async () => {
     const token = await getToken();
     const pageSize = 100;
     const allCashflows = [];
-    let currentItem = 0;
-    let hasMoreData = true;
 
     console.log("Fetching current cashflows...");
 
-    while (hasMoreData) {
-      const response = await makeApiRequest({
-        method: "GET",
-        url: `${KIOTVIET_BASE_URL}/cashflow`,
-        params: {
-          pageSize: pageSize,
-          currentItem: currentItem,
-          includeAccount: true,
-          includeBranch: true,
-          includeUser: true,
-          isReceipt: true,
-        },
-        headers: {
-          Retailer: process.env.KIOT_SHOP_NAME,
-          Authorization: `Bearer ${token}`,
-        },
-      });
+    // Get recent cashflows without date filtering for current sync
+    const response = await makeApiRequest({
+      method: "GET",
+      url: `${KIOTVIET_BASE_URL}/cashflow`,
+      params: {
+        pageSize: pageSize,
+        includeAccount: true,
+        includeBranch: true,
+        includeUser: true,
+      },
+      headers: {
+        Retailer: process.env.KIOT_SHOP_NAME,
+        Authorization: `Bearer ${token}`,
+      },
+    });
 
-      if (
-        response.data &&
-        response.data.data &&
-        response.data.data.length > 0
-      ) {
-        allCashflows.push(...response.data.data);
-        currentItem += response.data.data.length;
-        hasMoreData = response.data.data.length === pageSize;
-
-        console.log(
-          `Fetched ${response.data.data.length} cashflows, total: ${allCashflows.length}`
-        );
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      } else {
-        hasMoreData = false;
-      }
+    if (response.data && response.data.data && response.data.data.length > 0) {
+      allCashflows.push(...response.data.data);
+      console.log(
+        `Fetched ${response.data.data.length} cashflows, total: ${allCashflows.length}`
+      );
     }
 
     return { data: allCashflows, total: allCashflows.length };
@@ -1044,64 +1029,49 @@ const getCashflowByDate = async (daysAgo) => {
     for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
       const targetDate = new Date();
       targetDate.setDate(targetDate.getDate() - currentDaysAgo);
-      const startDate = new Date(targetDate);
-      startDate.setHours(0, 0, 0, 0);
-      const endDate = new Date(targetDate);
-      endDate.setHours(23, 59, 59, 999);
+
+      // Format date as YYYY-MM-DD (local date, not UTC)
+      const year = targetDate.getFullYear();
+      const month = String(targetDate.getMonth() + 1).padStart(2, "0");
+      const day = String(targetDate.getDate()).padStart(2, "0");
+      const formattedDate = `${year}-${month}-${day}`;
 
       const token = await getToken();
       const pageSize = 100;
       const allCashflowsForDate = [];
-      let currentItem = 0;
-      let hasMoreData = true;
 
-      console.log(
-        `Fetching cashflows for ${targetDate.toISOString().split("T")[0]}...`
-      );
+      console.log(`Fetching cashflows for ${formattedDate}...`);
 
-      while (hasMoreData) {
-        const response = await makeApiRequest({
-          method: "GET",
-          url: `${KIOTVIET_BASE_URL}/cashflow`,
-          params: {
-            pageSize: pageSize,
-            currentItem: currentItem,
-            orderBy: "transDate",
-            orderDirection: "DESC",
-            startDate: startDate.toISOString(),
-            endDate: endDate.toISOString(),
-            includeAccount: true,
-            includeBranch: true,
-            includeUser: true,
-          },
-          headers: {
-            Retailer: process.env.KIOT_SHOP_NAME,
-            Authorization: `Bearer ${token}`,
-          },
-        });
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/cashflow`,
+        params: {
+          pageSize: pageSize,
+          startDate: formattedDate,
+          endDate: formattedDate,
+          includeAccount: true,
+          includeBranch: true,
+          includeUser: true,
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
 
-        if (
-          response.data &&
-          response.data.data &&
-          response.data.data.length > 0
-        ) {
-          allCashflowsForDate.push(...response.data.data);
-          currentItem += response.data.data.length;
-          hasMoreData = response.data.data.length === pageSize;
-
-          console.log(
-            `Date ${targetDate.toISOString().split("T")[0]}: Fetched ${
-              response.data.data.length
-            } cashflows, total: ${allCashflowsForDate.length}`
-          );
-          await new Promise((resolve) => setTimeout(resolve, 100));
-        } else {
-          hasMoreData = false;
-        }
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allCashflowsForDate.push(...response.data.data);
+        console.log(
+          `Date ${formattedDate}: Fetched ${response.data.data.length} cashflows, total: ${allCashflowsForDate.length}`
+        );
       }
 
       results.push({
-        date: targetDate.toISOString().split("T")[0],
+        date: formattedDate,
         daysAgo: currentDaysAgo,
         data: { data: allCashflowsForDate },
       });
