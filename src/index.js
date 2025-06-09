@@ -776,42 +776,6 @@ app.get("/get-damage-reports", async (req, res) => {
   }
 });
 
-async function runSequentialSync() {
-  try {
-    await Promise.all([
-      runCategorySync(),
-      runBranchSync(),
-      runSupplierSync(),
-      runBankAccountSync(),
-      runUserSync(),
-    ]);
-
-    await Promise.all([
-      runCustomerSync(),
-      runProductSync(),
-      runPriceBookSync(),
-    ]);
-
-    await Promise.all([
-      runOrderSync(),
-      runInvoiceSync(),
-      runPurchaseOrderSync(),
-    ]);
-
-    await Promise.all([
-      // runTransferSync(),
-      runReceiptSync(),
-      runReturnSync(),
-      runSurchargeSync(),
-      runInventoryAdjustmentSync(),
-      runDamageReportSync(),
-    ]);
-  } catch (error) {
-    console.error("❌ Error during sequential sync:", error);
-    throw error;
-  }
-}
-
 async function startServer() {
   try {
     // Test database connection
@@ -942,8 +906,6 @@ async function startServer() {
           );
         }
       }
-
-      await runSequentialSync();
 
       const syncInterval = setInterval(runSequentialSync, 10 * 60 * 1000);
 

@@ -1708,48 +1708,32 @@ const getDamageReportsByDate = async (daysAgo) => {
 const getCustomerGroups = async () => {
   try {
     const token = await getToken();
-    const pageSize = 100;
-    const allCustomerGroups = [];
-    let currentItem = 0;
-    let hasMoreData = true;
 
     console.log("Fetching current customer groups...");
 
-    while (hasMoreData) {
-      const response = await makeApiRequest({
-        method: "GET",
-        url: `${KIOTVIET_BASE_URL}/customergroups`,
-        params: {
-          pageSize: pageSize,
-          currentItem: currentItem,
-          orderBy: "name",
-          orderDirection: "ASC",
-        },
-        headers: {
-          Retailer: process.env.KIOT_SHOP_NAME,
-          Authorization: `Bearer ${token}`,
-        },
-      });
+    const response = await makeApiRequest({
+      method: "GET",
+      url: `${KIOTVIET_BASE_URL}/customers/group`,
+      headers: {
+        Retailer: process.env.KIOT_SHOP_NAME,
+        Authorization: `Bearer ${token}`,
+      },
+    });
 
-      if (
-        response.data &&
-        response.data.data &&
-        response.data.data.length > 0
-      ) {
-        allCustomerGroups.push(...response.data.data);
-        currentItem += response.data.data.length;
-        hasMoreData = response.data.data.length === pageSize;
+    if (
+      response.data &&
+      response.data.data &&
+      Array.isArray(response.data.data)
+    ) {
+      console.log(`Fetched ${response.data.data.length} customer groups`);
 
-        console.log(
-          `Fetched ${response.data.data.length} customer groups, total: ${allCustomerGroups.length}`
-        );
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      } else {
-        hasMoreData = false;
-      }
+      return {
+        data: response.data.data,
+        total: response.data.data.length,
+      };
     }
 
-    return { data: allCustomerGroups, total: allCustomerGroups.length };
+    return { data: [], total: 0 };
   } catch (error) {
     console.error("Error getting customer groups:", error.message);
     throw error;

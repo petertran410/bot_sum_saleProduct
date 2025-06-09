@@ -12,6 +12,8 @@ const customerGroupSchedulerCurrent = async () => {
           retryCount + 1
         }/${MAX_RETRIES})...`
       );
+
+      // Customer groups API returns all data in one call
       const currentCustomerGroups = await getCustomerGroups();
 
       if (
@@ -20,7 +22,7 @@ const customerGroupSchedulerCurrent = async () => {
         Array.isArray(currentCustomerGroups.data)
       ) {
         if (currentCustomerGroups.data.length === 0) {
-          console.log("No new customer groups to process");
+          console.log("No customer groups found");
           return { success: true, savedCount: 0, hasNewData: false };
         }
 
