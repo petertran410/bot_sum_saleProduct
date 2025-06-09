@@ -803,6 +803,131 @@ const getUsersByDate = async (daysAgo) => {
   }
 };
 
+const getSurcharges = async () => {
+  try {
+    const token = await getToken();
+    const pageSize = 100;
+    const allSurcharges = [];
+    let currentItem = 0;
+    let hasMoreData = true;
+
+    console.log("Fetching current surcharges...");
+
+    // Get only recent surcharges (last 24 hours) for current sync
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const fromDate = yesterday.toISOString().split("T")[0];
+
+    while (hasMoreData) {
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/surchages`,
+        params: {
+          pageSize: pageSize,
+          currentItem: currentItem,
+          orderBy: "modifiedDate",
+          orderDirection: "DESC",
+          lastModifiedFrom: fromDate,
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (
+        response.data &&
+        response.data.data &&
+        Array.isArray(response.data.data)
+      ) {
+        allSurcharges.push(...response.data.data);
+        currentItem += response.data.data.length;
+        hasMoreData = response.data.data.length === pageSize;
+
+        console.log(
+          `Fetched ${response.data.data.length} surcharges, total: ${allSurcharges.length}`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        hasMoreData = false;
+      }
+    }
+
+    return { data: allSurcharges, total: allSurcharges.length };
+  } catch (error) {
+    console.error("Error getting surcharges:", error.message);
+    throw error;
+  }
+};
+
+const getSurchargesByDate = async (daysAgo) => {
+  try {
+    const results = [];
+
+    for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() - currentDaysAgo);
+      const formattedDate = targetDate.toISOString().split("T")[0];
+
+      const token = await getToken();
+      const pageSize = 100;
+      const allSurchargesForDate = [];
+      let currentItem = 0;
+      let hasMoreData = true;
+
+      console.log(`Fetching surcharges modified on/after ${formattedDate}...`);
+
+      while (hasMoreData) {
+        const response = await makeApiRequest({
+          method: "GET",
+          url: `${KIOTVIET_BASE_URL}/surchages`,
+          params: {
+            lastModifiedFrom: formattedDate,
+            pageSize: pageSize,
+            currentItem: currentItem,
+            orderBy: "modifiedDate",
+            orderDirection: "ASC",
+          },
+          headers: {
+            Retailer: process.env.KIOT_SHOP_NAME,
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (
+          response.data &&
+          response.data.data &&
+          Array.isArray(response.data.data)
+        ) {
+          allSurchargesForDate.push(...response.data.data);
+          currentItem += response.data.data.length;
+          hasMoreData = response.data.data.length === pageSize;
+
+          console.log(
+            `Date ${formattedDate}: Fetched ${response.data.data.length} surcharges, total: ${allSurchargesForDate.length}`
+          );
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        } else {
+          hasMoreData = false;
+        }
+      }
+
+      results.push({
+        date: formattedDate,
+        daysAgo: currentDaysAgo,
+        data: { data: allSurchargesForDate },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+
+    return results;
+  } catch (error) {
+    console.error(`Error getting surcharges by date:`, error.message);
+    return results;
+  }
+};
+
 // Add these to your module.exports:
 module.exports = {
   getOrders,
@@ -815,4 +940,6 @@ module.exports = {
   getCustomersByDate,
   getUsers,
   getUsersByDate,
+  getSurcharges,
+  getSurchargesByDate,
 };

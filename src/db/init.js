@@ -13,8 +13,6 @@ async function initializeDatabase() {
 
     const dbName = process.env.DB_NAME || "kiotviet_data";
 
-    // await connection.query(`CREATE DATABASE IF NOT EXISTS ${dbName}`);
-
     await connection.end();
 
     connection = await mysql.createConnection({
@@ -334,6 +332,22 @@ async function initializeDatabase() {
     `);
 
     await connection.query(`
+      CREATE TABLE IF NOT EXISTS surcharges (
+        id BIGINT PRIMARY KEY,
+        surchargeCode VARCHAR(50) NOT NULL,
+        surchargeName VARCHAR(255) NOT NULL,
+        valueRatio DECIMAL(10,4) DEFAULT 0,
+        value DECIMAL(15,2),
+        retailerId INT,
+        modifiedDate DATETIME,
+        createdDate DATETIME,
+        jsonData JSON,
+        UNIQUE INDEX (surchargeCode, retailerId),
+        INDEX idx_retailerId (retailerId)
+      )
+    `);
+
+    await connection.query(`
       CREATE TABLE IF NOT EXISTS sync_status (
         entity_type VARCHAR(50) PRIMARY KEY,
         last_sync DATETIME,
@@ -362,6 +376,17 @@ async function initializeDatabase() {
       await connection.query(`
         INSERT INTO sync_status (entity_type, last_sync, historical_completed) 
           VALUES ('customers', NULL, FALSE)
+      `);
+    }
+
+    const [surchargeSyncRows] = await connection.query(
+      "SELECT COUNT(*) as count FROM sync_status WHERE entity_type = 'surcharges'"
+    );
+
+    if (surchargeSyncRows[0].count === 0) {
+      await connection.query(`
+        INSERT INTO sync_status (entity_type, last_sync, historical_completed) 
+          VALUES ('surcharges', NULL, FALSE)
       `);
     }
 
