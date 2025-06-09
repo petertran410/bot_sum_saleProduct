@@ -9,22 +9,30 @@ function validateAndSanitizeTransfer(transfer) {
   return {
     ...transfer,
     id: transfer.id ? Number(transfer.id) : null,
-    code: transfer.code ? String(transfer.code).substring(0, 50) : "",
+    code: transfer.code ? String(transfer.code).substring(0, 100) : "",
     status: isNaN(Number(transfer.status)) ? 0 : Number(transfer.status),
     description: transfer.description
       ? String(transfer.description).substring(0, 1000)
       : "",
-    fromBranchId: transfer.fromBranchId ? Number(transfer.fromBranchId) : null,
-    toBranchId: transfer.toBranchId ? Number(transfer.toBranchId) : null,
-    createdById: transfer.createdById ? Number(transfer.createdById) : null,
-    retailerId: transfer.retailerId ? Number(transfer.retailerId) : null,
-    isActive: transfer.isActive !== undefined ? transfer.isActive : true,
+    from_branch_id: transfer.fromBranchId
+      ? Number(transfer.fromBranchId)
+      : null,
+    to_branch_id: transfer.toBranchId ? Number(transfer.toBranchId) : null,
+    created_by_id: transfer.createdById ? Number(transfer.createdById) : null,
+    retailer_id: transfer.retailerId ? Number(transfer.retailerId) : null,
+    is_active: transfer.isActive !== undefined ? transfer.isActive : true,
     // Handle multiple date field names from actual KiotViet response
-    transferredDate:
+    transferred_date:
       transfer.transferredDate || transfer.dispatchedDate || null,
-    receivedDate: transfer.receivedDate || null,
-    createdDate: transfer.createdDate || new Date(),
-    modifiedDate: transfer.modifiedDate || new Date(),
+    received_date: transfer.receivedDate || null,
+    created_date: transfer.createdDate || new Date(),
+    modified_date: transfer.modifiedDate || new Date(),
+    // Handle name fields
+    from_branch_name: transfer.fromBranchName || null,
+    to_branch_name: transfer.toBranchName || null,
+    created_by_name: transfer.createdByName || null,
+    note_by_source: transfer.noteBySource || null,
+    note_by_destination: transfer.noteByDestination || null,
   };
 }
 
@@ -42,78 +50,79 @@ async function saveTransfer(transfer, connection = null) {
       id,
       code,
       status,
-      transferredDate,
-      receivedDate,
-      createdById,
-      createdByName,
-      fromBranchId,
-      fromBranchName,
-      toBranchId,
-      toBranchName,
-      noteBySource,
-      noteByDestination,
+      transferred_date,
+      received_date,
+      created_by_id,
+      created_by_name,
+      from_branch_id,
+      from_branch_name,
+      to_branch_id,
+      to_branch_name,
+      note_by_source,
+      note_by_destination,
       description,
-      retailerId,
-      createdDate,
-      modifiedDate,
+      retailer_id,
+      created_date,
+      modified_date,
+      is_active,
     } = validatedTransfer;
 
     if (!id || !code) {
       throw new Error("Transfer ID and code are required");
     }
 
-    // Check if transfer already exists
+    // Check if transfer already exists using correct column name
     const [existing] = await connection.execute(
-      "SELECT id, modifiedDate FROM transfers WHERE id = ?",
+      "SELECT id, modified_date FROM transfers WHERE id = ?",
       [id]
     );
 
     const jsonData = JSON.stringify(transfer);
 
-    // Insert or update main transfer record
+    // Insert or update main transfer record using correct column names
     const query = `
       INSERT INTO transfers 
-        (id, code, status, transferredDate, receivedDate, createdById, createdByName,
-         fromBranchId, fromBranchName, toBranchId, toBranchName, noteBySource, 
-         noteByDestination, description, retailerId, createdDate, modifiedDate, jsonData)
+        (id, code, status, transferred_date, received_date, created_by_id, created_by_name,
+         from_branch_id, from_branch_name, to_branch_id, to_branch_name, note_by_source, 
+         note_by_destination, description, retailer_id, created_date, modified_date, is_active)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
         code = VALUES(code),
         status = VALUES(status),
-        transferredDate = VALUES(transferredDate),
-        receivedDate = VALUES(receivedDate),
-        createdById = VALUES(createdById),
-        createdByName = VALUES(createdByName),
-        fromBranchId = VALUES(fromBranchId),
-        fromBranchName = VALUES(fromBranchName),
-        toBranchId = VALUES(toBranchId),
-        toBranchName = VALUES(toBranchName),
-        noteBySource = VALUES(noteBySource),
-        noteByDestination = VALUES(noteByDestination),
+        transferred_date = VALUES(transferred_date),
+        received_date = VALUES(received_date),
+        created_by_id = VALUES(created_by_id),
+        created_by_name = VALUES(created_by_name),
+        from_branch_id = VALUES(from_branch_id),
+        from_branch_name = VALUES(from_branch_name),
+        to_branch_id = VALUES(to_branch_id),
+        to_branch_name = VALUES(to_branch_name),
+        note_by_source = VALUES(note_by_source),
+        note_by_destination = VALUES(note_by_destination),
         description = VALUES(description),
-        modifiedDate = VALUES(modifiedDate),
-        jsonData = VALUES(jsonData)
+        modified_date = VALUES(modified_date),
+        is_active = VALUES(is_active)
     `;
 
     await connection.execute(query, [
       safeValue(id),
       safeValue(code),
       safeValue(status),
-      safeValue(transferredDate),
-      safeValue(receivedDate),
-      safeValue(createdById),
-      safeValue(createdByName),
-      safeValue(fromBranchId),
-      safeValue(fromBranchName),
-      safeValue(toBranchId),
-      safeValue(toBranchName),
-      safeValue(noteBySource),
-      safeValue(noteByDestination),
+      safeValue(transferred_date),
+      safeValue(received_date),
+      safeValue(created_by_id),
+      safeValue(created_by_name),
+      safeValue(from_branch_id),
+      safeValue(from_branch_name),
+      safeValue(to_branch_id),
+      safeValue(to_branch_name),
+      safeValue(note_by_source),
+      safeValue(note_by_destination),
       safeValue(description),
-      safeValue(retailerId),
-      safeValue(createdDate),
-      safeValue(modifiedDate),
-      safeValue(jsonData),
+      safeValue(retailer_id),
+      safeValue(created_date),
+      safeValue(modified_date),
+      safeValue(is_active),
     ]);
 
     // Handle transferDetails from actual KiotViet response structure
@@ -124,7 +133,7 @@ async function saveTransfer(transfer, connection = null) {
       Array.isArray(detailsArray) &&
       detailsArray.length > 0
     ) {
-      // Delete existing details first
+      // Delete existing details first - using correct column name
       await connection.execute(
         "DELETE FROM transfer_details WHERE transferId = ?",
         [id]
@@ -143,17 +152,17 @@ async function saveTransfer(transfer, connection = null) {
 
           await connection.execute(detailQuery, [
             id,
-            detail.productId || null,
-            detail.productCode || null,
-            detail.productName || null,
-            detail.transferredQuantity || detail.sendQuantity || 0,
-            detail.price || 0,
-            detail.sendQuantity || 0,
-            detail.receiveQuantity || 0,
-            detail.sendPrice || 0,
-            detail.receivePrice || 0,
-            detail.totalTransfer || detail.sendPrice || 0,
-            detail.totalReceive || detail.receivePrice || 0,
+            safeValue(detail.productId),
+            safeValue(detail.productCode),
+            safeValue(detail.productName),
+            safeValue(detail.transferredQuantity || detail.quantity || 0),
+            safeValue(detail.price || 0),
+            safeValue(detail.sendQuantity || detail.transferredQuantity || 0),
+            safeValue(detail.receiveQuantity || detail.receivedQuantity || 0),
+            safeValue(detail.sendPrice || detail.price || 0),
+            safeValue(detail.receivePrice || detail.price || 0),
+            safeValue(detail.totalTransfer || 0),
+            safeValue(detail.totalReceive || 0),
           ]);
         } catch (detailError) {
           console.warn(
@@ -163,16 +172,9 @@ async function saveTransfer(transfer, connection = null) {
       }
     }
 
-    return {
-      success: true,
-      isNew: existing.length === 0,
-      transferId: id,
-    };
+    return { success: true };
   } catch (error) {
-    console.error(
-      `Error saving transfer ${transfer.code || transfer.id}:`,
-      error
-    );
+    console.error(`Failed to save transfer ${transfer.code}:`, error.message);
     return { success: false, error: error.message };
   } finally {
     if (shouldReleaseConnection) {
@@ -181,8 +183,20 @@ async function saveTransfer(transfer, connection = null) {
   }
 }
 
-// Enhanced batch save function (same as product sync pattern)
 async function saveTransfers(transfers) {
+  if (!transfers || !Array.isArray(transfers) || transfers.length === 0) {
+    return {
+      success: true,
+      stats: {
+        total: 0,
+        success: 0,
+        failed: 0,
+        newRecords: 0,
+        updatedRecords: 0,
+      },
+    };
+  }
+
   const pool = getPool();
   const connection = await pool.getConnection();
 
@@ -196,28 +210,52 @@ async function saveTransfers(transfers) {
 
     for (const transfer of transfers) {
       try {
-        const result = await saveTransfer(transfer, connection);
+        const validatedTransfer = validateAndSanitizeTransfer(transfer);
+        const { id } = validatedTransfer;
 
-        if (result.success) {
-          successCount++;
-          if (result.isNew) {
-            newCount++;
-          } else {
-            updatedCount++;
-          }
-        } else {
+        if (!id) {
+          console.warn("Skipping transfer without ID");
           failCount++;
-          console.error(
-            `Failed to save transfer ${transfer.code || transfer.id}:`,
-            result.error
-          );
+          continue;
+        }
+
+        // Check if transfer exists using correct column name
+        const [existing] = await connection.execute(
+          "SELECT id, modified_date FROM transfers WHERE id = ?",
+          [id]
+        );
+
+        const isNew = existing.length === 0;
+        let isUpdated = false;
+
+        if (!isNew && validatedTransfer.modified_date) {
+          isUpdated =
+            new Date(validatedTransfer.modified_date) >
+            new Date(existing[0].modified_date);
+        } else if (!isNew) {
+          isUpdated = true; // Update if no modified_date comparison possible
+        }
+
+        if (isNew || isUpdated) {
+          const result = await saveTransfer(validatedTransfer, connection);
+          if (result.success) {
+            successCount++;
+            if (isNew) newCount++;
+            else updatedCount++;
+          } else {
+            console.error(
+              `Failed to save transfer ${transfer.code}:`,
+              result.error
+            );
+            failCount++;
+          }
         }
       } catch (error) {
-        failCount++;
         console.error(
-          `Exception saving transfer ${transfer.code || transfer.id}:`,
+          `Error processing transfer ${transfer.code || transfer.id}:`,
           error.message
         );
+        failCount++;
       }
     }
 
