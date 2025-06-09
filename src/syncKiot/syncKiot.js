@@ -34,7 +34,6 @@ const runOrderSync = async () => {
     const syncStatus = await orderService.getSyncStatus();
 
     if (!syncStatus.historicalCompleted) {
-      console.log("Starting historical orders data sync...");
       const result = await orderScheduler(160);
 
       if (result.success) {
@@ -46,7 +45,6 @@ const runOrderSync = async () => {
         );
       }
     } else {
-      console.log("Running current orders sync...");
       const currentResult = await orderSchedulerCurrent();
 
       if (currentResult.success) {
@@ -67,7 +65,6 @@ const runInvoiceSync = async () => {
     const syncStatus = await invoiceService.getSyncStatus();
 
     if (!syncStatus.historicalCompleted) {
-      console.log("Starting historical invoices data sync...");
       const result = await invoiceScheduler(160);
 
       if (result.success) {
@@ -76,7 +73,6 @@ const runInvoiceSync = async () => {
         console.error("Error when saving historical data:", result.error);
       }
     } else {
-      console.log("Running current invoices sync...");
       const currentResult = await invoiceSchedulerCurrent();
 
       if (currentResult.success) {
@@ -100,7 +96,6 @@ const runProductSync = async () => {
     const syncStatus = await productService.getSyncStatus();
 
     if (!syncStatus.historicalCompleted) {
-      console.log("Starting historical products data sync...");
       const result = await productScheduler(160);
 
       if (result.success) {
@@ -109,7 +104,6 @@ const runProductSync = async () => {
         console.log("Error when saving historical data:", result.error);
       }
     } else {
-      console.log("Running current products sync...");
       const currentResult = await productSchedulerCurrent();
 
       if (currentResult.success) {
@@ -130,7 +124,6 @@ const runCustomerSync = async () => {
     const syncStatus = await customerService.getSyncStatus();
 
     if (!syncStatus.historicalCompleted) {
-      console.log("Starting historical customers data sync...");
       const result = await customerScheduler(160);
 
       if (result.success) {
@@ -142,7 +135,6 @@ const runCustomerSync = async () => {
         );
       }
     } else {
-      console.log("Running current customers sync...");
       const currentResult = await customerSchedulerCurrent();
 
       if (currentResult.success) {
@@ -164,7 +156,6 @@ const runUserSync = async () => {
     const syncStatus = await userService.getSyncStatus();
 
     if (!syncStatus.historicalCompleted) {
-      console.log("Starting historical users data sync...");
       const result = await userScheduler(160);
 
       if (result.success) {
@@ -173,7 +164,6 @@ const runUserSync = async () => {
         console.error("Error when saving historical users data:", result.error);
       }
     } else {
-      console.log("Running current users sync...");
       const currentResult = await userSchedulerCurrent();
 
       if (currentResult.success) {

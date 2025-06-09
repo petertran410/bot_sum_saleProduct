@@ -3,18 +3,15 @@ const axios = require("axios");
 const KIOTVIET_BASE_URL = process.env.KIOT_BASE_URL;
 const TOKEN_URL = process.env.KIOT_TOKEN;
 
-// Token caching
 let currentToken = null;
 let tokenExpiresAt = null;
 
-// Rate limiting
 let requestCount = 0;
 let hourStartTime = Date.now();
 const maxRequestsPerHour = 4900;
 
 async function getToken() {
   try {
-    // Check if token is still valid
     if (currentToken && tokenExpiresAt && new Date() < tokenExpiresAt) {
       return currentToken;
     }
@@ -34,12 +31,10 @@ async function getToken() {
       }
     );
 
-    // Cache token with expiration (subtract 5 minutes for safety)
     currentToken = response.data.access_token;
     const expiresIn = response.data.expires_in || 3600;
     tokenExpiresAt = new Date(Date.now() + (expiresIn - 300) * 1000);
 
-    console.log(`Token cached, expires at: ${tokenExpiresAt.toISOString()}`);
     return currentToken;
   } catch (error) {
     console.error("Error getting KiotViet token:", error.message);
@@ -59,9 +54,6 @@ async function checkRateLimit() {
 
   if (requestCount >= maxRequestsPerHour) {
     const waitTime = 3600000 - hourElapsed;
-    console.log(
-      `Rate limit reached. Waiting ${Math.ceil(waitTime / 1000)} seconds`
-    );
     await new Promise((resolve) => setTimeout(resolve, waitTime));
     requestCount = 0;
     hourStartTime = Date.now();
@@ -76,8 +68,6 @@ async function makeApiRequest(config) {
     return await axios(config);
   } catch (error) {
     if (error.response?.status === 401 && currentToken) {
-      // Token expired, clear cache and retry
-      console.log("Token expired, refreshing...");
       currentToken = null;
       tokenExpiresAt = null;
       const newToken = await getToken();
@@ -88,7 +78,6 @@ async function makeApiRequest(config) {
   }
 }
 
-// ORDERS with pagination
 const getOrders = async () => {
   try {
     const token = await getToken();
@@ -96,8 +85,6 @@ const getOrders = async () => {
     const allOrders = [];
     let currentItem = 0;
     let hasMoreData = true;
-
-    console.log("Fetching current orders...");
 
     while (hasMoreData) {
       const response = await makeApiRequest({
@@ -125,10 +112,6 @@ const getOrders = async () => {
         allOrders.push(...response.data.data);
         currentItem += response.data.data.length;
         hasMoreData = response.data.data.length === pageSize;
-
-        console.log(
-          `Fetched ${response.data.data.length} orders, total: ${allOrders.length}`
-        );
         await new Promise((resolve) => setTimeout(resolve, 100));
       } else {
         hasMoreData = false;
@@ -137,7 +120,6 @@ const getOrders = async () => {
 
     return { data: allOrders, total: allOrders.length };
   } catch (error) {
-    console.error("Error getting orders:", error.message);
     throw error;
   }
 };
@@ -156,8 +138,6 @@ const getOrdersByDate = async (daysAgo) => {
       const allOrdersForDate = [];
       let currentItem = 0;
       let hasMoreData = true;
-
-      console.log(`Fetching orders for ${formattedDate}...`);
 
       while (hasMoreData) {
         const response = await makeApiRequest({
@@ -186,10 +166,6 @@ const getOrdersByDate = async (daysAgo) => {
           allOrdersForDate.push(...response.data.data);
           currentItem += response.data.data.length;
           hasMoreData = response.data.data.length === pageSize;
-
-          console.log(
-            `Date ${formattedDate}: Fetched ${response.data.data.length} orders, total: ${allOrdersForDate.length}`
-          );
           await new Promise((resolve) => setTimeout(resolve, 100));
         } else {
           hasMoreData = false;
@@ -207,12 +183,10 @@ const getOrdersByDate = async (daysAgo) => {
 
     return results;
   } catch (error) {
-    console.error(`Error getting orders by date:`, error.message);
     throw error;
   }
 };
 
-// INVOICES with pagination
 const getInvoices = async () => {
   try {
     const token = await getToken();
@@ -220,8 +194,6 @@ const getInvoices = async () => {
     const allInvoices = [];
     let currentItem = 0;
     let hasMoreData = true;
-
-    console.log("Fetching current invoices...");
 
     while (hasMoreData) {
       const response = await makeApiRequest({
@@ -250,9 +222,6 @@ const getInvoices = async () => {
         currentItem += response.data.data.length;
         hasMoreData = response.data.data.length === pageSize;
 
-        console.log(
-          `Fetched ${response.data.data.length} invoices, total: ${allInvoices.length}`
-        );
         await new Promise((resolve) => setTimeout(resolve, 100));
       } else {
         hasMoreData = false;
@@ -280,8 +249,6 @@ const getInvoicesByDate = async (daysAgo) => {
       const allInvoicesForDate = [];
       let currentItem = 0;
       let hasMoreData = true;
-
-      console.log(`Fetching invoices for ${formattedDate}...`);
 
       while (hasMoreData) {
         const response = await makeApiRequest({
@@ -311,9 +278,6 @@ const getInvoicesByDate = async (daysAgo) => {
           currentItem += response.data.data.length;
           hasMoreData = response.data.data.length === pageSize;
 
-          console.log(
-            `Date ${formattedDate}: Fetched ${response.data.data.length} invoices, total: ${allInvoicesForDate.length}`
-          );
           await new Promise((resolve) => setTimeout(resolve, 100));
         } else {
           hasMoreData = false;
@@ -336,7 +300,6 @@ const getInvoicesByDate = async (daysAgo) => {
   }
 };
 
-// PRODUCTS with pagination
 const getProducts = async () => {
   try {
     const token = await getToken();
@@ -345,9 +308,6 @@ const getProducts = async () => {
     let currentItem = 0;
     let hasMoreData = true;
 
-    console.log("Fetching current products...");
-
-    // Get only recent products (last 24 hours) for current sync
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const fromDate = yesterday.toISOString().split("T")[0];
@@ -384,9 +344,6 @@ const getProducts = async () => {
         currentItem += response.data.data.length;
         hasMoreData = response.data.data.length === pageSize;
 
-        console.log(
-          `Fetched ${response.data.data.length} products, total: ${allProducts.length}`
-        );
         await new Promise((resolve) => setTimeout(resolve, 100));
       } else {
         hasMoreData = false;
@@ -414,8 +371,6 @@ const getProductsByDate = async (daysAgo) => {
       const allProductsForDate = [];
       let currentItem = 0;
       let hasMoreData = true;
-
-      console.log(`Fetching products modified on/after ${formattedDate}...`);
 
       while (hasMoreData) {
         const response = await makeApiRequest({
@@ -449,9 +404,6 @@ const getProductsByDate = async (daysAgo) => {
           currentItem += response.data.data.length;
           hasMoreData = response.data.data.length === pageSize;
 
-          console.log(
-            `Date ${formattedDate}: Fetched ${response.data.data.length} products, total: ${allProductsForDate.length}`
-          );
           await new Promise((resolve) => setTimeout(resolve, 100));
         } else {
           hasMoreData = false;
@@ -469,12 +421,10 @@ const getProductsByDate = async (daysAgo) => {
 
     return results;
   } catch (error) {
-    console.error(`Error getting products by date:`, error.message);
     return results;
   }
 };
 
-// CUSTOMERS with pagination
 const getCustomers = async () => {
   try {
     const token = await getToken();
@@ -483,9 +433,6 @@ const getCustomers = async () => {
     let currentItem = 0;
     let hasMoreData = true;
 
-    console.log("Fetching current customers...");
-
-    // Get only recent customers (last 24 hours)
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const fromDate = yesterday.toISOString().split("T")[0];
@@ -519,9 +466,6 @@ const getCustomers = async () => {
         currentItem += response.data.data.length;
         hasMoreData = response.data.data.length === pageSize;
 
-        console.log(
-          `Fetched ${response.data.data.length} customers, total: ${allCustomers.length}`
-        );
         await new Promise((resolve) => setTimeout(resolve, 100));
       } else {
         hasMoreData = false;
@@ -530,7 +474,6 @@ const getCustomers = async () => {
 
     return { data: allCustomers, total: allCustomers.length };
   } catch (error) {
-    console.error("Error fetching customers:", error.message);
     throw error;
   }
 };
@@ -540,10 +483,8 @@ const getCustomersByDate = async (daysAgo, specificDate = null) => {
     const results = [];
 
     if (specificDate) {
-      // Handle specific date format
       const dateParts = specificDate.split("/");
       const formattedDate = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`;
-      console.log(`Targeting specific date: ${formattedDate}`);
 
       const token = await getToken();
       const allCustomersForDate = [];
@@ -552,10 +493,6 @@ const getCustomersByDate = async (daysAgo, specificDate = null) => {
       const pageSize = 100;
 
       while (hasMoreData) {
-        console.log(
-          `Fetching page at offset ${currentItem} for ${formattedDate}`
-        );
-
         const response = await makeApiRequest({
           method: "GET",
           url: `${KIOTVIET_BASE_URL}/customers`,
@@ -602,7 +539,6 @@ const getCustomersByDate = async (daysAgo, specificDate = null) => {
       return results;
     }
 
-    // Regular date range processing
     for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
       const targetDate = new Date();
       targetDate.setDate(targetDate.getDate() - currentDaysAgo);
@@ -616,10 +552,6 @@ const getCustomersByDate = async (daysAgo, specificDate = null) => {
       const pageSize = 100;
 
       while (hasMoreData) {
-        console.log(
-          `Fetching page at offset ${currentItem} for ${formattedDate}`
-        );
-
         const response = await makeApiRequest({
           method: "GET",
           url: `${KIOTVIET_BASE_URL}/customers`,
@@ -684,9 +616,6 @@ const getUsers = async () => {
     let currentItem = 0;
     let hasMoreData = true;
 
-    console.log("Fetching current users...");
-
-    // Get only recent users (last 24 hours)
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const fromDate = yesterday.toISOString().split("T")[0];
@@ -718,9 +647,6 @@ const getUsers = async () => {
         currentItem += response.data.data.length;
         hasMoreData = response.data.data.length === pageSize;
 
-        console.log(
-          `Fetched ${response.data.data.length} users, total: ${allUsers.length}`
-        );
         await new Promise((resolve) => setTimeout(resolve, 100));
       } else {
         hasMoreData = false;
@@ -749,8 +675,6 @@ const getUsersByDate = async (daysAgo) => {
       let currentItem = 0;
       let hasMoreData = true;
 
-      console.log(`Fetching users modified on/after ${formattedDate}...`);
-
       while (hasMoreData) {
         const response = await makeApiRequest({
           method: "GET",
@@ -778,9 +702,6 @@ const getUsersByDate = async (daysAgo) => {
           currentItem += response.data.data.length;
           hasMoreData = response.data.data.length === pageSize;
 
-          console.log(
-            `Date ${formattedDate}: Fetched ${response.data.data.length} users, total: ${allUsersForDate.length}`
-          );
           await new Promise((resolve) => setTimeout(resolve, 100));
         } else {
           hasMoreData = false;
@@ -803,7 +724,6 @@ const getUsersByDate = async (daysAgo) => {
   }
 };
 
-// Add these to your module.exports:
 module.exports = {
   getOrders,
   getOrdersByDate,

@@ -13,8 +13,6 @@ async function initializeDatabase() {
 
     const dbName = process.env.DB_NAME || "kiotviet_data";
 
-    // await connection.query(`CREATE DATABASE IF NOT EXISTS ${dbName}`);
-
     await connection.end();
 
     connection = await mysql.createConnection({
@@ -341,7 +339,6 @@ async function initializeDatabase() {
       )
     `);
 
-    // Add user entity to sync_status if it doesn't exist
     const [userSyncRows] = await connection.query(
       "SELECT COUNT(*) as count FROM sync_status WHERE entity_type = 'users'"
     );
@@ -353,7 +350,6 @@ async function initializeDatabase() {
       `);
     }
 
-    // Add customer entity to sync_status if it doesn't exist
     const [customerSyncRows] = await connection.query(
       "SELECT COUNT(*) as count FROM sync_status WHERE entity_type = 'customers'"
     );
@@ -380,11 +376,9 @@ async function initializeDatabase() {
       `);
     }
 
-    console.log("Database initialized successfully");
     return true;
   } catch (error) {
-    console.error("Error initializing database:", error);
-    return false;
+    return error;
   } finally {
     if (connection) {
       await connection.end();

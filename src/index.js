@@ -16,7 +16,6 @@ const { addRecordToCRMBase, getCRMStats, sendTestMessage } = require("./lark");
 
 const app = express();
 const PORT = process.env.PORT || 3690;
-console.log(PORT);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -68,13 +67,12 @@ app.use((req, res, next) => {
 });
 
 app.use((req, res, next) => {
-  // Allow your specific domain and common local development
   const allowedOrigins = [
     "https://www.traphuonghoang.com",
     "https://traphuonghoang.com",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "file://", // For local HTML files
+    "file://",
   ];
 
   const origin = req.headers.origin;
@@ -92,11 +90,8 @@ app.use((req, res, next) => {
     "Origin, X-Requested-With, Content-Type, Accept, Authorization"
   );
   res.setHeader("Access-Control-Allow-Credentials", "true");
-  res.setHeader("Access-Control-Max-Age", "86400"); // 24 hours
-
-  // Handle preflight OPTIONS requests
+  res.setHeader("Access-Control-Max-Age", "86400");
   if (req.method === "OPTIONS") {
-    console.log(`✅ CORS preflight handled for ${req.path}`);
     return res.status(200).end();
   }
 
@@ -119,10 +114,6 @@ app.get("/api/health", (req, res) => {
 
 app.post("/api/submit-registration", async (req, res) => {
   try {
-    console.log("📝 New registration received:", req.body);
-    console.log("🌐 Client IP:", req.clientIP);
-
-    // Validate required fields
     const { name, phone, email, type, ticket, city } = req.body;
 
     if (!name || !phone || !email) {
@@ -133,14 +124,12 @@ app.post("/api/submit-registration", async (req, res) => {
       });
     }
 
-    // Add client info to form data
     const formDataWithIP = {
       ...req.body,
       clientIP: req.clientIP,
       userAgent: req.get("User-Agent"),
     };
 
-    // Add record to CRM Base
     const result = await addRecordToCRMBase(formDataWithIP);
 
     if (result.success) {
@@ -159,8 +148,6 @@ app.post("/api/submit-registration", async (req, res) => {
       throw new Error("Failed to save to CRM");
     }
   } catch (error) {
-    console.error("❌ Registration submission error:", error.message);
-
     res.status(500).json({
       success: false,
       message: "Lỗi hệ thống, vui lòng thử lại sau",
@@ -171,9 +158,6 @@ app.post("/api/submit-registration", async (req, res) => {
   }
 });
 
-/**
- * Get CRM statistics
- */
 app.get("/api/crm/stats", async (req, res) => {
   try {
     console.log("📊 CRM stats requested");
@@ -200,9 +184,6 @@ app.get("/api/crm/stats", async (req, res) => {
   }
 });
 
-/**
- * Test LarkSuite connection
- */
 app.get("/api/test-lark", async (req, res) => {
   try {
     console.log("🔧 LarkSuite test requested");
@@ -222,16 +203,8 @@ app.get("/api/test-lark", async (req, res) => {
   }
 });
 
-/**
- * Webhook endpoint for LarkSuite (optional)
- */
 app.post("/api/webhook/lark", (req, res) => {
   try {
-    console.log("📨 LarkSuite webhook received:", req.body);
-
-    // Handle webhook events if needed
-    // For example: when someone updates a CRM record
-
     res.json({
       success: true,
       message: "Webhook processed",
@@ -245,155 +218,21 @@ app.post("/api/webhook/lark", (req, res) => {
   }
 });
 
-app.get("/save-order", async (req, res) => {
-  try {
-    await runOrderSync();
-    res.json({
-      success: true,
-      message: "Order synchronization completed",
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Error during order synchronization",
-      error: error.message,
-    });
-  }
-});
-
-app.get("/save-invoice", async (req, res) => {
-  try {
-    await runInvoiceSync();
-    res.json({
-      success: true,
-      message: "Invoice synchronization completed",
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Error during invoice synchronization",
-      error: error.message,
-    });
-  }
-});
-
-app.get("/save-product", async (req, res) => {
-  try {
-    await runProductSync();
-    res.json({
-      success: true,
-      message: "Product synchronization completed",
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Error during product synchronization",
-      error: error.message,
-    });
-  }
-});
-
-app.get("/save-customer", async (req, res) => {
-  try {
-    const saveCustomer = await runCustomerSync();
-    res.json(saveCustomer);
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Error during customer synchronization",
-      error: error.message,
-    });
-  }
-});
-
-app.get("/save-user", async (req, res) => {
-  try {
-    await runUserSync();
-    res.json({
-      success: true,
-      message: "User synchronization completed",
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Error during user synchronization",
-      error: error.message,
-    });
-  }
-});
-
-app.get("/get-products", async (req, res) => {
-  try {
-    const products = await getProducts();
-    res.json(products);
-  } catch (error) {
-    console.log("Cannot get products", error);
-    res.status(500).json({
-      success: false,
-      message: "Error fetching products",
-      error: error.message,
-    });
-  }
-});
-
-app.get("/get-customers", async (req, res) => {
-  try {
-    const customers = await getCustomers();
-    res.json(customers);
-  } catch (error) {
-    console.log("Cannot get customers", error);
-    res.status(500).json({
-      success: false,
-      message: "Error fetching customers",
-      error: error.message,
-    });
-  }
-});
-
-app.get("/get-users", async (req, res) => {
-  try {
-    const users = await getUsers();
-    res.json(users);
-  } catch (error) {
-    console.log("Cannot get users", error);
-    res.status(500).json({
-      success: false,
-      message: "Error fetching users",
-      error: error.message,
-    });
-  }
-});
-
-// Initialize and start the server
 async function startServer() {
   try {
-    // Test database connection
     const dbConnected = await testConnection();
 
     if (!dbConnected) {
-      console.error(
-        "Failed to connect to database. Please check your database configuration."
-      );
       process.exit(1);
     }
 
     const dbInitialized = await initializeDatabase();
 
     if (!dbInitialized) {
-      console.error("Failed to initialize database schema.");
       process.exit(1);
     }
-    console.log("Database schema initialization completed.");
 
     const server = app.listen(PORT, async () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`📊 CRM Health: http://localhost:${PORT}/api/health`);
-      console.log(
-        `📝 CRM Registration: http://localhost:${PORT}/api/submit-registration`
-      );
-      console.log(`📈 CRM Stats: http://localhost:${PORT}/api/crm/stats`);
-      console.log(`🔧 LarkSuite Test: http://localhost:${PORT}/api/test-lark`);
-
       const historicalDaysAgo = parseInt(process.env.INITIAL_SCAN_DAYS || "7");
 
       const orderSyncStatus =
@@ -408,51 +247,35 @@ async function startServer() {
         await require("../src/db/userService").getSyncStatus();
 
       if (!userSyncStatus.historicalCompleted) {
-        console.log(
-          `Syncing ${historicalDaysAgo} days of historical user data...`
-        );
         await require("../scheduler/userScheduler").userScheduler(
           historicalDaysAgo
         );
       }
 
       if (!orderSyncStatus.historicalCompleted) {
-        console.log(
-          `Syncing ${historicalDaysAgo} days of historical order data...`
-        );
         await require("../scheduler/orderScheduler").orderScheduler(
           historicalDaysAgo
         );
       }
 
       if (!invoiceSyncStatus.historicalCompleted) {
-        console.log(
-          `Syncing ${historicalDaysAgo} days of historical invoice data...`
-        );
         await require("../scheduler/invoiceScheduler").invoiceScheduler(
           historicalDaysAgo
         );
       }
 
       if (!customerSyncStatus.historicalCompleted) {
-        console.log(
-          `Syncing ${historicalDaysAgo} days of historical customer data...`
-        );
         await require("../scheduler/customerScheduler").customerScheduler(
           historicalDaysAgo
         );
       }
 
       if (!productSyncStatus.historicalCompleted) {
-        console.log(
-          `Syncing ${historicalDaysAgo} days of historical product data...`
-        );
         await require("../scheduler/productScheduler").productScheduler(
           historicalDaysAgo
         );
       }
 
-      // Now run the current data sync
       await runUserSync();
       await runOrderSync();
       await runInvoiceSync();

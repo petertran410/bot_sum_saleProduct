@@ -34,13 +34,11 @@ async function saveProducts(products) {
   try {
     await connection.beginTransaction();
 
-    // Process in batches
     for (let i = 0; i < products.length; i += BATCH_SIZE) {
       const batch = products.slice(i, i + BATCH_SIZE);
 
       for (const product of batch) {
         try {
-          // Validate and sanitize
           const validatedProduct = validateAndSanitizeProduct(product);
 
           const [existing] = await connection.execute(
@@ -65,19 +63,10 @@ async function saveProducts(products) {
             }
           }
         } catch (error) {
-          console.error(
-            `Error processing product ${product.code}:`,
-            error.message
-          );
           failCount++;
         }
       }
 
-      console.log(
-        `Processed product batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(
-          products.length / BATCH_SIZE
-        )}`
-      );
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
 
