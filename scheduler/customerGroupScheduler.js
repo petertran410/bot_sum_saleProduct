@@ -18,13 +18,22 @@ const customerGroupSchedulerCurrent = async () => {
         Array.isArray(currentCustomerGroups.data)
       ) {
         if (currentCustomerGroups.data.length === 0) {
+          console.log("No new customer groups to process");
           return { success: true, savedCount: 0, hasNewData: false };
         }
+
+        console.log(
+          `Processing ${currentCustomerGroups.data.length} customer groups...`
+        );
         const result = await customerGroupService.saveCustomerGroups(
           currentCustomerGroups.data
         );
 
         await customerGroupService.updateSyncStatus(true, new Date());
+
+        console.log(
+          `Customer groups sync completed: ${result.stats.success} processed, ${result.stats.newRecords} new`
+        );
 
         return {
           success: true,
@@ -39,6 +48,7 @@ const customerGroupSchedulerCurrent = async () => {
 
       if (retryCount < MAX_RETRIES) {
         const waitTime = Math.pow(2, retryCount) * 1000;
+        console.log(`Waiting ${waitTime}ms before retry...`);
         await new Promise((resolve) => setTimeout(resolve, waitTime));
       } else {
         console.error("Max retries reached. Customer group sync failed.");
@@ -59,6 +69,9 @@ const customerGroupScheduler = async (daysAgo) => {
         dateData.data.data &&
         Array.isArray(dateData.data.data)
       ) {
+        console.log(
+          `Processing ${dateData.data.data.length} customer groups from ${dateData.date}`
+        );
         const result = await customerGroupService.saveCustomerGroups(
           dateData.data.data
         );
@@ -67,6 +80,10 @@ const customerGroupScheduler = async (daysAgo) => {
     }
 
     await customerGroupService.updateSyncStatus(true, new Date());
+
+    console.log(
+      `Historical customer groups data saved: ${totalSaved} products total`
+    );
 
     return {
       success: true,
