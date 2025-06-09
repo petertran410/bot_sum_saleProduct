@@ -22,7 +22,6 @@ async function initializeDatabase() {
       database: dbName,
     });
 
-    // Create users table first since it's referenced by other tables
     await connection.query(`
       CREATE TABLE IF NOT EXISTS users (
         id BIGINT PRIMARY KEY,
@@ -308,15 +307,17 @@ async function initializeDatabase() {
 
     await connection.query(`
       CREATE TABLE IF NOT EXISTS customer_groups (
-        id INT PRIMARY KEY AUTO_INCREMENT,
+        id INT PRIMARY KEY,
         name VARCHAR(100) NOT NULL,
         description TEXT,
-        discount DECIMAL(5,2),
+        discount DECIMAL(15,2),
         retailerId INT,
+        createdBy BIGINT,
         createdDate DATETIME,
         modifiedDate DATETIME,
         jsonData JSON,
-        UNIQUE KEY (name, retailerId)
+        UNIQUE KEY (name, retailerId),
+        INDEX idx_retailerId (retailerId)
       )
     `);
 

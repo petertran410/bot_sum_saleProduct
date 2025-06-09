@@ -3,6 +3,7 @@ const invoiceService = require("../db/invoiceService");
 const productService = require("../db/productService");
 const customerService = require("../db/customerService");
 const userService = require("../db/userService");
+const customerGroupService = require("../db/customerGroupService");
 
 const {
   orderScheduler,
@@ -28,6 +29,11 @@ const {
   userScheduler,
   userSchedulerCurrent,
 } = require("../../scheduler/userScheduler");
+
+const {
+  customerGroupScheduler,
+  customerGroupSchedulerCurrent,
+} = require("../../scheduler/customerGroupScheduler");
 
 const runOrderSync = async () => {
   try {
@@ -179,10 +185,47 @@ const runUserSync = async () => {
   }
 };
 
+const runCustomerGroupSync = async () => {
+  try {
+    const syncStatus = await customerGroupService.getSyncStatus();
+
+    if (!syncStatus.historicalCompleted) {
+      const result = await customerGroupScheduler(160);
+
+      if (result.success) {
+        console.log(
+          "Historical customer groups data has been saved to database"
+        );
+      } else {
+        console.error(
+          "Error when saving historical customer groups data:",
+          result.error
+        );
+      }
+    } else {
+      const currentResult = await customerGroupSchedulerCurrent();
+
+      if (currentResult.success) {
+        console.log(
+          `Current customer groups data has been added: ${currentResult.savedCount} customer groups`
+        );
+      } else {
+        console.error(
+          "Error when adding current customer groups:",
+          currentResult.error
+        );
+      }
+    }
+  } catch (error) {
+    console.error("Cannot get and save data customer groups:", error);
+  }
+};
+
 module.exports = {
   runOrderSync,
   runInvoiceSync,
   runProductSync,
   runCustomerSync,
   runUserSync,
+  runCustomerGroupSync,
 };

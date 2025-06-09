@@ -6,10 +6,8 @@ const {
   runProductSync,
   runCustomerSync,
   runUserSync,
+  runCustomerGroupSync,
 } = require("./syncKiot/syncKiot");
-const { getProducts } = require("./kiotviet");
-const { getCustomers } = require("./kiotviet");
-const { getUsers } = require("./kiotviet");
 const { testConnection } = require("./db");
 const { initializeDatabase } = require("./db/init");
 const { addRecordToCRMBase, getCRMStats, sendTestMessage } = require("./lark");
@@ -245,6 +243,8 @@ async function startServer() {
         await require("../src/db/productService").getSyncStatus();
       const userSyncStatus =
         await require("../src/db/userService").getSyncStatus();
+      const customerGroupSyncStatus =
+        await require("../src/db/customerGroupService").getSyncStatus();
 
       if (!userSyncStatus.historicalCompleted) {
         await require("../scheduler/userScheduler").userScheduler(
@@ -276,25 +276,29 @@ async function startServer() {
         );
       }
 
+      if (!customerGroupSyncStatus.historicalCompleted) {
+        await require("../scheduler/customerGroupScheduler").customerGroupScheduler(
+          historicalDaysAgo
+        );
+      }
+
       await runUserSync();
       await runOrderSync();
       await runInvoiceSync();
       await runCustomerSync();
       await runProductSync();
+      await runCustomerGroupSync();
 
       const runAllSyncs = async () => {
         try {
-          console.log(`[${new Date().toISOString()}] Starting sync cycle...`);
-
           await Promise.all([
             runUserSync(),
             runOrderSync(),
+            runCustomerGroupSync(),
             runInvoiceSync(),
             runCustomerSync(),
             runProductSync(),
           ]);
-
-          console.log(`[${new Date().toISOString()}] Sync cycle completed.`);
         } catch (error) {
           console.error("Error during simultaneous sync:", error);
         }

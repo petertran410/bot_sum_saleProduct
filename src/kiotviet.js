@@ -724,6 +724,52 @@ const getUsersByDate = async (daysAgo) => {
   }
 };
 
+const getCustomerGroups = async () => {
+  try {
+    const token = await getToken();
+
+    const response = await makeApiRequest({
+      method: "GET",
+      url: `${KIOTVIET_BASE_URL}/customers/group`,
+      headers: {
+        Retailer: process.env.KIOT_SHOP_NAME,
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (response.data && response.data.data) {
+      return {
+        data: response.data.data,
+        total: response.data.total || response.data.data.length,
+      };
+    }
+
+    return { data: [], total: 0 };
+  } catch (error) {
+    console.error("Error getting customer groups:", error.message);
+    throw error;
+  }
+};
+
+const getCustomerGroupsByDate = async (daysAgo) => {
+  try {
+    const customerGroups = await getCustomerGroups();
+
+    const currentDate = new Date().toISOString().split("T")[0];
+
+    return [
+      {
+        date: currentDate,
+        daysAgo: 0,
+        data: customerGroups,
+      },
+    ];
+  } catch (error) {
+    console.error("Error getting customer groups by date:", error.message);
+    return [];
+  }
+};
+
 module.exports = {
   getOrders,
   getOrdersByDate,
@@ -735,4 +781,6 @@ module.exports = {
   getCustomersByDate,
   getUsers,
   getUsersByDate,
+  getCustomerGroups,
+  getCustomerGroupsByDate,
 };
