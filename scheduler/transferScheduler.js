@@ -12,6 +12,15 @@ const transferSchedulerCurrent = async () => {
           retryCount + 1
         }/${MAX_RETRIES})...`
       );
+
+      // Add debugging on first attempt
+      if (retryCount === 0) {
+        const testResult = await testTransferAPI();
+        if (!testResult.success) {
+          throw new Error(`API connectivity test failed: ${testResult.error}`);
+        }
+      }
+
       const currentTransfers = await getTransfers();
 
       if (
@@ -25,6 +34,23 @@ const transferSchedulerCurrent = async () => {
         }
 
         console.log(`Processing ${currentTransfers.data.length} transfers...`);
+
+        // Enhanced logging to see what data we're getting
+        console.log("Sample transfer data:", {
+          id: currentTransfers.data[0]?.id,
+          code: currentTransfers.data[0]?.code,
+          status: currentTransfers.data[0]?.status,
+          hasDetails: !!(
+            currentTransfers.data[0]?.details ||
+            currentTransfers.data[0]?.transferDetails
+          ),
+          detailsCount: (
+            currentTransfers.data[0]?.details ||
+            currentTransfers.data[0]?.transferDetails ||
+            []
+          ).length,
+        });
+
         const result = await transferService.saveTransfers(
           currentTransfers.data
         );

@@ -15,6 +15,7 @@ const purchaseOrderSchedulerCurrent = async () => {
           retryCount + 1
         }/${MAX_RETRIES})...`
       );
+
       const currentPurchaseOrders = await getPurchaseOrders();
 
       if (
@@ -30,6 +31,7 @@ const purchaseOrderSchedulerCurrent = async () => {
         console.log(
           `Processing ${currentPurchaseOrders.data.length} purchase orders...`
         );
+
         const result = await purchaseOrderService.savePurchaseOrders(
           currentPurchaseOrders.data
         );
@@ -54,6 +56,14 @@ const purchaseOrderSchedulerCurrent = async () => {
         `Purchase order sync attempt ${retryCount} failed:`,
         error.message
       );
+
+      // Enhanced error logging for 400 errors
+      if (error.response?.status === 400) {
+        console.error("Detailed 400 error analysis:");
+        console.error("- This usually indicates invalid request parameters");
+        console.error("- Check date formats and API parameter names");
+        console.error("- Verify API endpoint availability");
+      }
 
       if (retryCount < MAX_RETRIES) {
         const waitTime = Math.pow(2, retryCount) * 1000;

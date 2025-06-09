@@ -1120,54 +1120,76 @@ const getPurchaseOrders = async () => {
 
     console.log("Fetching current purchase orders...");
 
-    // Get only recent purchase orders (last 24 hours) for current sync
+    // Fixed: Use proper date range and parameters
+    const today = new Date();
     const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setDate(yesterday.getDate() - 7); // Get last 7 days instead of 1
     const fromDate = yesterday.toISOString().split("T")[0];
+    const toDate = today.toISOString().split("T")[0];
 
     while (hasMoreData) {
-      const response = await makeApiRequest({
-        method: "GET",
-        url: `${KIOTVIET_BASE_URL}/purchaseorders`,
-        params: {
-          pageSize: pageSize,
-          currentItem: currentItem,
-          orderBy: "modifiedDate",
-          orderDirection: "DESC",
-          fromPurchaseDate: fromDate,
-          includePayment: true,
-        },
-        headers: {
-          Retailer: process.env.KIOT_SHOP_NAME,
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      try {
+        const response = await makeApiRequest({
+          method: "GET",
+          url: `${KIOTVIET_BASE_URL}/purchaseorders`,
+          params: {
+            pageSize: pageSize,
+            currentItem: currentItem,
+            // Fixed: Remove problematic parameters that cause 400 errors
+            fromPurchaseDate: fromDate,
+            toPurchaseDate: toDate,
+            // Removed: orderBy, orderDirection, includePayment as they may cause 400 errors
+          },
+          headers: {
+            Retailer: process.env.KIOT_SHOP_NAME,
+            Authorization: `Bearer ${token}`,
+          },
+        });
 
-      if (
-        response.data &&
-        response.data.data &&
-        response.data.data.length > 0
-      ) {
-        allPurchaseOrders.push(...response.data.data);
-        currentItem += response.data.data.length;
-        hasMoreData = response.data.data.length === pageSize;
+        if (
+          response.data &&
+          response.data.data &&
+          Array.isArray(response.data.data)
+        ) {
+          allPurchaseOrders.push(...response.data.data);
+          currentItem += response.data.data.length;
+          hasMoreData = response.data.data.length === pageSize;
 
-        console.log(
-          `Fetched ${response.data.data.length} purchase orders, total: ${allPurchaseOrders.length}`
+          console.log(
+            `Fetched ${response.data.data.length} purchase orders, total: ${allPurchaseOrders.length}`
+          );
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        } else {
+          hasMoreData = false;
+        }
+      } catch (error) {
+        console.error(
+          `Error in purchase orders pagination at item ${currentItem}:`,
+          error.message
         );
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      } else {
-        hasMoreData = false;
+        // If we get data but have an error on subsequent pages, return what we have
+        if (allPurchaseOrders.length > 0) {
+          console.log(
+            `Returning ${allPurchaseOrders.length} purchase orders despite pagination error`
+          );
+          break;
+        }
+        throw error;
       }
     }
 
     return { data: allPurchaseOrders, total: allPurchaseOrders.length };
   } catch (error) {
     console.error("Error getting purchase orders:", error.message);
+    if (error.response) {
+      console.error("Response status:", error.response.status);
+      console.error("Response data:", error.response.data);
+    }
     throw error;
   }
 };
 
+// Fix for Purchase Orders by Date
 const getPurchaseOrdersByDate = async (daysAgo) => {
   try {
     const results = [];
@@ -1186,39 +1208,49 @@ const getPurchaseOrdersByDate = async (daysAgo) => {
       console.log(`Fetching purchase orders for ${formattedDate}...`);
 
       while (hasMoreData) {
-        const response = await makeApiRequest({
-          method: "GET",
-          url: `${KIOTVIET_BASE_URL}/purchaseorders`,
-          params: {
-            pageSize: pageSize,
-            currentItem: currentItem,
-            orderBy: "id",
-            orderDirection: "ASC",
-            fromPurchaseDate: formattedDate,
-            toPurchaseDate: formattedDate,
-            includePayment: true,
-          },
-          headers: {
-            Retailer: process.env.KIOT_SHOP_NAME,
-            Authorization: `Bearer ${token}`,
-          },
-        });
+        try {
+          const response = await makeApiRequest({
+            method: "GET",
+            url: `${KIOTVIET_BASE_URL}/purchaseorders`,
+            params: {
+              pageSize: pageSize,
+              currentItem: currentItem,
+              // Fixed: Simplified parameters to avoid 400 errors
+              fromPurchaseDate: formattedDate,
+              toPurchaseDate: formattedDate,
+            },
+            headers: {
+              Retailer: process.env.KIOT_SHOP_NAME,
+              Authorization: `Bearer ${token}`,
+            },
+          });
 
-        if (
-          response.data &&
-          response.data.data &&
-          response.data.data.length > 0
-        ) {
-          allPurchaseOrdersForDate.push(...response.data.data);
-          currentItem += response.data.data.length;
-          hasMoreData = response.data.data.length === pageSize;
+          if (
+            response.data &&
+            response.data.data &&
+            response.data.data.length > 0
+          ) {
+            allPurchaseOrdersForDate.push(...response.data.data);
+            currentItem += response.data.data.length;
+            hasMoreData = response.data.data.length === pageSize;
 
-          console.log(
-            `Date ${formattedDate}: Fetched ${response.data.data.length} purchase orders, total: ${allPurchaseOrdersForDate.length}`
+            console.log(
+              `Date ${formattedDate}: Fetched ${response.data.data.length} purchase orders, total: ${allPurchaseOrdersForDate.length}`
+            );
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          } else {
+            hasMoreData = false;
+          }
+        } catch (error) {
+          console.error(
+            `Error fetching purchase orders for ${formattedDate}:`,
+            error.message
           );
-          await new Promise((resolve) => setTimeout(resolve, 100));
-        } else {
-          hasMoreData = false;
+          if (error.response?.status === 400) {
+            console.log(`Skipping date ${formattedDate} due to 400 error`);
+            break; // Skip this date and continue with next
+          }
+          throw error;
         }
       }
 
@@ -1248,51 +1280,100 @@ const getTransfers = async () => {
 
     console.log("Fetching current transfers...");
 
-    // Get only recent transfers (last 24 hours) for current sync
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const fromDate = yesterday.toISOString().split("T")[0];
+    // Fixed: Expand date range for transfers
+    const today = new Date();
+    const lastMonth = new Date();
+    lastMonth.setMonth(lastMonth.getMonth() - 1); // Get last month of data
+    const fromDate = lastMonth.toISOString().split("T")[0];
 
     while (hasMoreData) {
-      const response = await makeApiRequest({
-        method: "GET",
-        url: `${KIOTVIET_BASE_URL}/transfers`,
-        params: {
-          pageSize: pageSize,
-          currentItem: currentItem,
-          fromTransferDate: fromDate,
-        },
-        headers: {
-          Retailer: process.env.KIOT_SHOP_NAME,
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      try {
+        const response = await makeApiRequest({
+          method: "GET",
+          url: `${KIOTVIET_BASE_URL}/transfers`,
+          params: {
+            pageSize: pageSize,
+            currentItem: currentItem,
+            fromTransferDate: fromDate,
+          },
+          headers: {
+            Retailer: process.env.KIOT_SHOP_NAME,
+            Authorization: `Bearer ${token}`,
+          },
+        });
 
-      if (
-        response.data &&
-        response.data.data &&
-        response.data.data.length > 0
-      ) {
-        allTransfers.push(...response.data.data);
-        currentItem += response.data.data.length;
-        hasMoreData = response.data.data.length === pageSize;
+        if (
+          response.data &&
+          response.data.data &&
+          response.data.data.length > 0
+        ) {
+          // Get detailed info for each transfer
+          for (const transfer of response.data.data) {
+            try {
+              const detailResponse = await makeApiRequest({
+                method: "GET",
+                url: `${KIOTVIET_BASE_URL}/transfers/${transfer.id}`,
+                headers: {
+                  Retailer: process.env.KIOT_SHOP_NAME,
+                  Authorization: `Bearer ${token}`,
+                },
+              });
 
-        console.log(
-          `Fetched ${response.data.data.length} transfers, total: ${allTransfers.length}`
-        );
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      } else {
-        hasMoreData = false;
+              if (detailResponse.data) {
+                // Merge basic data with detailed data
+                allTransfers.push({
+                  ...transfer,
+                  ...detailResponse.data,
+                });
+              } else {
+                allTransfers.push(transfer);
+              }
+
+              // Rate limiting
+              await new Promise((resolve) => setTimeout(resolve, 200));
+            } catch (detailError) {
+              console.warn(
+                `Warning: Could not get details for transfer ${transfer.id}: ${detailError.message}`
+              );
+              // Still add the basic transfer data
+              allTransfers.push(transfer);
+            }
+          }
+
+          currentItem += response.data.data.length;
+          hasMoreData = response.data.data.length === pageSize;
+
+          console.log(
+            `Fetched ${response.data.data.length} transfers, total: ${allTransfers.length}`
+          );
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        } else {
+          hasMoreData = false;
+        }
+      } catch (error) {
+        console.error("Error in transfer pagination:", error.message);
+        if (allTransfers.length > 0) {
+          console.log(
+            `Returning ${allTransfers.length} transfers despite pagination error`
+          );
+          break;
+        }
+        throw error;
       }
     }
 
     return { data: allTransfers, total: allTransfers.length };
   } catch (error) {
     console.error("Error getting transfers:", error.message);
+    if (error.response) {
+      console.error("Response status:", error.response.status);
+      console.error("Response data:", error.response.data);
+    }
     throw error;
   }
 };
 
+// Fixed Transfer by Date Implementation
 const getTransfersByDate = async (daysAgo) => {
   try {
     const results = [];
@@ -1311,40 +1392,49 @@ const getTransfersByDate = async (daysAgo) => {
       console.log(`Fetching transfers for ${formattedDate}...`);
 
       while (hasMoreData) {
-        const response = await makeApiRequest({
-          method: "GET",
-          url: `${KIOTVIET_BASE_URL}/transfers`,
-          params: {
-            pageSize: pageSize,
-            currentItem: currentItem,
-            fromTransferDate: formattedDate,
-            toTransferDate: formattedDate,
-          },
-          headers: {
-            Retailer: process.env.KIOT_SHOP_NAME,
-            Authorization: `Bearer ${token}`,
-          },
-        });
+        try {
+          const response = await makeApiRequest({
+            method: "GET",
+            url: `${KIOTVIET_BASE_URL}/transfers`,
+            params: {
+              pageSize: pageSize,
+              currentItem: currentItem,
+              fromTransferDate: formattedDate,
+              toTransferDate: formattedDate,
+            },
+            headers: {
+              Retailer: process.env.KIOT_SHOP_NAME,
+              Authorization: `Bearer ${token}`,
+            },
+          });
 
-        if (
-          response.data &&
-          response.data.data &&
-          response.data.data.length > 0
-        ) {
-          allTransfersForDate.push(...response.data.data);
-          currentItem += response.data.data.length;
-          hasMoreData = response.data.data.length === pageSize;
+          if (
+            response.data &&
+            response.data.data &&
+            response.data.data.length > 0
+          ) {
+            // Add transfers to the list first
+            allTransfersForDate.push(...response.data.data);
+            currentItem += response.data.data.length;
+            hasMoreData = response.data.data.length === pageSize;
 
-          console.log(
-            `Date ${formattedDate}: Fetched ${response.data.data.length} transfers, total: ${allTransfersForDate.length}`
+            console.log(
+              `Date ${formattedDate}: Fetched ${response.data.data.length} transfers, total: ${allTransfersForDate.length}`
+            );
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          } else {
+            hasMoreData = false;
+          }
+        } catch (error) {
+          console.error(
+            `Error fetching transfers for ${formattedDate}:`,
+            error.message
           );
-          await new Promise((resolve) => setTimeout(resolve, 100));
-        } else {
-          hasMoreData = false;
+          break; // Skip this date on error
         }
       }
 
-      // For each transfer, get detailed information
+      // Get detailed information for each transfer (after getting all basic data)
       for (let i = 0; i < allTransfersForDate.length; i++) {
         try {
           const detailResponse = await makeApiRequest({
@@ -1370,6 +1460,7 @@ const getTransfersByDate = async (daysAgo) => {
           console.warn(
             `Warning: Could not get details for transfer ${allTransfersForDate[i].id}: ${detailError.message}`
           );
+          // Continue with basic data
         }
       }
 
