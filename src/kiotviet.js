@@ -928,6 +928,8 @@ const getSurchargesByDate = async (daysAgo) => {
   }
 };
 
+// Replace the getCashflow and getCashflowByDate functions in src/kiotviet.js with these:
+
 const getCashflow = async () => {
   try {
     const token = await getToken();
@@ -938,12 +940,6 @@ const getCashflow = async () => {
 
     console.log("Fetching current cashflows...");
 
-    // Get only recent cashflows (last 24 hours) for current sync
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const startDate = yesterday.toISOString().split("T")[0];
-    const endDate = new Date().toISOString().split("T")[0];
-
     while (hasMoreData) {
       const response = await makeApiRequest({
         method: "GET",
@@ -951,8 +947,6 @@ const getCashflow = async () => {
         params: {
           pageSize: pageSize,
           currentItem: currentItem,
-          startDate: startDate,
-          endDate: endDate,
           includeAccount: true,
           includeBranch: true,
           includeUser: true,
@@ -983,8 +977,15 @@ const getCashflow = async () => {
       } else {
         hasMoreData = false;
       }
+
+      // Safety check to prevent infinite loops
+      if (currentItem > response.data?.total || currentItem > 50000) {
+        console.log("Reached maximum items or total count, stopping...");
+        break;
+      }
     }
 
+    console.log(`Total cashflows fetched: ${allCashflows.length}`);
     return { data: allCashflows, total: allCashflows.length };
   } catch (error) {
     console.error("Error getting cashflows:", error.message);
@@ -996,76 +997,113 @@ const getCashflowByDate = async (daysAgo) => {
   try {
     const results = [];
 
+    // For historical sync, let's try to get all data first, then filter by date in memory
+    console.log("Attempting to fetch all cashflow data...");
+
+    const token = await getToken();
+    const pageSize = 100;
+    const allCashflows = [];
+    let currentItem = 0;
+    let hasMoreData = true;
+    let totalFetched = 0;
+
+    while (hasMoreData) {
+      console.log(`Fetching cashflow page starting at item ${currentItem}...`);
+
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/cashflow`,
+        params: {
+          pageSize: pageSize,
+          currentItem: currentItem,
+          includeAccount: true,
+          includeBranch: true,
+          includeUser: true,
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      console.log(
+        `API Response - Total: ${response.data?.total}, Current batch: ${response.data?.data?.length}`
+      );
+
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allCashflows.push(...response.data.data);
+        currentItem += response.data.data.length;
+        totalFetched += response.data.data.length;
+
+        // Check if we have more data
+        hasMoreData =
+          response.data.total > allCashflows.length &&
+          response.data.data.length === pageSize;
+
+        console.log(
+          `Fetched ${response.data.data.length} cashflows, total collected: ${allCashflows.length}/${response.data.total}`
+        );
+
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      } else {
+        console.log("No more cashflow data received");
+        hasMoreData = false;
+      }
+
+      // Safety check to prevent infinite loops
+      if (currentItem > response.data?.total || totalFetched > 50000) {
+        console.log("Reached maximum items, stopping fetch...");
+        break;
+      }
+    }
+
+    console.log(`Total cashflows fetched from API: ${allCashflows.length}`);
+
+    if (allCashflows.length === 0) {
+      console.log("No cashflow data found in API");
+      return [];
+    }
+
+    // Now group by date in memory
+    const cashflowsByDate = new Map();
+
+    allCashflows.forEach((cashflow) => {
+      if (cashflow.transDate) {
+        const transDate = new Date(cashflow.transDate);
+        const dateKey = transDate.toISOString().split("T")[0]; // YYYY-MM-DD format
+
+        if (!cashflowsByDate.has(dateKey)) {
+          cashflowsByDate.set(dateKey, []);
+        }
+        cashflowsByDate.get(dateKey).push(cashflow);
+      }
+    });
+
+    console.log(
+      `Cashflows grouped into ${cashflowsByDate.size} different dates`
+    );
+
+    // Create results for the requested date range
     for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
       const targetDate = new Date();
       targetDate.setDate(targetDate.getDate() - currentDaysAgo);
+      const formattedDate = targetDate.toISOString().split("T")[0];
 
-      // Format date as YYYY-MM-DD (local date, not UTC)
-      const year = targetDate.getFullYear();
-      const month = String(targetDate.getMonth() + 1).padStart(2, "0");
-      const day = String(targetDate.getDate()).padStart(2, "0");
-      const formattedDate = `${year}-${month}-${day}`;
-
-      const token = await getToken();
-      const pageSize = 100;
-      const allCashflowsForDate = [];
-      let currentItem = 0;
-      let hasMoreData = true;
-
-      console.log(`Fetching cashflows for ${formattedDate}...`);
-
-      while (hasMoreData) {
-        const response = await makeApiRequest({
-          method: "GET",
-          url: `${KIOTVIET_BASE_URL}/cashflow`,
-          params: {
-            pageSize: pageSize,
-            currentItem: currentItem,
-            startDate: formattedDate,
-            endDate: formattedDate,
-            includeAccount: true,
-            includeBranch: true,
-            includeUser: true,
-          },
-          headers: {
-            Retailer: process.env.KIOT_SHOP_NAME,
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        if (
-          response.data &&
-          response.data.data &&
-          response.data.data.length > 0
-        ) {
-          allCashflowsForDate.push(...response.data.data);
-          currentItem += response.data.data.length;
-
-          // Check if we have more data
-          hasMoreData =
-            response.data.total > allCashflowsForDate.length &&
-            response.data.data.length === pageSize;
-
-          console.log(
-            `Date ${formattedDate}: Fetched ${response.data.data.length} cashflows, total: ${allCashflowsForDate.length}/${response.data.total}`
-          );
-          await new Promise((resolve) => setTimeout(resolve, 100));
-        } else {
-          hasMoreData = false;
-        }
-      }
+      const cashflowsForDate = cashflowsByDate.get(formattedDate) || [];
 
       console.log(
-        `Found ${allCashflowsForDate.length} cashflows for ${formattedDate}`
+        `Date ${formattedDate}: Found ${cashflowsForDate.length} cashflows`
       );
+
       results.push({
         date: formattedDate,
         daysAgo: currentDaysAgo,
-        data: { data: allCashflowsForDate },
+        data: { data: cashflowsForDate },
       });
-
-      // Add delay between API calls to respect rate limits
-      await new Promise((resolve) => setTimeout(resolve, 500));
     }
 
     return results;
