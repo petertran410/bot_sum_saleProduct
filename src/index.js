@@ -7,18 +7,14 @@ const {
   runCustomerSync,
   runUserSync,
   runSurchargeSync,
+  runCustomerGroupSync,
 } = require("./syncKiot/syncKiot");
-const { getProducts } = require("./kiotviet");
-const { getCustomers } = require("./kiotviet");
-const { getUsers } = require("./kiotviet");
-const { getSurcharges } = require("./kiotviet");
 const { testConnection } = require("./db");
 const { initializeDatabase } = require("./db/init");
 const { addRecordToCRMBase, getCRMStats, sendTestMessage } = require("./lark");
 
 const app = express();
 const PORT = process.env.PORT || 3690;
-console.log(PORT);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -41,7 +37,6 @@ app.use((req, res, next) => {
   );
 
   if (req.method === "OPTIONS") {
-    console.log(`✅ CORS preflight for ${req.path}`);
     return res.status(200).end();
   }
   next();
@@ -95,7 +90,6 @@ app.use((req, res, next) => {
   res.setHeader("Access-Control-Max-Age", "86400");
 
   if (req.method === "OPTIONS") {
-    console.log(`✅ CORS preflight handled for ${req.path}`);
     return res.status(200).end();
   }
 
@@ -103,7 +97,6 @@ app.use((req, res, next) => {
 });
 
 app.get("/api/health", (req, res) => {
-  console.log("🏥 Health check requested");
   res.json({
     status: "OK",
     timestamp: new Date().toISOString(),
@@ -118,9 +111,6 @@ app.get("/api/health", (req, res) => {
 
 app.post("/api/submit-registration", async (req, res) => {
   try {
-    console.log("📝 New registration received:", req.body);
-    console.log("🌐 Client IP:", req.clientIP);
-
     const { name, phone, email, type, ticket, city } = req.body;
 
     if (!name || !phone || !email) {
@@ -140,8 +130,6 @@ app.post("/api/submit-registration", async (req, res) => {
     const result = await addRecordToCRMBase(formDataWithIP);
 
     if (result.success) {
-      console.log(`✅ Registration processed successfully: STT ${result.stt}`);
-
       res.json({
         success: true,
         message: "Registration submitted successfully",
@@ -258,6 +246,8 @@ async function startServer() {
         await require("../src/db/userService").getSyncStatus();
       const surchargeSyncStatus =
         await require("../src/db/surchagesService").getSyncStatus();
+      const customerGroupSyncStatus =
+        await require("../src/db/customerGroupService").getSyncStatus();
 
       if (!userSyncStatus.historicalCompleted) {
         await require("../scheduler/userScheduler").userScheduler(
@@ -295,12 +285,19 @@ async function startServer() {
         );
       }
 
+      if (!customerGroupSyncStatus.historicalCompleted) {
+        await require("../scheduler/customerGroupScheduler").customerGroupScheduler(
+          historicalDaysAgo
+        );
+      }
+
       await runUserSync();
       await runOrderSync();
+      await runProductSync();
       await runInvoiceSync();
       await runCustomerSync();
-      await runProductSync();
       await runSurchargeSync();
+      await runCustomerGroupSync();
 
       const runAllSyncs = async () => {
         try {
@@ -311,6 +308,7 @@ async function startServer() {
             runCustomerSync(),
             runProductSync(),
             runSurchargeSync(),
+            runCustomerGroupSync(),
           ]);
         } catch (error) {
           console.error("Error during simultaneous sync:", error);

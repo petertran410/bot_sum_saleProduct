@@ -308,15 +308,17 @@ async function initializeDatabase() {
 
     await connection.query(`
       CREATE TABLE IF NOT EXISTS customer_groups (
-        id INT PRIMARY KEY AUTO_INCREMENT,
+        id INT PRIMARY KEY,
         name VARCHAR(100) NOT NULL,
         description TEXT,
-        discount DECIMAL(5,2),
+        discount DECIMAL(15,2),
         retailerId INT,
+        createdBy BIGINT,
         createdDate DATETIME,
         modifiedDate DATETIME,
         jsonData JSON,
-        UNIQUE KEY (name, retailerId)
+        UNIQUE KEY (name, retailerId),
+        INDEX idx_retailerId (retailerId)
       )
     `);
 
@@ -355,60 +357,32 @@ async function initializeDatabase() {
       )
     `);
 
-    // Add user entity to sync_status if it doesn't exist
-    const [userSyncRows] = await connection.query(
-      "SELECT COUNT(*) as count FROM sync_status WHERE entity_type = 'users'"
-    );
+    const entities = [
+      "users",
+      "customers",
+      "customer_groups",
+      "surcharges",
+      "orders",
+      "invoices",
+      "products",
+    ];
 
-    if (userSyncRows[0].count === 0) {
-      await connection.query(`
-        INSERT INTO sync_status (entity_type, last_sync, historical_completed) 
-          VALUES ('users', NULL, FALSE)
-      `);
+    for (const entity of entities) {
+      const [rows] = await connection.query(
+        "SELECT COUNT(*) as count FROM sync_status WHERE entity_type = ?",
+        [entity]
+      );
+
+      if (rows[0].count === 0) {
+        await connection.query(
+          "INSERT INTO sync_status (entity_type, last_sync, historical_completed) VALUES (?, NULL, FALSE)",
+          [entity]
+        );
+      }
     }
 
-    // Add customer entity to sync_status if it doesn't exist
-    const [customerSyncRows] = await connection.query(
-      "SELECT COUNT(*) as count FROM sync_status WHERE entity_type = 'customers'"
-    );
-
-    if (customerSyncRows[0].count === 0) {
-      await connection.query(`
-        INSERT INTO sync_status (entity_type, last_sync, historical_completed) 
-          VALUES ('customers', NULL, FALSE)
-      `);
-    }
-
-    const [surchargeSyncRows] = await connection.query(
-      "SELECT COUNT(*) as count FROM sync_status WHERE entity_type = 'surcharges'"
-    );
-
-    if (surchargeSyncRows[0].count === 0) {
-      await connection.query(`
-        INSERT INTO sync_status (entity_type, last_sync, historical_completed) 
-          VALUES ('surcharges', NULL, FALSE)
-      `);
-    }
-
-    const [rows] = await connection.query(
-      "SELECT COUNT(*) as count FROM sync_status"
-    );
-
-    if (rows[0].count === 0) {
-      await connection.query(`
-        INSERT INTO sync_status (entity_type, last_sync, historical_completed) VALUES 
-        ('orders', NULL, FALSE),
-        ('invoices', NULL, FALSE),
-        ('products', NULL, FALSE),
-        ('customer', NULL, FALSE),
-        ('user', NULL, FALSE)
-      `);
-    }
-
-    console.log("Database initialized successfully");
     return true;
   } catch (error) {
-    console.error("Error initializing database:", error);
     return false;
   } finally {
     if (connection) {
