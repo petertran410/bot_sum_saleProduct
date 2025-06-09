@@ -282,19 +282,13 @@ async function initializeDatabase() {
     `);
 
     await connection.query(`
-      CREATE TABLE IF NOT EXISTS customer_groups (
-        id INT PRIMARY KEY,
-        name VARCHAR(100) NOT NULL,
-        description TEXT,
-        discount DECIMAL(15,2),
-        retailerId INT,
-        createdBy BIGINT,
-        createdDate DATETIME,
-        modifiedDate DATETIME,
-        jsonData JSON,
-        UNIQUE KEY unique_id (id),
-        INDEX idx_retailerId (retailerId),
-        INDEX idx_name (name)
+      CREATE TABLE IF NOT EXISTS customer_group_details (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        customerId BIGINT,
+        groupId INT,
+        FOREIGN KEY (customerId) REFERENCES customers(id) ON DELETE CASCADE,
+        FOREIGN KEY (groupId) REFERENCES customer_groups(id) ON DELETE CASCADE,
+        UNIQUE KEY (customerId, groupId)
       )
     `);
 
@@ -316,27 +310,24 @@ async function initializeDatabase() {
         debt DECIMAL(15,2),
         rewardPoint INT,
         retailerId INT,
-        groupId INT,
         createdDate DATETIME,
         modifiedDate DATETIME,
         jsonData JSON,
-        UNIQUE INDEX (code),
-        FOREIGN KEY (groupId) REFERENCES customer_groups(id) ON DELETE SET NULL,
-        INDEX idx_groupId (groupId)
+        UNIQUE INDEX (code)
       )
     `);
 
     await connection.query(`
-      CREATE TABLE IF NOT EXISTS customer_group_details (
-        id BIGINT AUTO_INCREMENT PRIMARY KEY,
-        customerId BIGINT,
-        groupId INT,
-        createdDate DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (customerId) REFERENCES customers(id) ON DELETE CASCADE,
-        FOREIGN KEY (groupId) REFERENCES customer_groups(id) ON DELETE CASCADE,
-        UNIQUE KEY unique_customer_group (customerId, groupId),
-        INDEX idx_customerId (customerId),
-        INDEX idx_groupId (groupId)
+      CREATE TABLE IF NOT EXISTS customer_groups (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        name VARCHAR(100) NOT NULL,
+        description TEXT,
+        discount DECIMAL(5,2),
+        retailerId INT,
+        createdDate DATETIME,
+        modifiedDate DATETIME,
+        jsonData JSON,
+        UNIQUE KEY (name, retailerId)
       )
     `);
 
@@ -357,6 +348,41 @@ async function initializeDatabase() {
     `);
 
     await connection.query(`
+      CREATE TABLE IF NOT EXISTS cashflows (
+        id BIGINT PRIMARY KEY,
+        code VARCHAR(50) NOT NULL,
+        address VARCHAR(255),
+        branchId INT NOT NULL,
+        branchName VARCHAR(100),
+        wardName VARCHAR(100),
+        contactNumber VARCHAR(20),
+        createdBy BIGINT NOT NULL,
+        usedForFinancialReporting INT DEFAULT 1,
+        cashFlowGroupId INT,
+        method VARCHAR(50) NOT NULL,
+        partnerType VARCHAR(10) DEFAULT 'O',
+        partnerId BIGINT,
+        status INT NOT NULL,
+        statusValue VARCHAR(50),
+        transDate DATETIME NOT NULL,
+        amount DECIMAL(15,2) NOT NULL,
+        partnerName VARCHAR(255),
+        user VARCHAR(100),
+        AccountId INT,
+        isReceipt TINYINT DEFAULT 0,
+        jsonData JSON,
+        createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE       CURRENT_TIMESTAMP,
+        INDEX idx_code (code),
+        INDEX idx_branch (branchId),
+        INDEX idx_trans_date (transDate),
+        INDEX idx_partner (partnerId),
+        INDEX idx_method (method),
+        INDEX idx_status (status)
+      )
+    `);
+
+    await connection.query(`
       CREATE TABLE IF NOT EXISTS sync_status (
         entity_type VARCHAR(50) PRIMARY KEY,
         last_sync DATETIME,
@@ -372,6 +398,7 @@ async function initializeDatabase() {
       "orders",
       "invoices",
       "products",
+      "cashflows",
     ];
 
     for (const entity of entities) {
@@ -382,7 +409,7 @@ async function initializeDatabase() {
 
       if (rows[0].count === 0) {
         await connection.query(
-          "INSERT INTO sync_status (entity_type, last_sync, historical_completed) VALUES (?, NULL, FALSE)",
+          "INSERT INTO sync_status (entity_type, last_sync, historical_completed) VALUES (?, NULL, FALSE) ON DUPLICATE KEY UPDATE entity_type = entity_type",
           [entity]
         );
       }

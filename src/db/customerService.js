@@ -1,5 +1,6 @@
 const { getPool } = require("../db");
 
+// Add data validation and sanitization
 function validateAndSanitizeCustomer(customer) {
   return {
     ...customer,
@@ -32,64 +33,63 @@ async function saveCustomers(customers) {
   let successCount = 0;
   let failCount = 0;
   let newCount = 0;
-  let updatedCount = 0;
+  let existingCount = 0;
 
   const BATCH_SIZE = 50;
+  console.log(
+    `Processing ${customers.length} customers in batches of ${BATCH_SIZE}`
+  );
 
   try {
     await connection.beginTransaction();
 
-    // Process in batches
+    // Get existing IDs for faster lookup
+    const [existingCustomers] = await connection.execute(
+      "SELECT id FROM customers"
+    );
+    const existingIds = new Set(existingCustomers.map((row) => row.id));
+
     for (let i = 0; i < customers.length; i += BATCH_SIZE) {
       const batch = customers.slice(i, i + BATCH_SIZE);
+      console.log(
+        `Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(
+          customers.length / BATCH_SIZE
+        )}`
+      );
 
       for (const customer of batch) {
         try {
           // Validate and sanitize
           const validatedCustomer = validateAndSanitizeCustomer(customer);
+          const isNew = !existingIds.has(validatedCustomer.id);
 
-          const [existing] = await connection.execute(
-            "SELECT id, modifiedDate FROM customers WHERE id = ?",
-            [validatedCustomer.id]
-          );
-
-          const isNew = existing.length === 0;
-          const isUpdated =
-            !isNew &&
-            validatedCustomer.modifiedDate &&
-            new Date(validatedCustomer.modifiedDate) >
-              new Date(existing[0].modifiedDate);
-
-          if (isNew || isUpdated) {
-            const result = await saveCustomer(validatedCustomer, connection);
-            if (result.success) {
-              successCount++;
-              if (isNew) newCount++;
-              else updatedCount++;
+          const result = await saveCustomer(validatedCustomer, connection);
+          if (result.success) {
+            successCount++;
+            if (isNew) {
+              newCount++;
+              existingIds.add(validatedCustomer.id);
             } else {
-              failCount++;
+              existingCount++;
             }
+          } else {
+            failCount++;
           }
         } catch (error) {
           console.error(
             `Error processing customer ${customer.code || customer.id}:`,
-            error.message
+            error
           );
           failCount++;
         }
       }
 
-      console.log(
-        `Processed customer batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(
-          customers.length / BATCH_SIZE
-        )}`
-      );
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
 
     await connection.commit();
     console.log(
-      `Customer sync completed: ${newCount} new, ${updatedCount} updated, ${failCount} failed`
+      `Customer sync completed: ${newCount} new, ${existingCount} updated, ${failCount} failed`
     );
   } catch (error) {
     await connection.rollback();
@@ -104,12 +104,13 @@ async function saveCustomers(customers) {
       total: customers.length,
       success: successCount,
       newRecords: newCount,
-      updated: updatedCount,
+      existing: existingCount,
       failed: failCount,
     },
   };
 }
 
+// Update saveCustomer to accept connection parameter
 async function saveCustomer(customer, connection = null) {
   const shouldReleaseConnection = !connection;
 
@@ -140,26 +141,14 @@ async function saveCustomer(customer, connection = null) {
       modifiedDate = null,
     } = customer;
 
-    // Determine the primary group ID from API data
-    let primaryGroupId = null;
-
-    // From API: customer might have groupIds array or groups string
-    if (
-      customer.groupIds &&
-      Array.isArray(customer.groupIds) &&
-      customer.groupIds.length > 0
-    ) {
-      primaryGroupId = customer.groupIds[0]; // Take first group as primary
-    }
-
     const jsonData = JSON.stringify(customer);
 
     const query = `
       INSERT INTO customers 
         (id, code, name, contactNumber, email, address, gender, birthDate, 
          locationName, wardName, organizationName, taxCode, comments, debt, 
-         rewardPoint, retailerId, groupId, createdDate, modifiedDate, jsonData)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         rewardPoint, retailerId, createdDate, modifiedDate, jsonData)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
         name = VALUES(name),
         contactNumber = VALUES(contactNumber),
@@ -174,7 +163,6 @@ async function saveCustomer(customer, connection = null) {
         comments = VALUES(comments),
         debt = VALUES(debt),
         rewardPoint = VALUES(rewardPoint),
-        groupId = VALUES(groupId),
         modifiedDate = VALUES(modifiedDate),
         jsonData = VALUES(jsonData)
     `;
@@ -196,31 +184,73 @@ async function saveCustomer(customer, connection = null) {
       debt,
       rewardPoint,
       retailerId,
-      primaryGroupId,
       createdDate,
       modifiedDate,
       jsonData,
     ]);
 
-    // Handle customer group details if present (many-to-many relationship)
-    if (customer.groupIds && Array.isArray(customer.groupIds)) {
-      // Delete existing group relationships
+    // Handle customer groups
+    if (customer.groups) {
       await connection.execute(
         "DELETE FROM customer_group_details WHERE customerId = ?",
         [id]
       );
 
-      // Insert new group relationships
-      for (const groupId of customer.groupIds) {
+      const [existingGroups] = await connection.execute(
+        "SELECT id, name FROM customer_groups WHERE retailerId = ?",
+        [retailerId]
+      );
+
+      const groupMap = new Map();
+      for (const group of existingGroups) {
+        groupMap.set(group.name.toLowerCase(), group.id);
+      }
+
+      let groupNames = [];
+      if (typeof customer.groups === "string") {
+        groupNames = customer.groups
+          .split("|")
+          .map((g) => g.trim())
+          .filter((g) => g.length > 0);
+      } else if (Array.isArray(customer.groups)) {
+        for (const group of customer.groups) {
+          if (typeof group === "string") {
+            groupNames.push(group.trim());
+          } else if (group && typeof group === "object" && group.name) {
+            groupNames.push(group.name.trim());
+          }
+        }
+      }
+
+      for (const groupName of groupNames) {
+        if (!groupName) continue;
+
+        let groupId = groupMap.get(groupName.toLowerCase());
+
+        if (!groupId) {
+          const [maxIdResult] = await connection.execute(
+            "SELECT COALESCE(MAX(id), 0) + 1 as nextId FROM customer_groups"
+          );
+
+          const nextId = Math.max(maxIdResult[0].nextId, 1000);
+
+          await connection.execute(
+            "INSERT INTO customer_groups (id, name, retailerId, createdDate) VALUES (?, ?, ?, NOW())",
+            [nextId, groupName, retailerId]
+          );
+
+          groupId = nextId;
+          groupMap.set(groupName.toLowerCase(), groupId);
+        }
+
         try {
           await connection.execute(
-            `INSERT INTO customer_group_details (customerId, groupId, createdDate) 
-             VALUES (?, ?, NOW())`,
+            "INSERT INTO customer_group_details (customerId, groupId) VALUES (?, ?)",
             [id, groupId]
           );
-        } catch (groupError) {
+        } catch (detailError) {
           console.warn(
-            `Warning: Could not save customer group relationship for customer ${id}, group ${groupId}: ${groupError.message}`
+            `Warning: Could not link customer ${id} to group ${groupId}: ${detailError.message}`
           );
         }
       }
@@ -237,6 +267,7 @@ async function saveCustomer(customer, connection = null) {
   }
 }
 
+// Keep existing updateSyncStatus and getSyncStatus functions
 async function updateSyncStatus(completed = false, lastSync = new Date()) {
   const pool = getPool();
 

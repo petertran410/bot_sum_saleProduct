@@ -7,7 +7,7 @@ const {
   runCustomerSync,
   runUserSync,
   runSurchargeSync,
-  runCustomerGroupSync,
+  runCashflowSync,
 } = require("./syncKiot/syncKiot");
 const { testConnection } = require("./db");
 const { initializeDatabase } = require("./db/init");
@@ -237,8 +237,6 @@ async function startServer() {
       // Get sync status for all entities
       const userSyncStatus =
         await require("../src/db/userService").getSyncStatus();
-      const customerGroupSyncStatus =
-        await require("../src/db/customerGroupService").getSyncStatus();
       const customerSyncStatus =
         await require("../src/db/customerService").getSyncStatus();
       const productSyncStatus =
@@ -249,6 +247,8 @@ async function startServer() {
         await require("../src/db/invoiceService").getSyncStatus();
       const surchargeSyncStatus =
         await require("../src/db/surchagesService").getSyncStatus();
+      const cashflowSyncStatus =
+        await require("../src/db/cashflowService").getSyncStatus();
 
       if (!userSyncStatus.historicalCompleted) {
         console.log("Starting historical user sync...");
@@ -267,13 +267,6 @@ async function startServer() {
       if (!surchargeSyncStatus.historicalCompleted) {
         console.log("Starting historical surcharge sync...");
         await require("../scheduler/surchargeScheduler").surchargeScheduler(
-          historicalDaysAgo
-        );
-      }
-
-      if (!customerGroupSyncStatus.historicalCompleted) {
-        console.log("Starting historical customer group sync...");
-        await require("../scheduler/customerGroupScheduler").customerGroupScheduler(
           historicalDaysAgo
         );
       }
@@ -299,15 +292,22 @@ async function startServer() {
         );
       }
 
+      if (!cashflowSyncStatus.historicalCompleted) {
+        console.log("Starting historical cashflow sync...");
+        await require("../scheduler/cashflowScheduler").cashflowScheduler(
+          historicalDaysAgo
+        );
+      }
+
       // Current sync (maintain same order)
       console.log("Starting current sync cycle...");
       await runUserSync();
       await runProductSync();
       await runSurchargeSync();
-      await runCustomerGroupSync();
       await runCustomerSync();
       await runOrderSync();
       await runInvoiceSync();
+      await runCashflowSync();
 
       const runAllSyncs = async () => {
         try {
@@ -315,10 +315,10 @@ async function startServer() {
           await runUserSync();
           await runProductSync();
           await runSurchargeSync();
-          await runCustomerGroupSync();
           await runCustomerSync();
           await runOrderSync();
           await runInvoiceSync();
+          await runCashflowSync();
         } catch (error) {
           console.error("Error during simultaneous sync:", error);
         }

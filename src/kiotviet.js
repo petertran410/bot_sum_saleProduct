@@ -984,6 +984,138 @@ const getCustomerGroupsByDate = async (daysAgo) => {
   }
 };
 
+const getCashflow = async () => {
+  try {
+    const token = await getToken();
+    const pageSize = 100;
+    const allCashflows = [];
+    let currentItem = 0;
+    let hasMoreData = true;
+
+    console.log("Fetching current cashflows...");
+
+    while (hasMoreData) {
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/cashflow`,
+        params: {
+          pageSize: pageSize,
+          currentItem: currentItem,
+          includeAccount: true,
+          includeBranch: true,
+          includeUser: true,
+          isReceipt: true,
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allCashflows.push(...response.data.data);
+        currentItem += response.data.data.length;
+        hasMoreData = response.data.data.length === pageSize;
+
+        console.log(
+          `Fetched ${response.data.data.length} cashflows, total: ${allCashflows.length}`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        hasMoreData = false;
+      }
+    }
+
+    return { data: allCashflows, total: allCashflows.length };
+  } catch (error) {
+    console.error("Error getting cashflows:", error.message);
+    throw error;
+  }
+};
+
+const getCashflowByDate = async (daysAgo) => {
+  try {
+    const results = [];
+
+    for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() - currentDaysAgo);
+      const startDate = new Date(targetDate);
+      startDate.setHours(0, 0, 0, 0);
+      const endDate = new Date(targetDate);
+      endDate.setHours(23, 59, 59, 999);
+
+      const token = await getToken();
+      const pageSize = 100;
+      const allCashflowsForDate = [];
+      let currentItem = 0;
+      let hasMoreData = true;
+
+      console.log(
+        `Fetching cashflows for ${targetDate.toISOString().split("T")[0]}...`
+      );
+
+      while (hasMoreData) {
+        const response = await makeApiRequest({
+          method: "GET",
+          url: `${KIOTVIET_BASE_URL}/cashflow`,
+          params: {
+            pageSize: pageSize,
+            currentItem: currentItem,
+            orderBy: "transDate",
+            orderDirection: "DESC",
+            startDate: startDate.toISOString(),
+            endDate: endDate.toISOString(),
+            includeAccount: true,
+            includeBranch: true,
+            includeUser: true,
+          },
+          headers: {
+            Retailer: process.env.KIOT_SHOP_NAME,
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (
+          response.data &&
+          response.data.data &&
+          response.data.data.length > 0
+        ) {
+          allCashflowsForDate.push(...response.data.data);
+          currentItem += response.data.data.length;
+          hasMoreData = response.data.data.length === pageSize;
+
+          console.log(
+            `Date ${targetDate.toISOString().split("T")[0]}: Fetched ${
+              response.data.data.length
+            } cashflows, total: ${allCashflowsForDate.length}`
+          );
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        } else {
+          hasMoreData = false;
+        }
+      }
+
+      results.push({
+        date: targetDate.toISOString().split("T")[0],
+        daysAgo: currentDaysAgo,
+        data: { data: allCashflowsForDate },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+
+    return results;
+  } catch (error) {
+    console.error(`Error getting cashflows by date:`, error.message);
+    throw error;
+  }
+};
+
 module.exports = {
   getOrders,
   getOrdersByDate,
@@ -999,4 +1131,6 @@ module.exports = {
   getSurchargesByDate,
   getCustomerGroups,
   getCustomerGroupsByDate,
+  getCashflow,
+  getCashflowByDate,
 };

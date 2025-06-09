@@ -4,7 +4,12 @@ const invoiceService = require("../db/invoiceService");
 const productService = require("../db/productService");
 const customerService = require("../db/customerService");
 const surchargeService = require("../db/surchagesService");
-const customerGroupService = require("../db/customerGroupService");
+const cashFlowService = require("../db/cashflowService");
+
+const {
+  cashflowScheduler,
+  cashflowSchedulerCurrent,
+} = require("../../scheduler/cashflowScheduler");
 
 const {
   orderScheduler,
@@ -35,11 +40,6 @@ const {
   surchargeScheduler,
   surchargeSchedulerCurrent,
 } = require("../../scheduler/surchargeScheduler");
-
-const {
-  customerGroupScheduler,
-  customerGroupSchedulerCurrent,
-} = require("../../scheduler/customerGroupScheduler");
 
 const runOrderSync = async () => {
   try {
@@ -139,7 +139,7 @@ const runCustomerSync = async () => {
 
     if (!syncStatus.historicalCompleted) {
       console.log("📅 Running historical customer sync...");
-      const result = await customerScheduler(160);
+      const result = await customerScheduler(250);
 
       if (result.success) {
         console.log("✅ Historical customers data has been saved to database");
@@ -230,44 +230,37 @@ const runSurchargeSync = async () => {
   }
 };
 
-const runCustomerGroupSync = async () => {
-  console.log("🚀 Starting Customer Group Sync Process...");
+const runCashflowSync = async () => {
   try {
-    const syncStatus = await customerGroupService.getSyncStatus();
-    console.log("Customer Group Sync Status:", syncStatus);
+    const syncStatus = await cashFlowService.getSyncStatus();
 
     if (!syncStatus.historicalCompleted) {
-      console.log("📅 Running historical customer group sync...");
-      const result = await customerGroupScheduler(160);
+      const result = await cashflowScheduler(250);
 
       if (result.success) {
-        console.log(
-          "✅ Historical customer groups data has been saved to database"
-        );
+        console.log("✅ Historical cashflow data has been saved to database");
       } else {
         console.error(
-          "❌ Error when saving historical customer groups data:",
+          "❌ Error when saving historical cashflow data:",
           result.error
         );
       }
     } else {
-      console.log("🔄 Running current customer group sync...");
-      const currentResult = await customerGroupSchedulerCurrent();
+      console.log("🔄 Running current customer sync...");
+      const currentResult = await cashflowSchedulerCurrent();
 
       if (currentResult.success) {
-        console.log(
-          `✅ Current customer groups data has been added: ${currentResult.savedCount} groups`
-        );
+        console.log(`✅ Current cashflow data has been added`);
       } else {
         console.error(
-          "❌ Error when adding current customer groups:",
+          "❌ Error when adding current cashflow:",
           currentResult.error
         );
       }
     }
   } catch (error) {
-    console.error("❌ Cannot get and save customer groups data:", error);
-    console.error("Stack trace:", error.stack);
+    console.error("❌ Error during cashflow sync:", error);
+    return { success: false, error: error.message };
   }
 };
 
@@ -278,5 +271,5 @@ module.exports = {
   runCustomerSync,
   runUserSync,
   runSurchargeSync,
-  runCustomerGroupSync,
+  runCashflowSync,
 };
