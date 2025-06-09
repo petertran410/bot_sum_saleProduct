@@ -1,5 +1,6 @@
 const { getPool } = require("../db");
 
+// Add data validation and sanitization
 function validateAndSanitizeCustomerGroup(customerGroup) {
   return {
     ...customerGroup,
@@ -38,12 +39,8 @@ async function saveCustomerGroups(customerGroups) {
             validateAndSanitizeCustomerGroup(customerGroup);
 
           const [existing] = await connection.execute(
-            "SELECT id, source FROM customer_groups WHERE id = ? OR (name = ? AND retailerId = ? AND source = 'kiotviet')",
-            [
-              validatedCustomerGroup.id,
-              validatedCustomerGroup.name,
-              validatedCustomerGroup.retailerId,
-            ]
+            "SELECT id, source FROM customer_groups WHERE name = ? AND retailerId = ?",
+            [validatedCustomerGroup.name, validatedCustomerGroup.retailerId]
           );
 
           const isNew = existing.length === 0;
@@ -53,7 +50,8 @@ async function saveCustomerGroups(customerGroups) {
           if (isNew || isKiotVietGroup) {
             const result = await saveCustomerGroup(
               validatedCustomerGroup,
-              connection
+              connection,
+              existing[0]?.id
             );
             if (result.success) {
               successCount++;
@@ -101,7 +99,12 @@ async function saveCustomerGroups(customerGroups) {
   };
 }
 
-async function saveCustomerGroup(customerGroup, connection = null) {
+// Fixed saveCustomerGroup for your exact table structure
+async function saveCustomerGroup(
+  customerGroup,
+  connection = null,
+  existingId = null
+) {
   const shouldReleaseConnection = !connection;
 
   if (!connection) {
@@ -111,68 +114,104 @@ async function saveCustomerGroup(customerGroup, connection = null) {
 
   try {
     const {
-      id,
       name,
       description = null,
       discount = null,
       retailerId,
-      createdBy = null,
-      createdDate = null,
     } = customerGroup;
 
     const modifiedDate = new Date();
+    const createdDate = new Date();
     const jsonData = JSON.stringify(customerGroup);
 
-    const query = `
-      INSERT INTO customer_groups 
-        (id, name, description, discount, retailerId, createdBy, 
-         createdDate, modifiedDate, jsonData, source)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'kiotviet')
-      ON DUPLICATE KEY UPDATE
-        name = VALUES(name),
-        description = VALUES(description),
-        discount = VALUES(discount),
-        modifiedDate = VALUES(modifiedDate),
-        jsonData = VALUES(jsonData),
-        source = 'kiotviet'
-    `;
+    if (existingId) {
+      // Update existing KiotViet group
+      const updateQuery = `
+        UPDATE customer_groups 
+        SET 
+          name = ?,
+          description = ?,
+          discount = ?,
+          modifiedDate = ?,
+          jsonData = ?,
+          source = 'kiotviet'
+        WHERE id = ?
+      `;
 
-    await connection.execute(query, [
-      id,
-      name,
-      description,
-      discount,
-      retailerId,
-      createdBy,
-      createdDate,
-      modifiedDate,
-      jsonData,
-    ]);
+      await connection.execute(updateQuery, [
+        name,
+        description,
+        discount,
+        modifiedDate,
+        jsonData,
+        existingId,
+      ]);
 
+      console.log(
+        `Updated existing customer group: ${name} (ID: ${existingId})`
+      );
+    } else {
+      // Insert new KiotViet group (let auto_increment handle the ID)
+      const insertQuery = `
+        INSERT INTO customer_groups 
+          (name, description, discount, retailerId, createdDate, modifiedDate, jsonData, source)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'kiotviet')
+      `;
+
+      const [result] = await connection.execute(insertQuery, [
+        name,
+        description,
+        discount,
+        retailerId,
+        createdDate,
+        modifiedDate,
+        jsonData,
+      ]);
+
+      const newId = result.insertId;
+      console.log(`Created new customer group: ${name} (ID: ${newId})`);
+      existingId = newId;
+    }
+
+    // Handle customer group details if present
     if (
       customerGroup.customerGroupDetails &&
       Array.isArray(customerGroup.customerGroupDetails)
     ) {
+      // Delete existing group details for this group
       await connection.execute(
         "DELETE FROM customer_group_details WHERE groupId = ?",
-        [id]
+        [existingId]
       );
 
+      // Insert new group details
       for (const detail of customerGroup.customerGroupDetails) {
         try {
-          const detailQuery = `
-            INSERT INTO customer_group_details (customerId, groupId)
-            VALUES (?, ?)
-            ON DUPLICATE KEY UPDATE groupId = VALUES(groupId)
-          `;
+          // Check if the customer exists before linking
+          const [customerExists] = await connection.execute(
+            "SELECT id FROM customers WHERE id = ?",
+            [detail.customerId]
+          );
 
-          await connection.execute(detailQuery, [
-            detail.customerId,
-            detail.groupId || id,
-          ]);
+          if (customerExists.length > 0) {
+            const detailQuery = `
+              INSERT INTO customer_group_details (customerId, groupId)
+              VALUES (?, ?)
+              ON DUPLICATE KEY UPDATE groupId = VALUES(groupId)
+            `;
+
+            await connection.execute(detailQuery, [
+              detail.customerId,
+              existingId,
+            ]);
+          } else {
+            console.warn(
+              `Customer ${detail.customerId} not found, skipping group detail`
+            );
+          }
         } catch (detailError) {
           console.warn(
-            `Warning: Could not save customer group detail for group ${id}, customer ${detail.customerId}: ${detailError.message}`
+            `Warning: Could not save customer group detail for group ${existingId}, customer ${detail.customerId}: ${detailError.message}`
           );
         }
       }

@@ -108,6 +108,7 @@ async function saveCustomers(customers) {
 }
 
 async function getOrCreateCustomerGroup(groupName, retailerId, connection) {
+  // First, try to find existing group (any source)
   const [existingGroups] = await connection.execute(
     "SELECT id, source FROM customer_groups WHERE name = ? AND retailerId = ?",
     [groupName, retailerId]
@@ -117,21 +118,19 @@ async function getOrCreateCustomerGroup(groupName, retailerId, connection) {
     return existingGroups[0].id;
   }
 
-  const [maxIdResult] = await connection.execute(
-    "SELECT COALESCE(MAX(id), 100000) + 1 as nextId FROM customer_groups WHERE source = 'local'"
-  );
-
-  const nextId = Math.max(maxIdResult[0].nextId, 100000);
-
   await connection.execute(
     `INSERT INTO customer_groups 
-     (id, name, retailerId, source, createdDate, modifiedDate) 
-     VALUES (?, ?, ?, 'local', NOW(), NOW())`,
-    [nextId, groupName, retailerId]
+     (name, retailerId, source, createdDate, modifiedDate) 
+     VALUES (?, ?, 'local', NOW(), NOW())`,
+    [groupName, retailerId]
   );
 
-  console.log(`Created local customer group: ${groupName} (ID: ${nextId})`);
-  return nextId;
+  // Get the auto-generated ID
+  const [newGroup] = await connection.execute("SELECT LAST_INSERT_ID() as id");
+
+  const newId = newGroup[0].id;
+  console.log(`Created local customer group: ${groupName} (ID: ${newId})`);
+  return newId;
 }
 
 async function saveCustomer(customer, connection = null) {
