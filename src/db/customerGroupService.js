@@ -36,6 +36,12 @@ async function saveCustomerGroups(customerGroups) {
   try {
     await connection.beginTransaction();
 
+    // Get existing customer groups to avoid checking each one individually
+    const [existingGroups] = await connection.execute(
+      "SELECT id FROM customer_groups"
+    );
+    const existingGroupIds = new Set(existingGroups.map((row) => row.id));
+
     // Process in batches - exactly like products
     for (let i = 0; i < customerGroups.length; i += BATCH_SIZE) {
       const batch = customerGroups.slice(i, i + BATCH_SIZE);
@@ -46,36 +52,23 @@ async function saveCustomerGroups(customerGroups) {
           const validatedCustomerGroup =
             validateAndSanitizeCustomerGroup(customerGroup);
 
-          const [existing] = await connection.execute(
-            "SELECT id FROM customer_groups WHERE id = ?",
-            [validatedCustomerGroup.id]
+          const isNew = !existingGroupIds.has(validatedCustomerGroup.id);
+
+          const result = await saveCustomerGroup(
+            validatedCustomerGroup,
+            connection
           );
 
-          const isNew = existing.length === 0;
-
-          if (isNew) {
-            const result = await saveCustomerGroup(
-              validatedCustomerGroup,
-              connection
-            );
-            if (result.success) {
-              successCount++;
+          if (result.success) {
+            successCount++;
+            if (isNew) {
               newCount++;
+              existingGroupIds.add(validatedCustomerGroup.id);
             } else {
-              failCount++;
+              updatedCount++;
             }
           } else {
-            // Update existing record
-            const result = await saveCustomerGroup(
-              validatedCustomerGroup,
-              connection
-            );
-            if (result.success) {
-              successCount++;
-              updatedCount++;
-            } else {
-              failCount++;
-            }
+            failCount++;
           }
         } catch (error) {
           console.error(
@@ -164,35 +157,7 @@ async function saveCustomerGroup(customerGroup, connection = null) {
       jsonData,
     ]);
 
-    // Handle customer group details if present - following API structure
-    if (
-      customerGroup.customerGroupDetails &&
-      Array.isArray(customerGroup.customerGroupDetails)
-    ) {
-      await connection.execute(
-        "DELETE FROM customer_group_details WHERE groupId = ?",
-        [id]
-      );
-
-      for (const detail of customerGroup.customerGroupDetails) {
-        try {
-          const detailQuery = `
-            INSERT INTO customer_group_details 
-              (customerId, groupId)
-            VALUES (?, ?)
-          `;
-
-          await connection.execute(detailQuery, [
-            detail.customerId,
-            detail.groupId || id,
-          ]);
-        } catch (detailError) {
-          console.warn(
-            `Warning: Could not save customer group detail for group ${id}, customer ${detail.customerId}: ${detailError.message}`
-          );
-        }
-      }
-    }
+    // No need to handle customerGroupDetails - direct relationship through customers.groupId
 
     return { success: true };
   } catch (error) {

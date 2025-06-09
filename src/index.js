@@ -234,82 +234,99 @@ async function startServer() {
     const server = app.listen(PORT, async () => {
       const historicalDaysAgo = parseInt(process.env.INITIAL_SCAN_DAYS || "7");
 
+      // Get sync status for all entities
+      const userSyncStatus =
+        await require("../src/db/userService").getSyncStatus();
+      const customerSyncStatus =
+        await require("../src/db/customerService").getSyncStatus();
       const customerGroupSyncStatus =
         await require("../src/db/customerGroupService").getSyncStatus();
+      const productSyncStatus =
+        await require("../src/db/productService").getSyncStatus();
       const orderSyncStatus =
         await require("../src/db/orderService").getSyncStatus();
       const invoiceSyncStatus =
         await require("../src/db/invoiceService").getSyncStatus();
-      const customerSyncStatus =
-        await require("../src/db/customerService").getSyncStatus();
-      const productSyncStatus =
-        await require("../src/db/productService").getSyncStatus();
-      const userSyncStatus =
-        await require("../src/db/userService").getSyncStatus();
       const surchargeSyncStatus =
         await require("../src/db/surchagesService").getSyncStatus();
 
+      // IMPORTANT: Sync in proper order to avoid foreign key constraint issues
+
+      // 1. First sync users (independent entity)
       if (!userSyncStatus.historicalCompleted) {
+        console.log("Starting historical user sync...");
         await require("../scheduler/userScheduler").userScheduler(
           historicalDaysAgo
         );
       }
 
+      // 2. Then sync products (independent entity)
+      if (!productSyncStatus.historicalCompleted) {
+        console.log("Starting historical product sync...");
+        await require("../scheduler/productScheduler").productScheduler(
+          historicalDaysAgo
+        );
+      }
+
+      // 3. Then sync surcharges (independent entity)
+      if (!surchargeSyncStatus.historicalCompleted) {
+        console.log("Starting historical surcharge sync...");
+        await require("../scheduler/surchargeScheduler").surchargeScheduler(
+          historicalDaysAgo
+        );
+      }
+
+      // 4. Sync customers BEFORE customer groups (customer groups reference customers)
+      if (!customerSyncStatus.historicalCompleted) {
+        console.log("Starting historical customer sync...");
+        await require("../scheduler/customerScheduler").customerScheduler(
+          historicalDaysAgo
+        );
+      }
+
+      // 5. Sync customer groups AFTER customers (depends on customers existing)
+      if (!customerGroupSyncStatus.historicalCompleted) {
+        console.log("Starting historical customer group sync...");
+        await require("../scheduler/customerGroupScheduler").customerGroupScheduler(
+          historicalDaysAgo
+        );
+      }
+
+      // 6. Finally sync orders and invoices (depend on customers, products, users)
       if (!orderSyncStatus.historicalCompleted) {
+        console.log("Starting historical order sync...");
         await require("../scheduler/orderScheduler").orderScheduler(
           historicalDaysAgo
         );
       }
 
       if (!invoiceSyncStatus.historicalCompleted) {
+        console.log("Starting historical invoice sync...");
         await require("../scheduler/invoiceScheduler").invoiceScheduler(
           historicalDaysAgo
         );
       }
 
-      if (!customerSyncStatus.historicalCompleted) {
-        await require("../scheduler/customerScheduler").customerScheduler(
-          historicalDaysAgo
-        );
-      }
-
-      if (!productSyncStatus.historicalCompleted) {
-        await require("../scheduler/productScheduler").productScheduler(
-          historicalDaysAgo
-        );
-      }
-
-      if (!surchargeSyncStatus.historicalCompleted) {
-        await require("../scheduler/surchargeScheduler").surchargeScheduler(
-          historicalDaysAgo
-        );
-      }
-
-      if (!customerGroupSyncStatus.historicalCompleted) {
-        await require("../scheduler/customerGroupScheduler").customerGroupScheduler(
-          historicalDaysAgo
-        );
-      }
-
+      // Current sync (maintain same order)
+      console.log("Starting current sync cycle...");
       await runUserSync();
-      await runOrderSync();
       await runProductSync();
-      await runInvoiceSync();
-      await runCustomerSync();
       await runSurchargeSync();
-      await runCustomerGroupSync();
+      await runCustomerSync();
+      await runCustomerGroupSync(); // After customers
+      await runOrderSync();
+      await runInvoiceSync();
 
       const runAllSyncs = async () => {
         try {
-          await Promise.all([
-            runUserSync(),
-            runOrderSync(),
-            runInvoiceSync(),
-            runCustomerSync(),
-            runProductSync(),
-            runSurchargeSync(),
-            runCustomerGroupSync(),
-          ]);
+          // Maintain dependency order in ongoing sync
+          await runUserSync();
+          await runProductSync();
+          await runSurchargeSync();
+          await runCustomerSync();
+          await runCustomerGroupSync(); // After customers
+          await runOrderSync();
+          await runInvoiceSync();
         } catch (error) {
           console.error("Error during simultaneous sync:", error);
         }

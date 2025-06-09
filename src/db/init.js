@@ -299,10 +299,13 @@ async function initializeDatabase() {
         debt DECIMAL(15,2),
         rewardPoint INT,
         retailerId INT,
+        groupId INT,
         createdDate DATETIME,
         modifiedDate DATETIME,
         jsonData JSON,
-        UNIQUE INDEX (code)
+        UNIQUE INDEX (code),
+        FOREIGN KEY (groupId) REFERENCES customer_groups(id) ON DELETE SET NULL,
+        INDEX idx_groupId (groupId)
       )
     `);
 
@@ -318,8 +321,7 @@ async function initializeDatabase() {
         jsonData JSON,
         UNIQUE KEY unique_id (id),
         INDEX idx_retailerId (retailerId),
-        INDEX idx_name (name),
-        INDEX idx_createdBy (createdBy)
+        INDEX idx_name (name)
       )
     `);
 
@@ -328,9 +330,10 @@ async function initializeDatabase() {
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
         customerId BIGINT,
         groupId INT,
+        createdDate DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (customerId) REFERENCES customers(id) ON DELETE CASCADE,
-        FOREIGN KEY (groupId) REFERENCES customer_groups(id) ON DELETE    CASCADE,
-        UNIQUE KEY (customerId, groupId),
+        FOREIGN KEY (groupId) REFERENCES customer_groups(id) ON DELETE CASCADE,
+        UNIQUE KEY unique_customer_group (customerId, groupId),
         INDEX idx_customerId (customerId),
         INDEX idx_groupId (groupId)
       )

@@ -107,30 +107,39 @@ async function saveCustomers(customers) {
   };
 }
 
-async function getOrCreateCustomerGroup(groupName, retailerId, connection) {
-  // First, try to find existing group (any source)
-  const [existingGroups] = await connection.execute(
-    "SELECT id, source FROM customer_groups WHERE name = ? AND retailerId = ?",
-    [groupName, retailerId]
-  );
+async function getOrCreateCustomerGroupByName(
+  groupName,
+  retailerId,
+  connection
+) {
+  try {
+    // First try to find existing group
+    const [existingGroups] = await connection.execute(
+      "SELECT id FROM customer_groups WHERE name = ? AND retailerId = ?",
+      [groupName, retailerId]
+    );
 
-  if (existingGroups.length > 0) {
-    return existingGroups[0].id;
+    if (existingGroups.length > 0) {
+      return existingGroups[0].id;
+    }
+
+    // Create new group if not found
+    await connection.execute(
+      "INSERT INTO customer_groups (name, retailerId, createdDate) VALUES (?, ?, NOW())",
+      [groupName, retailerId]
+    );
+
+    const [newGroup] = await connection.execute(
+      "SELECT LAST_INSERT_ID() as id"
+    );
+    return newGroup[0].id;
+  } catch (error) {
+    console.warn(
+      `Could not create/find customer group ${groupName}:`,
+      error.message
+    );
+    return null;
   }
-
-  await connection.execute(
-    `INSERT INTO customer_groups 
-     (name, retailerId, source, createdDate, modifiedDate) 
-     VALUES (?, ?, 'local', NOW(), NOW())`,
-    [groupName, retailerId]
-  );
-
-  // Get the auto-generated ID
-  const [newGroup] = await connection.execute("SELECT LAST_INSERT_ID() as id");
-
-  const newId = newGroup[0].id;
-  console.log(`Created local customer group: ${groupName} (ID: ${newId})`);
-  return newId;
 }
 
 async function saveCustomer(customer, connection = null) {
@@ -163,14 +172,39 @@ async function saveCustomer(customer, connection = null) {
       modifiedDate = null,
     } = customer;
 
+    // Determine the primary group ID
+    let primaryGroupId = null;
+
+    // From API: customer might have groupIds array or groups string
+    if (
+      customer.groupIds &&
+      Array.isArray(customer.groupIds) &&
+      customer.groupIds.length > 0
+    ) {
+      primaryGroupId = customer.groupIds[0]; // Take first group as primary
+    } else if (customer.groups && typeof customer.groups === "string") {
+      // Parse group names and find/create the first one
+      const groupNames = customer.groups
+        .split(",")
+        .map((g) => g.trim())
+        .filter((g) => g);
+      if (groupNames.length > 0) {
+        primaryGroupId = await getOrCreateCustomerGroupByName(
+          groupNames[0],
+          retailerId,
+          connection
+        );
+      }
+    }
+
     const jsonData = JSON.stringify(customer);
 
     const query = `
       INSERT INTO customers 
         (id, code, name, contactNumber, email, address, gender, birthDate, 
          locationName, wardName, organizationName, taxCode, comments, debt, 
-         rewardPoint, retailerId, createdDate, modifiedDate, jsonData)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         rewardPoint, retailerId, groupId, createdDate, modifiedDate, jsonData)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
         name = VALUES(name),
         contactNumber = VALUES(contactNumber),
@@ -185,6 +219,7 @@ async function saveCustomer(customer, connection = null) {
         comments = VALUES(comments),
         debt = VALUES(debt),
         rewardPoint = VALUES(rewardPoint),
+        groupId = VALUES(groupId),
         modifiedDate = VALUES(modifiedDate),
         jsonData = VALUES(jsonData)
     `;
@@ -206,54 +241,11 @@ async function saveCustomer(customer, connection = null) {
       debt,
       rewardPoint,
       retailerId,
+      primaryGroupId,
       createdDate,
       modifiedDate,
       jsonData,
     ]);
-
-    if (customer.groups) {
-      await connection.execute(
-        "DELETE FROM customer_group_details WHERE customerId = ?",
-        [id]
-      );
-
-      let groupNames = [];
-      if (typeof customer.groups === "string") {
-        groupNames = customer.groups
-          .split("|")
-          .map((g) => g.trim())
-          .filter((g) => g.length > 0);
-      } else if (Array.isArray(customer.groups)) {
-        for (const group of customer.groups) {
-          if (typeof group === "string") {
-            groupNames.push(group.trim());
-          } else if (group && typeof group === "object" && group.name) {
-            groupNames.push(group.name.trim());
-          }
-        }
-      }
-
-      for (const groupName of groupNames) {
-        if (!groupName) continue;
-
-        try {
-          const groupId = await getOrCreateCustomerGroup(
-            groupName,
-            retailerId,
-            connection
-          );
-
-          await connection.execute(
-            "INSERT INTO customer_group_details (customerId, groupId) VALUES (?, ?)",
-            [id, groupId]
-          );
-        } catch (detailError) {
-          console.warn(
-            `Warning: Could not link customer ${id} to group ${groupName}: ${detailError.message}`
-          );
-        }
-      }
-    }
 
     return { success: true };
   } catch (error) {
