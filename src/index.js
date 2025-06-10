@@ -111,6 +111,8 @@ app.get("/", (req, res) => {
       registration: "/api/submit-registration",
       stats: "/api/crm/stats",
       test: "/api/test-lark",
+      syncSaleChannels: "POST /api/sync/salechannels",
+      saleChannelStatus: "GET /api/sync/salechannels/status",
     },
     timestamp: new Date().toISOString(),
   });
@@ -233,6 +235,55 @@ app.post("/api/webhook/lark", (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message,
+    });
+  }
+});
+
+app.post("/api/sync/salechannels", async (req, res) => {
+  try {
+    console.log("🚀 Manual sale channel sync requested");
+
+    // Import the scheduler function
+    const {
+      salechannelSchedulerCurrent,
+    } = require("../scheduler/salechannelScheduler");
+
+    // Execute the sync
+    const result = await salechannelSchedulerCurrent();
+
+    if (result.success) {
+      console.log(`✅ Manual sale channel sync completed successfully`);
+
+      res.json({
+        success: true,
+        message: "Sale channels synchronized successfully",
+        data: {
+          totalProcessed: result.savedCount || 0,
+          hasNewData: result.hasNewData || false,
+          syncTimestamp: new Date().toISOString(),
+          operation: "manual_sync",
+        },
+      });
+    } else {
+      console.error(`❌ Manual sale channel sync failed: ${result.error}`);
+
+      res.status(500).json({
+        success: false,
+        message: "Sale channel synchronization failed",
+        error: result.error || "Unknown error occurred",
+        operation: "manual_sync",
+      });
+    }
+  } catch (error) {
+    console.error("❌ Manual sale channel sync endpoint error:", error.message);
+    console.error("Stack trace:", error.stack);
+
+    res.status(500).json({
+      success: false,
+      message: "Internal server error during sale channel sync",
+      error: error.message,
+      operation: "manual_sync",
+      details: process.env.NODE_ENV === "development" ? error.stack : undefined,
     });
   }
 });
