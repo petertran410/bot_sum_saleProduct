@@ -431,6 +431,53 @@ const runReturnSync = async () => {
   }
 };
 
+const runOrderSupplierSync = async () => {
+  try {
+    console.log("🚀 Starting Order Supplier Sync Process...");
+    const orderSupplierService = require("../db/orderSupplierService");
+    const {
+      orderSupplierScheduler,
+      orderSupplierSchedulerCurrent,
+    } = require("../../scheduler/orderSupplierScheduler");
+
+    const syncStatus = await orderSupplierService.getSyncStatus();
+    console.log("Order Supplier Sync Status:", syncStatus);
+
+    if (!syncStatus.historicalCompleted) {
+      console.log("📅 Running historical order supplier sync...");
+      const result = await orderSupplierScheduler(160);
+
+      if (result.success) {
+        console.log(
+          "✅ Historical order suppliers data has been saved to database"
+        );
+      } else {
+        console.error(
+          "❌ Error when saving historical order suppliers data:",
+          result.error
+        );
+      }
+    } else {
+      console.log("🔄 Running current order supplier sync...");
+      const currentResult = await orderSupplierSchedulerCurrent();
+
+      if (currentResult.success) {
+        console.log(
+          `✅ Current order suppliers data has been added: ${currentResult.savedCount} order suppliers`
+        );
+      } else {
+        console.error(
+          "❌ Error when adding current order suppliers:",
+          currentResult.error
+        );
+      }
+    }
+  } catch (error) {
+    console.error("❌ Cannot get and save order suppliers data:", error);
+    console.error("Stack trace:", error.stack);
+  }
+};
+
 module.exports = {
   runOrderSync,
   runInvoiceSync,
@@ -443,4 +490,5 @@ module.exports = {
   runTransferSync,
   runSaleChannelSync,
   runReturnSync,
+  runOrderSupplierSync,
 };

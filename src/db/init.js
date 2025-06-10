@@ -629,6 +629,83 @@ async function initializeDatabase() {
     `);
 
     await connection.query(`
+      CREATE TABLE IF NOT EXISTS order_suppliers (
+        id BIGINT PRIMARY KEY,
+        code VARCHAR(50) NOT NULL,
+        invoiceId BIGINT,
+        orderDate DATETIME,
+        branchId INT,
+        retailerId INT,
+        userId BIGINT,
+        description TEXT,
+        status INT,
+        statusValue VARCHAR(50),
+        discountRatio VARCHAR(10),
+        productQty DECIMAL(15,2),
+        discount DECIMAL(15,2),
+        createdDate DATETIME,
+        createdBy BIGINT,
+        total DECIMAL(15,2),
+        exReturnSuppliers DECIMAL(15,2),
+        exReturnThirdParty DECIMAL(15,2),
+        totalAmt DECIMAL(15,2),
+        totalQty DECIMAL(15,2),
+        totalQuantity DECIMAL(15,2),
+        subTotal DECIMAL(15,2),
+        paidAmount DECIMAL(15,2),
+        toComplete BOOLEAN,
+        viewPrice BOOLEAN,
+        supplierDebt DECIMAL(15,2),
+        supplierOldDebt DECIMAL(15,2),
+        purchaseOrderCodes TEXT,
+        modifiedDate DATETIME,
+        jsonData JSON,
+        UNIQUE INDEX (code),
+        INDEX idx_orderDate (orderDate),
+        INDEX idx_status (status),
+        INDEX idx_createdBy (createdBy)
+      )
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS order_supplier_details (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        orderSupplierId BIGINT,
+        productId BIGINT,
+        quantity DECIMAL(15,2),
+        price DECIMAL(15,2),
+        discount DECIMAL(15,2),
+        allocation DECIMAL(15,2),
+        createdDate DATETIME,
+        description TEXT,
+        orderByNumber INT,
+        allocationSuppliers DECIMAL(15,2),
+        allocationThirdParty DECIMAL(15,2),
+        orderQuantity DECIMAL(15,2),
+        subTotal DECIMAL(15,2),
+        FOREIGN KEY (orderSupplierId) REFERENCES order_suppliers(id) ON     DELETE CASCADE,
+        INDEX idx_productId (productId)
+      )
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS order_supplier_expenses_others (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        orderSupplierId BIGINT,
+        form INT,
+        expensesOtherOrder TINYINT,
+        expensesOtherCode VARCHAR(50),
+        expensesOtherName VARCHAR(255),
+        expensesOtherId INT,
+        price DECIMAL(15,2),
+        isReturnAuto BOOLEAN,
+        exValue DECIMAL(15,2),
+        createdDate DATETIME,
+        FOREIGN KEY (orderSupplierId) REFERENCES order_suppliers(id) ON     DELETE CASCADE
+      )
+    `);
+
+    await connection.query(`
       CREATE TABLE IF NOT EXISTS sync_status (
         entity_type VARCHAR(50) PRIMARY KEY,
         last_sync DATETIME,
@@ -648,6 +725,7 @@ async function initializeDatabase() {
       "transfers",
       "sale_channels",
       "returns",
+      "order_suppliers",
     ];
 
     for (const entity of entities) {

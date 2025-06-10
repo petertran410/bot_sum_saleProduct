@@ -1597,6 +1597,156 @@ async function getReturnsByDate(daysAgo) {
   }
 }
 
+const getOrderSuppliers = async () => {
+  try {
+    const token = await getToken();
+    const pageSize = 100;
+    const allOrderSuppliers = [];
+    let currentItem = 0;
+    let hasMoreData = true;
+
+    console.log("Fetching current order suppliers...");
+
+    // Get only recent order suppliers (last 24 hours) for current sync
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const fromDate = yesterday.toISOString().split("T")[0];
+
+    while (hasMoreData) {
+      try {
+        const response = await makeApiRequest({
+          method: "GET",
+          url: `${KIOTVIET_BASE_URL}/ordersuppliers`,
+          params: {
+            pageSize: pageSize,
+            currentItem: currentItem,
+            orderBy: "createdDate",
+            orderDirection: "DESC",
+            fromOrderDate: fromDate,
+          },
+          headers: {
+            Retailer: process.env.KIOT_SHOP_NAME,
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (
+          response.data &&
+          response.data.data &&
+          response.data.data.length > 0
+        ) {
+          allOrderSuppliers.push(...response.data.data);
+          currentItem += response.data.data.length;
+          hasMoreData = response.data.data.length === pageSize;
+
+          console.log(
+            `Fetched ${response.data.data.length} order suppliers, total: ${allOrderSuppliers.length}`
+          );
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        } else {
+          hasMoreData = false;
+        }
+      } catch (error) {
+        if (error.response?.status === 400 && allOrderSuppliers.length > 0) {
+          console.log(
+            `Returning ${allOrderSuppliers.length} order suppliers despite pagination error`
+          );
+          break;
+        }
+        throw error;
+      }
+    }
+
+    return { data: allOrderSuppliers, total: allOrderSuppliers.length };
+  } catch (error) {
+    console.error("Error getting order suppliers:", error.message);
+    if (error.response) {
+      console.error("Response status:", error.response.status);
+      console.error("Response data:", error.response.data);
+    }
+    throw error;
+  }
+};
+
+const getOrderSuppliersByDate = async (daysAgo) => {
+  try {
+    const results = [];
+
+    for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() - currentDaysAgo);
+      const formattedDate = targetDate.toISOString().split("T")[0];
+
+      const token = await getToken();
+      const pageSize = 100;
+      const allOrderSuppliersForDate = [];
+      let currentItem = 0;
+      let hasMoreData = true;
+
+      console.log(`Fetching order suppliers for ${formattedDate}...`);
+
+      while (hasMoreData) {
+        try {
+          const response = await makeApiRequest({
+            method: "GET",
+            url: `${KIOTVIET_BASE_URL}/ordersuppliers`,
+            params: {
+              pageSize: pageSize,
+              currentItem: currentItem,
+              fromOrderDate: formattedDate,
+              toOrderDate: formattedDate,
+            },
+            headers: {
+              Retailer: process.env.KIOT_SHOP_NAME,
+              Authorization: `Bearer ${token}`,
+            },
+          });
+
+          if (
+            response.data &&
+            response.data.data &&
+            response.data.data.length > 0
+          ) {
+            allOrderSuppliersForDate.push(...response.data.data);
+            currentItem += response.data.data.length;
+            hasMoreData = response.data.data.length === pageSize;
+
+            console.log(
+              `Date ${formattedDate}: Fetched ${response.data.data.length} order suppliers, total: ${allOrderSuppliersForDate.length}`
+            );
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          } else {
+            hasMoreData = false;
+          }
+        } catch (error) {
+          console.error(
+            `Error fetching order suppliers for ${formattedDate}:`,
+            error.message
+          );
+          if (error.response?.status === 400) {
+            console.log(`Skipping date ${formattedDate} due to 400 error`);
+            break;
+          }
+          throw error;
+        }
+      }
+
+      results.push({
+        date: formattedDate,
+        daysAgo: currentDaysAgo,
+        data: { data: allOrderSuppliersForDate },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+
+    return results;
+  } catch (error) {
+    console.error("Error in getOrderSuppliersByDate:", error.message);
+    throw error;
+  }
+};
+
 module.exports = {
   getOrders,
   getOrdersByDate,
@@ -1619,4 +1769,6 @@ module.exports = {
   getSaleChannels,
   getReturns,
   getReturnsByDate,
+  getOrderSuppliers,
+  getOrderSuppliersByDate,
 };

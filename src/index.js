@@ -14,6 +14,7 @@ const {
   runTransferSync,
   runSaleChannelSync,
   runReturnSync,
+  runOrderSupplierSync,
 } = require("./syncKiot/syncKiot");
 const { testConnection } = require("./db");
 const { initializeDatabase } = require("./db/init");
@@ -303,15 +304,12 @@ async function startServer() {
       process.exit(1);
     }
 
-    // Fix 5: Store server reference globally for cleanup
     server = app.listen(PORT, async () => {
       try {
-        console.log(`🚀 Server is running on port ${PORT}`);
         const historicalDaysAgo = parseInt(
           process.env.INITIAL_SCAN_DAYS || "7"
         );
 
-        // Helper function to safely get sync status
         const getSyncStatusSafely = async (servicePath, entityName) => {
           try {
             const service = require(servicePath);
@@ -336,9 +334,6 @@ async function startServer() {
             // Don't crash the app, just continue
           }
         };
-
-        // Get sync status for all entities
-        console.log("📋 Checking sync status...");
 
         const userSyncStatus = await getSyncStatusSafely(
           "../src/db/userService",
@@ -379,6 +374,11 @@ async function startServer() {
         const returnSyncStatus = await getSyncStatusSafely(
           "../src/db/returnService",
           "returns"
+        );
+
+        const orderSupplierSyncStatus = await getSyncStatusSafely(
+          "../src/db/orderSupplierService",
+          "order_suppliers"
         );
 
         if (!userSyncStatus.historicalCompleted) {
@@ -481,6 +481,16 @@ async function startServer() {
           );
         }
 
+        if (!orderSupplierSyncStatus.historicalCompleted) {
+          await runSyncSafely(
+            () =>
+              require("../scheduler/orderSupplierScheduler").orderSupplierScheduler(
+                historicalDaysAgo
+              ),
+            "historical order supplier"
+          );
+        }
+
         // Current sync with error handling
         console.log("🔄 Starting current sync cycle...");
         await runSyncSafely(runUserSync, "current user");
@@ -494,8 +504,7 @@ async function startServer() {
         await runSyncSafely(runTransferSync, "current transfer");
         await runSyncSafely(runSaleChannelSync, "current sale channel");
         await runSyncSafely(runReturnSync, "current return");
-
-        console.log("✅ Initial sync completed");
+        await runSyncSafely(runOrderSupplierSync, "current order supplier");
 
         const runAllSyncs = async () => {
           try {
@@ -510,6 +519,7 @@ async function startServer() {
               runCashflowSync(),
               runTransferSync(),
               runReturnSync(),
+              runOrderSupplierSync(),
             ]);
           } catch (error) {
             console.error("❌ Error during scheduled sync:", error.message);
