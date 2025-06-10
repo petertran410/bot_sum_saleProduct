@@ -1680,65 +1680,47 @@ const getOrderSuppliersByDate = async (daysAgo) => {
 const getLocations = async () => {
   try {
     const token = await getToken();
-    const pageSize = 100; // Maximum allowed by API
-    const allLocations = [];
-    let currentItem = 0;
-    let hasMoreData = true;
 
     console.log("Fetching all locations...");
 
-    while (hasMoreData) {
-      try {
-        const response = await makeApiRequest({
-          method: "GET",
-          url: `${KIOTVIET_BASE_URL}/locations`,
-          params: {
-            pageSize: pageSize,
-            currentItem: currentItem,
-          },
-          headers: {
-            Retailer: process.env.KIOT_SHOP_NAME,
-            Authorization: `Bearer ${token}`,
-          },
-        });
+    const response = await makeApiRequest({
+      method: "GET",
+      url: `${KIOTVIET_BASE_URL}/locations`,
+      headers: {
+        Retailer: process.env.KIOT_SHOP_NAME,
+        Authorization: `Bearer ${token}`,
+      },
+      // Removed params since API doc says "Request: Không có tham số"
+    });
 
-        if (
-          response.data &&
-          response.data.data &&
-          response.data.data.length > 0
-        ) {
-          allLocations.push(...response.data.data);
-          currentItem += response.data.data.length;
-          hasMoreData = response.data.data.length === pageSize;
+    console.log("Raw API response:", {
+      total: response.data?.total,
+      pageSize: response.data?.pageSize,
+      dataLength: response.data?.data?.length,
+    });
 
-          console.log(
-            `Fetched ${response.data.data.length} locations, total: ${allLocations.length}`
-          );
-
-          // Add small delay to avoid rate limiting
-          await new Promise((resolve) => setTimeout(resolve, 100));
-        } else {
-          hasMoreData = false;
-        }
-      } catch (error) {
-        console.error("Error in location pagination:", error.message);
-        if (allLocations.length > 0) {
-          console.log(
-            `Returning ${allLocations.length} locations despite pagination error`
-          );
-          break;
-        }
-        throw error;
-      }
+    if (
+      response.data &&
+      response.data.data &&
+      Array.isArray(response.data.data)
+    ) {
+      console.log(`✅ Fetched ${response.data.data.length} locations`);
+      return {
+        data: response.data.data,
+        total: response.data.total || response.data.data.length,
+      };
     }
 
-    console.log(`✅ Total locations fetched: ${allLocations.length}`);
-    return { data: allLocations, total: allLocations.length };
+    console.log("⚠️  No location data found in response");
+    return { data: [], total: 0 };
   } catch (error) {
     console.error("Error getting locations:", error.message);
     if (error.response) {
       console.error("Response status:", error.response.status);
-      console.error("Response data:", error.response.data);
+      console.error(
+        "Response data:",
+        JSON.stringify(error.response.data, null, 2)
+      );
     }
     throw error;
   }

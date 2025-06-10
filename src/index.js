@@ -295,6 +295,8 @@ const initializeStaticData = async () => {
   try {
     console.log("🚀 Initializing static data...");
 
+    // Add location sync here
+    const { runLocationSync } = require("./syncKiot/syncKiot");
     await runLocationSync();
 
     console.log("✅ Static data initialization completed");
