@@ -417,30 +417,29 @@ async function startServer() {
 
         // Current sync with error handling
         console.log("🔄 Starting current sync cycle...");
-        // await runSyncSafely(runUserSync, "current user");
-        // await runSyncSafely(runProductSync, "current product");
-        // await runSyncSafely(runSurchargeSync, "current surcharge");
-        // await runSyncSafely(runCustomerSync, "current customer");
-        // await runSyncSafely(runPurchaseOrderSync, "current purchase order");
-        // await runSyncSafely(runOrderSync, "current order");
-        // await runSyncSafely(runInvoiceSync, "current invoice");
-        // await runSyncSafely(runCashflowSync, "current cashflow");
+        await runSyncSafely(runUserSync, "current user");
+        await runSyncSafely(runProductSync, "current product");
+        await runSyncSafely(runSurchargeSync, "current surcharge");
+        await runSyncSafely(runCustomerSync, "current customer");
+        await runSyncSafely(runPurchaseOrderSync, "current purchase order");
+        await runSyncSafely(runOrderSync, "current order");
+        await runSyncSafely(runInvoiceSync, "current invoice");
+        await runSyncSafely(runCashflowSync, "current cashflow");
         await runSyncSafely(runTransferSync, "current transfer");
 
         console.log("✅ Initial sync completed");
 
-        // Fix 6: Store interval reference globally for cleanup
         const runAllSyncs = async () => {
           try {
             await Promise.allSettled([
-              // runUserSync(),
-              // runProductSync(),
-              // runSurchargeSync(),
-              // runCustomerSync(),
-              // runPurchaseOrderSync(),
-              // runOrderSync(),
-              // runInvoiceSync(),
-              // runCashflowSync(),
+              runUserSync(),
+              runProductSync(),
+              runSurchargeSync(),
+              runCustomerSync(),
+              runPurchaseOrderSync(),
+              runOrderSync(),
+              runInvoiceSync(),
+              runCashflowSync(),
               runTransferSync(),
             ]);
           } catch (error) {
