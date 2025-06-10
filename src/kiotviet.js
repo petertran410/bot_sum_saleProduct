@@ -1680,41 +1680,102 @@ const getOrderSuppliersByDate = async (daysAgo) => {
 const getLocations = async () => {
   try {
     const token = await getToken();
+    const pageSize = 100; // Maximum allowed by KiotViet API
+    const allLocations = [];
+    let currentItem = 0;
+    let hasMoreData = true;
 
-    console.log("Fetching all locations...");
+    console.log("Fetching all locations with pagination...");
 
-    const response = await makeApiRequest({
-      method: "GET",
-      url: `${KIOTVIET_BASE_URL}/locations`,
-      headers: {
-        Retailer: process.env.KIOT_SHOP_NAME,
-        Authorization: `Bearer ${token}`,
-      },
-      // Removed params since API doc says "Request: Không có tham số"
-    });
+    while (hasMoreData) {
+      try {
+        const response = await makeApiRequest({
+          method: "GET",
+          url: `${KIOTVIET_BASE_URL}/locations`,
+          params: {
+            pageSize: pageSize,
+            currentItem: currentItem,
+          },
+          headers: {
+            Retailer: process.env.KIOT_SHOP_NAME,
+            Authorization: `Bearer ${token}`,
+          },
+        });
 
-    console.log("Raw API response:", {
-      total: response.data?.total,
-      pageSize: response.data?.pageSize,
-      dataLength: response.data?.data?.length,
-    });
+        console.log("API Response Debug:", {
+          total: response.data?.total,
+          pageSize: response.data?.pageSize,
+          dataLength: response.data?.data?.length,
+          currentItem: currentItem,
+        });
 
-    if (
-      response.data &&
-      response.data.data &&
-      Array.isArray(response.data.data)
-    ) {
-      console.log(`✅ Fetched ${response.data.data.length} locations`);
-      return {
-        data: response.data.data,
-        total: response.data.total || response.data.data.length,
-      };
+        if (
+          response.data &&
+          response.data.data &&
+          Array.isArray(response.data.data) &&
+          response.data.data.length > 0
+        ) {
+          // Add locations from this page
+          allLocations.push(...response.data.data);
+
+          // Update pagination tracker
+          currentItem += response.data.data.length;
+
+          // Determine if more data exists
+          hasMoreData = response.data.data.length === pageSize;
+
+          // Additional check: if we have total count, use it
+          if (
+            response.data.total &&
+            allLocations.length >= response.data.total
+          ) {
+            hasMoreData = false;
+          }
+
+          console.log(
+            `✅ Fetched ${response.data.data.length} locations | Total: ${
+              allLocations.length
+            }/${response.data.total || "unknown"}`
+          );
+
+          // Rate limiting - prevent API throttling
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        } else {
+          console.log("No more location data available");
+          hasMoreData = false;
+        }
+
+        // Safety check to prevent infinite loops
+        if (currentItem > 10000) {
+          console.log("⚠️ Safety limit reached, stopping pagination");
+          break;
+        }
+      } catch (error) {
+        console.error(
+          `Pagination error at currentItem ${currentItem}:`,
+          error.message
+        );
+
+        // If we already have some data, return what we got
+        if (allLocations.length > 0) {
+          console.log(
+            `Returning ${allLocations.length} locations despite pagination error`
+          );
+          break;
+        }
+        throw error;
+      }
     }
 
-    console.log("⚠️  No location data found in response");
-    return { data: [], total: 0 };
+    console.log(`🎉 Successfully synced ${allLocations.length} locations`);
+
+    // Return data in the same format as your current function
+    return {
+      data: allLocations,
+      total: allLocations.length,
+    };
   } catch (error) {
-    console.error("Error getting locations:", error.message);
+    console.error("❌ Error getting locations:", error.message);
     if (error.response) {
       console.error("Response status:", error.response.status);
       console.error(
