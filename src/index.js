@@ -15,11 +15,11 @@ const {
   runSaleChannelSync,
   runReturnSync,
   runOrderSupplierSync,
-  runLocationSync,
 } = require("./syncKiot/syncKiot");
 const { testConnection } = require("./db");
 const { initializeDatabase } = require("./db/init");
 const { addRecordToCRMBase, getCRMStats, sendTestMessage } = require("./lark");
+const { locationSchedulerOneTime } = require("../scheduler/locationScheduler");
 
 const app = express();
 const PORT = process.env.PORT || 3690;
