@@ -15,6 +15,7 @@ const {
   runSaleChannelSync,
   runReturnSync,
   runOrderSupplierSync,
+  runLocationSync,
 } = require("./syncKiot/syncKiot");
 const { testConnection } = require("./db");
 const { initializeDatabase } = require("./db/init");
@@ -289,6 +290,21 @@ app.post("/api/sync/salechannels", async (req, res) => {
     });
   }
 });
+
+const initializeStaticData = async () => {
+  try {
+    console.log("🚀 Initializing static data...");
+
+    // Sync locations only if they don't exist
+    await runLocationSync();
+
+    console.log("✅ Static data initialization completed");
+  } catch (error) {
+    console.error("❌ Static data initialization failed:", error);
+  }
+};
+
+initializeStaticData();
 
 async function startServer() {
   try {

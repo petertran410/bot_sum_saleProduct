@@ -705,6 +705,19 @@ async function initializeDatabase() {
     `);
 
     await connection.query(`
+      CREATE TABLE IF NOT EXISTS locations (
+        id BIGINT PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        normalName VARCHAR(255),
+        jsonData JSON,
+        lastSyncDate DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE INDEX (id),
+        INDEX idx_name (name),
+        INDEX idx_normalName (normalName)
+      )
+    `);
+
+    await connection.query(`
       CREATE TABLE IF NOT EXISTS sync_status (
         entity_type VARCHAR(50) PRIMARY KEY,
         last_sync DATETIME,

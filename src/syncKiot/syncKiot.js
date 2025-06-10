@@ -478,6 +478,55 @@ const runOrderSupplierSync = async () => {
   }
 };
 
+const runLocationSync = async (forceSync = false) => {
+  try {
+    console.log("🏢 Starting Location Sync Process...");
+    const locationService = require("../db/locationService");
+    const {
+      locationSchedulerOneTime,
+      checkLocationSyncStatus,
+    } = require("../../scheduler/locationScheduler");
+
+    // Check current status
+    const status = await checkLocationSyncStatus();
+    console.log("Location Status:", {
+      locationCount: status.locationCount,
+      lastSync: status.lastSync,
+      needsSync: status.needsSync,
+    });
+
+    if (!status.needsSync && !forceSync) {
+      console.log(
+        `✅ Locations already synchronized (${status.locationCount} locations). Use forceSync=true to re-sync.`
+      );
+      return {
+        success: true,
+        message: `${status.locationCount} locations already exist`,
+        skipped: true,
+      };
+    }
+
+    console.log(
+      forceSync
+        ? "🔄 Force syncing locations..."
+        : "🔄 Running initial location sync..."
+    );
+    const result = await locationSchedulerOneTime(forceSync);
+
+    if (result.success) {
+      console.log(`✅ Location sync completed: ${result.message || "Success"}`);
+    } else {
+      console.error("❌ Error when syncing locations:", result.error);
+    }
+
+    return result;
+  } catch (error) {
+    console.error("❌ Cannot sync locations data:", error);
+    console.error("Stack trace:", error.stack);
+    return { success: false, error: error.message };
+  }
+};
+
 module.exports = {
   runOrderSync,
   runInvoiceSync,
@@ -491,4 +540,5 @@ module.exports = {
   runSaleChannelSync,
   runReturnSync,
   runOrderSupplierSync,
+  runLocationSync,
 };

@@ -1747,6 +1747,44 @@ const getOrderSuppliersByDate = async (daysAgo) => {
   }
 };
 
+const getLocations = async () => {
+  try {
+    const token = await getToken();
+
+    console.log("Fetching locations...");
+
+    const response = await makeApiRequest({
+      method: "GET",
+      url: `${KIOTVIET_BASE_URL}/locations`,
+      headers: {
+        Retailer: process.env.KIOT_SHOP_NAME,
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (
+      response.data &&
+      response.data.data &&
+      Array.isArray(response.data.data)
+    ) {
+      console.log(`Fetched ${response.data.data.length} locations`);
+      return {
+        data: response.data.data,
+        total: response.data.total || response.data.data.length,
+      };
+    }
+
+    return { data: [], total: 0 };
+  } catch (error) {
+    console.error("Error getting locations:", error.message);
+    if (error.response) {
+      console.error("Response status:", error.response.status);
+      console.error("Response data:", error.response.data);
+    }
+    throw error;
+  }
+};
+
 module.exports = {
   getOrders,
   getOrdersByDate,
@@ -1771,4 +1809,5 @@ module.exports = {
   getReturnsByDate,
   getOrderSuppliers,
   getOrderSuppliersByDate,
+  getLocations,
 };
