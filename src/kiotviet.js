@@ -1489,7 +1489,7 @@ async function getReturns() {
     const pageSize = 100;
     const allReturns = [];
     let currentItem = 0;
-    const hasMoreData = true;
+    let hasMoreData = true;
 
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
