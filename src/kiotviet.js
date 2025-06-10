@@ -1463,10 +1463,20 @@ const getTransfersByDate = async (daysAgo) => {
 
 const getSaleChannels = async () => {
   try {
-    const response = await makeRequest("/salechannel", {
-      pageSize: 100,
-      orderBy: "name",
-      orderDirection: "Asc",
+    const token = await getToken(); // Get authentication token first
+
+    const response = await makeApiRequest({
+      // Change from makeRequest to makeApiRequest
+      method: "GET",
+      url: `${KIOTVIET_BASE_URL}/salechannel`,
+      params: {
+        orderBy: "name",
+        orderDirection: "Desc",
+      },
+      headers: {
+        Retailer: process.env.KIOT_SHOP_NAME,
+        Authorization: `Bearer ${token}`,
+      },
     });
 
     console.log(`✅ Total sale channels fetched: ${response.data.total}`);
