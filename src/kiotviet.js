@@ -1461,6 +1461,22 @@ const getTransfersByDate = async (daysAgo) => {
   }
 };
 
+const getSaleChannels = async () => {
+  try {
+    const response = await makeRequest("/salechannel", {
+      pageSize: 100,
+      orderBy: "name",
+      orderDirection: "Asc",
+    });
+
+    console.log(`✅ Total sale channels fetched: ${response.data.total}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error getting sale channels:`, error.message);
+    throw error;
+  }
+};
+
 module.exports = {
   getOrders,
   getOrdersByDate,
@@ -1480,4 +1496,5 @@ module.exports = {
   getPurchaseOrdersByDate,
   getTransfers,
   getTransfersByDate,
+  getSaleChannels,
 };

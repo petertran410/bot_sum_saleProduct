@@ -12,6 +12,7 @@ const {
   runCashflowSync,
   runPurchaseOrderSync,
   runTransferSync,
+  runSaleChannelSync,
 } = require("./syncKiot/syncKiot");
 const { testConnection } = require("./db");
 const { initializeDatabase } = require("./db/init");
@@ -426,6 +427,7 @@ async function startServer() {
         await runSyncSafely(runInvoiceSync, "current invoice");
         await runSyncSafely(runCashflowSync, "current cashflow");
         await runSyncSafely(runTransferSync, "current transfer");
+        await runSyncSafely(runSaleChannelSync, "current sale channel");
 
         console.log("✅ Initial sync completed");
 

@@ -7,7 +7,7 @@ const surchargeService = require("../db/surchagesService");
 const cashFlowService = require("../db/cashflowService");
 const purchaseOrderService = require("../db/purchaseOrderService");
 const transferService = require("../db/transferService");
-const pricebookService = require("../db/pricebookService");
+const salechannelService = require("../db/salechannelService");
 
 const {
   cashflowScheduler,
@@ -53,6 +53,10 @@ const {
   transferScheduler,
   transferSchedulerCurrent,
 } = require("../../scheduler/transferScheduler");
+
+const {
+  salechannelSchedulerCurrent,
+} = require("../../scheduler/salechannelScheduler");
 
 const runOrderSync = async () => {
   try {
@@ -364,6 +368,26 @@ const runTransferSync = async () => {
   }
 };
 
+const runSaleChannelSync = async () => {
+  try {
+    console.log("🚀 Starting Sale Channel Sync Process...");
+    const currentResult = await salechannelSchedulerCurrent();
+
+    if (currentResult.success) {
+      console.log(
+        `✅ Current sale channels data has been added: ${currentResult.savedCount} sale channels`
+      );
+    } else {
+      console.error(
+        "❌ Error when adding current sale channels:",
+        currentResult.error
+      );
+    }
+  } catch (error) {
+    console.error("❌ Cannot get and save sale channels data:", error);
+  }
+};
+
 module.exports = {
   runOrderSync,
   runInvoiceSync,
@@ -374,4 +398,5 @@ module.exports = {
   runCashflowSync,
   runPurchaseOrderSync,
   runTransferSync,
+  runSaleChannelSync,
 };

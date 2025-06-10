@@ -545,6 +545,20 @@ async function initializeDatabase() {
     `);
 
     await connection.query(`
+      CREATE TABLE IF NOT EXISTS sale_channels (
+        id BIGINT PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        isActive BOOLEAN DEFAULT TRUE,
+        img VARCHAR(500),
+        isNotDelete BOOLEAN DEFAULT FALSE,
+        jsonData JSON,
+        createdDate DATETIME DEFAULT CURRENT_TIMESTAMP,
+        modifiedDate DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE     CURRENT_TIMESTAMP,
+        UNIQUE INDEX (name)
+      )
+    `);
+
+    await connection.query(`
       CREATE TABLE IF NOT EXISTS sync_status (
         entity_type VARCHAR(50) PRIMARY KEY,
         last_sync DATETIME,
@@ -562,6 +576,7 @@ async function initializeDatabase() {
       "cashflows",
       "purchase_orders",
       "transfers",
+      "sale_channels",
     ];
 
     for (const entity of entities) {
