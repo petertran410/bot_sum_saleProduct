@@ -4,7 +4,6 @@ const {
   getPricebookDetails,
 } = require("../src/kiotviet");
 const pricebookService = require("../src/db/pricebookService");
-const productService = require("../src/db/productService");
 
 const pricebookSchedulerCurrent = async () => {
   const MAX_RETRIES = 3;

@@ -1651,6 +1651,16 @@ const getPricebookDetails = async (pricebookId) => {
   }
 };
 
+console.log("Environment check:");
+console.log("KIOT_BASE_URL:", process.env.KIOT_BASE_URL);
+console.log("KIOT_TOKEN:", process.env.KIOT_TOKEN);
+console.log("KIOT_CLIENT_ID:", process.env.KIOT_CLIEND_ID ? "SET" : "MISSING");
+console.log(
+  "KIOT_SECRET_KEY:",
+  process.env.KIOT_SECRET_KEY ? "SET" : "MISSING"
+);
+console.log("KIOT_SHOP_NAME:", process.env.KIOT_SHOP_NAME ? "SET" : "MISSING");
+
 module.exports = {
   getOrders,
   getOrdersByDate,
