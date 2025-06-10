@@ -14,125 +14,23 @@ function validateAndSanitizeTransfer(transfer) {
     description: transfer.description
       ? String(transfer.description).substring(0, 1000)
       : "",
-    from_branch_id: transfer.fromBranchId
-      ? Number(transfer.fromBranchId)
-      : null,
-    to_branch_id: transfer.toBranchId ? Number(transfer.toBranchId) : null,
-    created_by_id: transfer.createdById ? Number(transfer.createdById) : null,
-    retailer_id: transfer.retailerId ? Number(transfer.retailerId) : null,
-    is_active: transfer.isActive !== undefined ? transfer.isActive : true,
+    fromBranchId: transfer.fromBranchId ? Number(transfer.fromBranchId) : null,
+    toBranchId: transfer.toBranchId ? Number(transfer.toBranchId) : null,
+    createdById: transfer.createdById ? Number(transfer.createdById) : null,
+    retailerId: transfer.retailerId ? Number(transfer.retailerId) : null,
     // Handle multiple date field names from actual KiotViet response
-    transferred_date:
+    transferredDate:
       transfer.transferredDate || transfer.dispatchedDate || null,
-    received_date: transfer.receivedDate || null,
-    created_date: transfer.createdDate || new Date(),
-    modified_date: transfer.modifiedDate || new Date(),
+    receivedDate: transfer.receivedDate || null,
+    createdDate: transfer.createdDate || new Date(),
+    modifiedDate: transfer.modifiedDate || new Date(),
     // Handle name fields
-    from_branch_name: transfer.fromBranchName || null,
-    to_branch_name: transfer.toBranchName || null,
-    created_by_name: transfer.createdByName || null,
-    note_by_source: transfer.noteBySource || null,
-    note_by_destination: transfer.noteByDestination || null,
+    fromBranchName: transfer.fromBranchName || null,
+    toBranchName: transfer.toBranchName || null,
+    createdByName: transfer.createdByName || null,
+    noteBySource: transfer.noteBySource || null,
+    noteByDestination: transfer.noteByDestination || null,
   };
-}
-
-// Function to check table structure and get correct column names
-async function getTransferDetailsColumns(connection) {
-  try {
-    const [columns] = await connection.execute(
-      "SHOW COLUMNS FROM transfer_details"
-    );
-    const columnNames = columns.map((col) => col.Field.toLowerCase());
-
-    // Determine the correct column mapping
-    const columnMap = {
-      id: columnNames.includes("id") ? "id" : null,
-      transfer_id: columnNames.includes("transfer_id")
-        ? "transfer_id"
-        : columnNames.includes("transferid")
-        ? "transferId"
-        : "transfer_id",
-      product_id: columnNames.includes("product_id")
-        ? "product_id"
-        : columnNames.includes("productid")
-        ? "productId"
-        : "product_id",
-      product_code: columnNames.includes("product_code")
-        ? "product_code"
-        : columnNames.includes("productcode")
-        ? "productCode"
-        : "product_code",
-      product_name: columnNames.includes("product_name")
-        ? "product_name"
-        : columnNames.includes("productname")
-        ? "productName"
-        : "product_name",
-      transferred_quantity: columnNames.includes("transferred_quantity")
-        ? "transferred_quantity"
-        : columnNames.includes("transferredquantity")
-        ? "transferredQuantity"
-        : "transferred_quantity",
-      price: "price",
-      send_quantity: columnNames.includes("send_quantity")
-        ? "send_quantity"
-        : columnNames.includes("sendquantity")
-        ? "sendQuantity"
-        : "send_quantity",
-      receive_quantity: columnNames.includes("receive_quantity")
-        ? "receive_quantity"
-        : columnNames.includes("receivequantity")
-        ? "receiveQuantity"
-        : "receive_quantity",
-      send_price: columnNames.includes("send_price")
-        ? "send_price"
-        : columnNames.includes("sendprice")
-        ? "sendPrice"
-        : "send_price",
-      receive_price: columnNames.includes("receive_price")
-        ? "receive_price"
-        : columnNames.includes("receiveprice")
-        ? "receivePrice"
-        : "receive_price",
-      total_transfer: columnNames.includes("total_transfer")
-        ? "total_transfer"
-        : columnNames.includes("totaltransfer")
-        ? "totalTransfer"
-        : "total_transfer",
-      total_receive: columnNames.includes("total_receive")
-        ? "total_receive"
-        : columnNames.includes("totalreceive")
-        ? "totalReceive"
-        : "total_receive",
-    };
-
-    // Check if id column has AUTO_INCREMENT
-    const idColumn = columns.find((col) => col.Field.toLowerCase() === "id");
-    const hasAutoIncrement =
-      idColumn && idColumn.Extra.includes("auto_increment");
-
-    return { columnMap, hasAutoIncrement };
-  } catch (error) {
-    console.error("Error checking transfer_details columns:", error);
-    // Fallback to underscore naming
-    return {
-      columnMap: {
-        id: "id",
-        transfer_id: "transfer_id",
-        product_id: "product_id",
-        product_code: "product_code",
-        product_name: "product_name",
-        transferred_quantity: "transferred_quantity",
-        price: "price",
-        send_quantity: "send_quantity",
-        receive_quantity: "receive_quantity",
-        send_price: "send_price",
-        receive_price: "receive_price",
-        total_transfer: "total_transfer",
-        total_receive: "total_receive",
-      },
-      hasAutoIncrement: true,
-    };
-  }
 }
 
 async function saveTransfer(transfer, connection = null) {
@@ -149,77 +47,68 @@ async function saveTransfer(transfer, connection = null) {
       id,
       code,
       status,
-      transferred_date,
-      received_date,
-      created_by_id,
-      created_by_name,
-      from_branch_id,
-      from_branch_name,
-      to_branch_id,
-      to_branch_name,
-      note_by_source,
-      note_by_destination,
+      transferredDate,
+      receivedDate,
+      createdById,
+      createdByName,
+      fromBranchId,
+      fromBranchName,
+      toBranchId,
+      toBranchName,
+      noteBySource,
+      noteByDestination,
       description,
-      retailer_id,
-      created_date,
-      modified_date,
-      is_active,
+      retailerId,
+      createdDate,
+      modifiedDate,
     } = validatedTransfer;
 
     if (!id || !code) {
       throw new Error("Transfer ID and code are required");
     }
 
-    // Check if transfer already exists using correct column name
-    const [existing] = await connection.execute(
-      "SELECT id, modified_date FROM transfers WHERE id = ?",
-      [id]
-    );
-
-    // Insert or update main transfer record using correct column names
+    // Insert or update main transfer record using the ACTUAL database column names
     const query = `
       INSERT INTO transfers 
-        (id, code, status, transferred_date, received_date, created_by_id, created_by_name,
-         from_branch_id, from_branch_name, to_branch_id, to_branch_name, note_by_source, 
-         note_by_destination, description, retailer_id, created_date, modified_date, is_active)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, code, status, transferredDate, receivedDate, createdById, createdByName,
+         fromBranchId, fromBranchName, toBranchId, toBranchName, noteBySource, 
+         noteByDestination, description, retailerId, createdDate, modifiedDate)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
         code = VALUES(code),
         status = VALUES(status),
-        transferred_date = VALUES(transferred_date),
-        received_date = VALUES(received_date),
-        created_by_id = VALUES(created_by_id),
-        created_by_name = VALUES(created_by_name),
-        from_branch_id = VALUES(from_branch_id),
-        from_branch_name = VALUES(from_branch_name),
-        to_branch_id = VALUES(to_branch_id),
-        to_branch_name = VALUES(to_branch_name),
-        note_by_source = VALUES(note_by_source),
-        note_by_destination = VALUES(note_by_destination),
+        transferredDate = VALUES(transferredDate),
+        receivedDate = VALUES(receivedDate),
+        createdById = VALUES(createdById),
+        createdByName = VALUES(createdByName),
+        fromBranchId = VALUES(fromBranchId),
+        fromBranchName = VALUES(fromBranchName),
+        toBranchId = VALUES(toBranchId),
+        toBranchName = VALUES(toBranchName),
+        noteBySource = VALUES(noteBySource),
+        noteByDestination = VALUES(noteByDestination),
         description = VALUES(description),
-        modified_date = VALUES(modified_date),
-        is_active = VALUES(is_active)
+        modifiedDate = VALUES(modifiedDate)
     `;
 
     await connection.execute(query, [
       safeValue(id),
       safeValue(code),
       safeValue(status),
-      safeValue(transferred_date),
-      safeValue(received_date),
-      safeValue(created_by_id),
-      safeValue(created_by_name),
-      safeValue(from_branch_id),
-      safeValue(from_branch_name),
-      safeValue(to_branch_id),
-      safeValue(to_branch_name),
-      safeValue(note_by_source),
-      safeValue(note_by_destination),
+      safeValue(transferredDate),
+      safeValue(receivedDate),
+      safeValue(createdById),
+      safeValue(createdByName),
+      safeValue(fromBranchId),
+      safeValue(fromBranchName),
+      safeValue(toBranchId),
+      safeValue(toBranchName),
+      safeValue(noteBySource),
+      safeValue(noteByDestination),
       safeValue(description),
-      safeValue(retailer_id),
-      safeValue(created_date),
-      safeValue(modified_date),
-      safeValue(is_active),
+      safeValue(retailerId),
+      safeValue(createdDate),
+      safeValue(modifiedDate),
     ]);
 
     // Handle transferDetails from actual KiotViet response structure
@@ -230,98 +119,42 @@ async function saveTransfer(transfer, connection = null) {
       Array.isArray(detailsArray) &&
       detailsArray.length > 0
     ) {
-      // Get correct column names for transfer_details table
-      const { columnMap, hasAutoIncrement } = await getTransferDetailsColumns(
-        connection
-      );
-
-      // Delete existing details first
+      // Delete existing details first using ACTUAL column name
       await connection.execute(
-        `DELETE FROM transfer_details WHERE ${columnMap.transfer_id} = ?`,
+        "DELETE FROM transfer_details WHERE transferId = ?",
         [id]
       );
 
-      // Insert new details based on actual KiotViet response structure
+      // Insert new details using ACTUAL database column names (camelCase)
       for (const detail of detailsArray) {
         try {
-          // Build dynamic query based on table structure
-          let insertColumns = [];
-          let insertValues = [];
-          let insertParams = [];
-
-          // Only include id if it doesn't have AUTO_INCREMENT
-          if (!hasAutoIncrement && columnMap.id) {
-            insertColumns.push(columnMap.id);
-            insertValues.push("?");
-            insertParams.push(null); // Let database handle it
-          }
-
-          // Add all other columns
-          const columnData = [
-            { col: columnMap.transfer_id, val: id },
-            { col: columnMap.product_id, val: safeValue(detail.productId) },
-            { col: columnMap.product_code, val: safeValue(detail.productCode) },
-            { col: columnMap.product_name, val: safeValue(detail.productName) },
-            {
-              col: columnMap.transferred_quantity,
-              val: safeValue(
-                detail.transferredQuantity || detail.quantity || 0
-              ),
-            },
-            { col: columnMap.price, val: safeValue(detail.price || 0) },
-            {
-              col: columnMap.send_quantity,
-              val: safeValue(
-                detail.sendQuantity || detail.transferredQuantity || 0
-              ),
-            },
-            {
-              col: columnMap.receive_quantity,
-              val: safeValue(
-                detail.receiveQuantity || detail.receivedQuantity || 0
-              ),
-            },
-            {
-              col: columnMap.send_price,
-              val: safeValue(detail.sendPrice || detail.price || 0),
-            },
-            {
-              col: columnMap.receive_price,
-              val: safeValue(detail.receivePrice || detail.price || 0),
-            },
-            {
-              col: columnMap.total_transfer,
-              val: safeValue(detail.totalTransfer || 0),
-            },
-            {
-              col: columnMap.total_receive,
-              val: safeValue(detail.totalReceive || 0),
-            },
-          ];
-
-          columnData.forEach((item) => {
-            insertColumns.push(item.col);
-            insertValues.push("?");
-            insertParams.push(item.val);
-          });
-
           const detailQuery = `
             INSERT INTO transfer_details 
-              (${insertColumns.join(", ")})
-            VALUES (${insertValues.join(", ")})
+              (transferId, productId, productCode, productName, transferredQuantity, 
+               price, sendQuantity, receiveQuantity, sendPrice, receivePrice, 
+               totalTransfer, totalReceive)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `;
 
-          await connection.execute(detailQuery, insertParams);
+          await connection.execute(detailQuery, [
+            id, // transferId
+            safeValue(detail.productId),
+            safeValue(detail.productCode),
+            safeValue(detail.productName),
+            safeValue(detail.transferredQuantity || detail.quantity || 0),
+            safeValue(detail.price || 0),
+            safeValue(detail.sendQuantity || detail.transferredQuantity || 0),
+            safeValue(detail.receiveQuantity || detail.receivedQuantity || 0),
+            safeValue(detail.sendPrice || detail.price || 0),
+            safeValue(detail.receivePrice || detail.price || 0),
+            safeValue(detail.totalTransfer || 0),
+            safeValue(detail.totalReceive || 0),
+          ]);
         } catch (detailError) {
           console.warn(
             `Warning: Could not save transfer detail for transfer ${id}: ${detailError.message}`
           );
-          // Log more details for debugging
           console.warn("Detail data:", detail);
-          console.warn(
-            "Column mapping:",
-            await getTransferDetailsColumns(connection)
-          );
         }
       }
     }
@@ -362,65 +195,77 @@ async function saveTransfers(transfers) {
   try {
     await connection.beginTransaction();
 
-    for (const transfer of transfers) {
-      try {
-        const validatedTransfer = validateAndSanitizeTransfer(transfer);
-        const { id } = validatedTransfer;
+    const BATCH_SIZE = 50;
+    for (let i = 0; i < transfers.length; i += BATCH_SIZE) {
+      const batch = transfers.slice(i, i + BATCH_SIZE);
 
-        if (!id) {
-          console.warn("Skipping transfer without ID");
-          failCount++;
-          continue;
-        }
+      for (const transfer of batch) {
+        try {
+          const validatedTransfer = validateAndSanitizeTransfer(transfer);
+          const { id } = validatedTransfer;
 
-        // Check if transfer exists using correct column name
-        const [existing] = await connection.execute(
-          "SELECT id, modified_date FROM transfers WHERE id = ?",
-          [id]
-        );
-
-        const isNew = existing.length === 0;
-        let isUpdated = false;
-
-        if (!isNew && validatedTransfer.modified_date) {
-          isUpdated =
-            new Date(validatedTransfer.modified_date) >
-            new Date(existing[0].modified_date);
-        } else if (!isNew) {
-          isUpdated = true; // Update if no modified_date comparison possible
-        }
-
-        if (isNew || isUpdated) {
-          const result = await saveTransfer(validatedTransfer, connection);
-          if (result.success) {
-            successCount++;
-            if (isNew) newCount++;
-            else updatedCount++;
-          } else {
-            console.error(
-              `Failed to save transfer ${transfer.code}:`,
-              result.error
-            );
+          if (!id) {
+            console.warn("Skipping transfer without ID");
             failCount++;
+            continue;
           }
+
+          // Check if transfer exists using ACTUAL column name
+          const [existing] = await connection.execute(
+            "SELECT id, modifiedDate FROM transfers WHERE id = ?",
+            [id]
+          );
+
+          const isNew = existing.length === 0;
+          let isUpdated = false;
+
+          if (!isNew && validatedTransfer.modifiedDate) {
+            isUpdated =
+              new Date(validatedTransfer.modifiedDate) >
+              new Date(existing[0].modifiedDate);
+          } else if (!isNew) {
+            isUpdated = true; // Update if no modified_date comparison possible
+          }
+
+          if (isNew || isUpdated) {
+            const result = await saveTransfer(validatedTransfer, connection);
+            if (result.success) {
+              successCount++;
+              if (isNew) newCount++;
+              else updatedCount++;
+            } else {
+              console.error(
+                `Failed to save transfer ${transfer.code}:`,
+                result.error
+              );
+              failCount++;
+            }
+          }
+        } catch (error) {
+          console.error(
+            `Error processing transfer ${transfer.code || transfer.id}:`,
+            error.message
+          );
+          failCount++;
         }
-      } catch (error) {
-        console.error(
-          `Error processing transfer ${transfer.code || transfer.id}:`,
-          error.message
-        );
-        failCount++;
       }
+
+      console.log(
+        `Processed transfer batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(
+          transfers.length / BATCH_SIZE
+        )}`
+      );
+      await new Promise((resolve) => setTimeout(resolve, 100));
     }
 
     await connection.commit();
 
     console.log(
-      `Transfer batch save completed: ${successCount} success, ${failCount} failed, ${newCount} new, ${updatedCount} updated`
+      `Transfer sync completed: ${newCount} new, ${updatedCount} updated, ${failCount} failed`
     );
 
     return {
-      success: true,
+      success: failCount === 0,
       stats: {
         total: transfers.length,
         success: successCount,
