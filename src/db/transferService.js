@@ -36,6 +36,105 @@ function validateAndSanitizeTransfer(transfer) {
   };
 }
 
+// Function to check table structure and get correct column names
+async function getTransferDetailsColumns(connection) {
+  try {
+    const [columns] = await connection.execute(
+      "SHOW COLUMNS FROM transfer_details"
+    );
+    const columnNames = columns.map((col) => col.Field.toLowerCase());
+
+    // Determine the correct column mapping
+    const columnMap = {
+      id: columnNames.includes("id") ? "id" : null,
+      transfer_id: columnNames.includes("transfer_id")
+        ? "transfer_id"
+        : columnNames.includes("transferid")
+        ? "transferId"
+        : "transfer_id",
+      product_id: columnNames.includes("product_id")
+        ? "product_id"
+        : columnNames.includes("productid")
+        ? "productId"
+        : "product_id",
+      product_code: columnNames.includes("product_code")
+        ? "product_code"
+        : columnNames.includes("productcode")
+        ? "productCode"
+        : "product_code",
+      product_name: columnNames.includes("product_name")
+        ? "product_name"
+        : columnNames.includes("productname")
+        ? "productName"
+        : "product_name",
+      transferred_quantity: columnNames.includes("transferred_quantity")
+        ? "transferred_quantity"
+        : columnNames.includes("transferredquantity")
+        ? "transferredQuantity"
+        : "transferred_quantity",
+      price: "price",
+      send_quantity: columnNames.includes("send_quantity")
+        ? "send_quantity"
+        : columnNames.includes("sendquantity")
+        ? "sendQuantity"
+        : "send_quantity",
+      receive_quantity: columnNames.includes("receive_quantity")
+        ? "receive_quantity"
+        : columnNames.includes("receivequantity")
+        ? "receiveQuantity"
+        : "receive_quantity",
+      send_price: columnNames.includes("send_price")
+        ? "send_price"
+        : columnNames.includes("sendprice")
+        ? "sendPrice"
+        : "send_price",
+      receive_price: columnNames.includes("receive_price")
+        ? "receive_price"
+        : columnNames.includes("receiveprice")
+        ? "receivePrice"
+        : "receive_price",
+      total_transfer: columnNames.includes("total_transfer")
+        ? "total_transfer"
+        : columnNames.includes("totaltransfer")
+        ? "totalTransfer"
+        : "total_transfer",
+      total_receive: columnNames.includes("total_receive")
+        ? "total_receive"
+        : columnNames.includes("totalreceive")
+        ? "totalReceive"
+        : "total_receive",
+    };
+
+    // Check if id column has AUTO_INCREMENT
+    const idColumn = columns.find((col) => col.Field.toLowerCase() === "id");
+    const hasAutoIncrement =
+      idColumn && idColumn.Extra.includes("auto_increment");
+
+    return { columnMap, hasAutoIncrement };
+  } catch (error) {
+    console.error("Error checking transfer_details columns:", error);
+    // Fallback to underscore naming
+    return {
+      columnMap: {
+        id: "id",
+        transfer_id: "transfer_id",
+        product_id: "product_id",
+        product_code: "product_code",
+        product_name: "product_name",
+        transferred_quantity: "transferred_quantity",
+        price: "price",
+        send_quantity: "send_quantity",
+        receive_quantity: "receive_quantity",
+        send_price: "send_price",
+        receive_price: "receive_price",
+        total_transfer: "total_transfer",
+        total_receive: "total_receive",
+      },
+      hasAutoIncrement: true,
+    };
+  }
+}
+
 async function saveTransfer(transfer, connection = null) {
   const shouldReleaseConnection = !connection;
   if (!connection) {
@@ -76,8 +175,6 @@ async function saveTransfer(transfer, connection = null) {
       "SELECT id, modified_date FROM transfers WHERE id = ?",
       [id]
     );
-
-    const jsonData = JSON.stringify(transfer);
 
     // Insert or update main transfer record using correct column names
     const query = `
@@ -133,40 +230,97 @@ async function saveTransfer(transfer, connection = null) {
       Array.isArray(detailsArray) &&
       detailsArray.length > 0
     ) {
-      // Delete existing details first - using correct column name
+      // Get correct column names for transfer_details table
+      const { columnMap, hasAutoIncrement } = await getTransferDetailsColumns(
+        connection
+      );
+
+      // Delete existing details first
       await connection.execute(
-        "DELETE FROM transfer_details WHERE transferId = ?",
+        `DELETE FROM transfer_details WHERE ${columnMap.transfer_id} = ?`,
         [id]
       );
 
       // Insert new details based on actual KiotViet response structure
       for (const detail of detailsArray) {
         try {
+          // Build dynamic query based on table structure
+          let insertColumns = [];
+          let insertValues = [];
+          let insertParams = [];
+
+          // Only include id if it doesn't have AUTO_INCREMENT
+          if (!hasAutoIncrement && columnMap.id) {
+            insertColumns.push(columnMap.id);
+            insertValues.push("?");
+            insertParams.push(null); // Let database handle it
+          }
+
+          // Add all other columns
+          const columnData = [
+            { col: columnMap.transfer_id, val: id },
+            { col: columnMap.product_id, val: safeValue(detail.productId) },
+            { col: columnMap.product_code, val: safeValue(detail.productCode) },
+            { col: columnMap.product_name, val: safeValue(detail.productName) },
+            {
+              col: columnMap.transferred_quantity,
+              val: safeValue(
+                detail.transferredQuantity || detail.quantity || 0
+              ),
+            },
+            { col: columnMap.price, val: safeValue(detail.price || 0) },
+            {
+              col: columnMap.send_quantity,
+              val: safeValue(
+                detail.sendQuantity || detail.transferredQuantity || 0
+              ),
+            },
+            {
+              col: columnMap.receive_quantity,
+              val: safeValue(
+                detail.receiveQuantity || detail.receivedQuantity || 0
+              ),
+            },
+            {
+              col: columnMap.send_price,
+              val: safeValue(detail.sendPrice || detail.price || 0),
+            },
+            {
+              col: columnMap.receive_price,
+              val: safeValue(detail.receivePrice || detail.price || 0),
+            },
+            {
+              col: columnMap.total_transfer,
+              val: safeValue(detail.totalTransfer || 0),
+            },
+            {
+              col: columnMap.total_receive,
+              val: safeValue(detail.totalReceive || 0),
+            },
+          ];
+
+          columnData.forEach((item) => {
+            insertColumns.push(item.col);
+            insertValues.push("?");
+            insertParams.push(item.val);
+          });
+
           const detailQuery = `
             INSERT INTO transfer_details 
-              (transferId, productId, productCode, productName, 
-               transferredQuantity, price, sendQuantity, receiveQuantity,
-               sendPrice, receivePrice, totalTransfer, totalReceive)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              (${insertColumns.join(", ")})
+            VALUES (${insertValues.join(", ")})
           `;
 
-          await connection.execute(detailQuery, [
-            id,
-            safeValue(detail.productId),
-            safeValue(detail.productCode),
-            safeValue(detail.productName),
-            safeValue(detail.transferredQuantity || detail.quantity || 0),
-            safeValue(detail.price || 0),
-            safeValue(detail.sendQuantity || detail.transferredQuantity || 0),
-            safeValue(detail.receiveQuantity || detail.receivedQuantity || 0),
-            safeValue(detail.sendPrice || detail.price || 0),
-            safeValue(detail.receivePrice || detail.price || 0),
-            safeValue(detail.totalTransfer || 0),
-            safeValue(detail.totalReceive || 0),
-          ]);
+          await connection.execute(detailQuery, insertParams);
         } catch (detailError) {
           console.warn(
             `Warning: Could not save transfer detail for transfer ${id}: ${detailError.message}`
+          );
+          // Log more details for debugging
+          console.warn("Detail data:", detail);
+          console.warn(
+            "Column mapping:",
+            await getTransferDetailsColumns(connection)
           );
         }
       }
