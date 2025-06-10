@@ -13,17 +13,6 @@ const transferSchedulerCurrent = async () => {
         }/${MAX_RETRIES})...`
       );
 
-      // Test API connectivity first
-      if (retryCount === 0) {
-        const testResult = await testTransferAPIConnectivity();
-        if (!testResult.success) {
-          throw new Error(`API connectivity test failed: ${testResult.error}`);
-        }
-        console.log(
-          `📊 API reports ${testResult.total} total transfers available`
-        );
-      }
-
       const currentTransfers = await getTransfers();
 
       if (
@@ -32,9 +21,7 @@ const transferSchedulerCurrent = async () => {
         Array.isArray(currentTransfers.data)
       ) {
         if (currentTransfers.data.length === 0) {
-          console.log(
-            "⚠️  No transfers found - this might indicate an API issue"
-          );
+          console.log("No new transfers to process");
           return { success: true, savedCount: 0, hasNewData: false };
         }
 
@@ -58,11 +45,15 @@ const transferSchedulerCurrent = async () => {
           });
         }
 
-        const result = await saveTransfers(currentTransfers.data);
+        // FIX: Use transferService.saveTransfers instead of direct saveTransfers call
+        const result = await transferService.saveTransfers(
+          currentTransfers.data
+        );
+
         await transferService.updateSyncStatus(true, new Date());
 
         console.log(
-          `✅ Transfer sync completed: ${result.stats.success} processed, ${result.stats.newRecords} new, ${result.stats.updatedRecords} updated`
+          `✅ Transfer sync completed: ${result.stats.success} processed, ${result.stats.newRecords} new`
         );
 
         return {
