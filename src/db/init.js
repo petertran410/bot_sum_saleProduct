@@ -658,7 +658,6 @@ async function initializeDatabase() {
         supplierDebt DECIMAL(15,2),
         supplierOldDebt DECIMAL(15,2),
         purchaseOrderCodes TEXT,
-        modifiedDate DATETIME,
         jsonData JSON,
         UNIQUE INDEX (code),
         INDEX idx_orderDate (orderDate),
@@ -683,7 +682,7 @@ async function initializeDatabase() {
         allocationThirdParty DECIMAL(15,2),
         orderQuantity DECIMAL(15,2),
         subTotal DECIMAL(15,2),
-        FOREIGN KEY (orderSupplierId) REFERENCES order_suppliers(id) ON     DELETE CASCADE,
+        FOREIGN KEY (orderSupplierId) REFERENCES order_suppliers(id) ON DELETE CASCADE,
         INDEX idx_productId (productId)
       )
     `);
@@ -701,7 +700,7 @@ async function initializeDatabase() {
         isReturnAuto BOOLEAN,
         exValue DECIMAL(15,2),
         createdDate DATETIME,
-        FOREIGN KEY (orderSupplierId) REFERENCES order_suppliers(id) ON     DELETE CASCADE
+        FOREIGN KEY (orderSupplierId) REFERENCES order_suppliers(id) ON DELETE CASCADE
       )
     `);
 

@@ -44,7 +44,6 @@ async function saveOrderSupplier(orderSupplierData, connection = null) {
       supplierDebt = 0,
       supplierOldDebt = 0,
       purchaseOrderCodes = "",
-      modifiedDate = null,
       orderSupplierDetails = [],
       OrderSupplierExpensesOthers = [],
     } = orderSupplierData;
@@ -63,9 +62,8 @@ async function saveOrderSupplier(orderSupplierData, connection = null) {
          description, status, statusValue, discountRatio, productQty, discount,
          createdDate, createdBy, total, exReturnSuppliers, exReturnThirdParty,
          totalAmt, totalQty, totalQuantity, subTotal, paidAmount, toComplete,
-         viewPrice, supplierDebt, supplierOldDebt, purchaseOrderCodes,
-         modifiedDate, jsonData)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         viewPrice, supplierDebt, supplierOldDebt, purchaseOrderCodes, jsonData)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
         code = VALUES(code),
         invoiceId = VALUES(invoiceId),
@@ -92,7 +90,6 @@ async function saveOrderSupplier(orderSupplierData, connection = null) {
         supplierDebt = VALUES(supplierDebt),
         supplierOldDebt = VALUES(supplierOldDebt),
         purchaseOrderCodes = VALUES(purchaseOrderCodes),
-        modifiedDate = VALUES(modifiedDate),
         jsonData = VALUES(jsonData)
     `;
 
@@ -125,7 +122,6 @@ async function saveOrderSupplier(orderSupplierData, connection = null) {
       supplierDebt,
       supplierOldDebt,
       purchaseOrderCodes,
-      safeValue(modifiedDate),
       jsonData,
     ]);
 
@@ -273,31 +269,25 @@ async function saveOrderSuppliers(orderSuppliers) {
             ...orderSupplier,
           };
 
-          // Check if record exists and compare dates
+          // Check if record exists (simplified - no date comparison since we don't have modifiedDate)
           const [existing] = await connection.execute(
-            "SELECT id, modifiedDate FROM order_suppliers WHERE id = ?",
+            "SELECT id FROM order_suppliers WHERE id = ?",
             [validatedOrderSupplier.id]
           );
 
           const isNew = existing.length === 0;
-          const isUpdated =
-            !isNew &&
-            validatedOrderSupplier.modifiedDate &&
-            new Date(validatedOrderSupplier.modifiedDate) >
-              new Date(existing[0].modifiedDate || "1970-01-01");
 
-          if (isNew || isUpdated) {
-            const result = await saveOrderSupplier(
-              validatedOrderSupplier,
-              connection
-            );
-            if (result.success) {
-              successCount++;
-              if (isNew) newCount++;
-              else updatedCount++;
-            } else {
-              failCount++;
-            }
+          // Always save (either insert new or update existing via ON DUPLICATE KEY UPDATE)
+          const result = await saveOrderSupplier(
+            validatedOrderSupplier,
+            connection
+          );
+          if (result.success) {
+            successCount++;
+            if (isNew) newCount++;
+            else updatedCount++;
+          } else {
+            failCount++;
           }
         } catch (error) {
           console.error(
