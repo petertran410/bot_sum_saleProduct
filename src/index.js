@@ -10,7 +10,6 @@ const {
   runCashflowSync,
   runPurchaseOrderSync,
   runTransferSync,
-  // runPricebookSync,
 } = require("./syncKiot/syncKiot");
 const { testConnection } = require("./db");
 const { initializeDatabase } = require("./db/init");
@@ -269,7 +268,6 @@ async function startServer() {
           cashflowSyncStatus,
           purchaseOrderSyncStatus,
           transferSyncStatus,
-          pricebookSyncStatus,
         ] = await Promise.allSettled([
           getSyncStatusSafely("../src/db/userService", "users"),
           getSyncStatusSafely("../src/db/customerService", "customers"),
@@ -283,7 +281,6 @@ async function startServer() {
             "purchase_orders"
           ),
           getSyncStatusSafely("../src/db/transferService", "transfers"),
-          getSyncStatusSafely("../src/db/pricebookService", "pricebooks"),
         ]);
 
         // Helper function to safely run historical sync
@@ -381,17 +378,6 @@ async function startServer() {
           );
         }
 
-        if (!pricebookSyncStatus.value?.historicalCompleted) {
-          console.log(
-            `📊 Syncing ${historicalDaysAgo} days of historical pricebook data...`
-          );
-          await runHistoricalSyncSafely(
-            require("../scheduler/pricebookScheduler").pricebookScheduler,
-            "pricebook",
-            historicalDaysAgo
-          );
-        }
-
         // Current sync (maintain same order) with error handling
         console.log("🔄 Starting current sync cycle...");
 
@@ -401,7 +387,6 @@ async function startServer() {
             console.log(`✅ ${entityName} sync completed`);
           } catch (error) {
             console.error(`❌ ${entityName} sync failed:`, error.message);
-            // Don't crash the app, just log the error and continue
           }
         };
 
@@ -414,7 +399,6 @@ async function startServer() {
         await runSyncSafely(runInvoiceSync, "Invoice");
         await runSyncSafely(runCashflowSync, "Cashflow");
         await runSyncSafely(runTransferSync, "Transfer");
-        await runSyncSafely(runPricebookSync, "Pricebook");
 
         console.log("✅ Initial sync cycle completed");
 
@@ -432,7 +416,6 @@ async function startServer() {
               runInvoiceSync(),
               runCashflowSync(),
               runTransferSync(),
-              runPricebookSync(),
             ]);
             console.log("✅ Scheduled sync cycle completed");
           } catch (error) {

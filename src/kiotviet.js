@@ -3,18 +3,15 @@ const axios = require("axios");
 const KIOTVIET_BASE_URL = process.env.KIOT_BASE_URL;
 const TOKEN_URL = process.env.KIOT_TOKEN;
 
-// Token caching
 let currentToken = null;
 let tokenExpiresAt = null;
 
-// Rate limiting
 let requestCount = 0;
 let hourStartTime = Date.now();
 const maxRequestsPerHour = 4900;
 
 async function getToken() {
   try {
-    // Check if token is still valid
     if (currentToken && tokenExpiresAt && new Date() < tokenExpiresAt) {
       return currentToken;
     }
@@ -1461,206 +1458,6 @@ const getTransfersByDate = async (daysAgo) => {
   }
 };
 
-const getPricebooks = async () => {
-  try {
-    const token = await getToken();
-    const pageSize = 100;
-    const allPricebooks = [];
-    let currentItem = 0;
-    let hasMoreData = true;
-
-    console.log("Fetching current pricebooks...");
-
-    // Get only recent pricebooks (last 24 hours) for current sync
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const fromDate = yesterday.toISOString().split("T")[0];
-
-    while (hasMoreData) {
-      const response = await makeApiRequest({
-        method: "GET",
-        url: `${KIOTVIET_BASE_URL}/pricebooks`,
-        params: {
-          pageSize: pageSize,
-          currentItem: currentItem,
-          includePriceBookBranch: true,
-          includePriceBookCustomerGroups: true,
-          includePriceBookUsers: true,
-          orderBy: "id",
-          orderDirection: "DESC",
-          lastModifiedFrom: fromDate,
-        },
-        headers: {
-          Retailer: process.env.KIOT_SHOP_NAME,
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (
-        response.data &&
-        response.data.data &&
-        response.data.data.length > 0
-      ) {
-        allPricebooks.push(...response.data.data);
-        currentItem += response.data.data.length;
-        hasMoreData = response.data.data.length === pageSize;
-
-        console.log(
-          `Fetched ${response.data.data.length} pricebooks, total: ${allPricebooks.length}`
-        );
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      } else {
-        hasMoreData = false;
-      }
-    }
-
-    return { data: allPricebooks, total: allPricebooks.length };
-  } catch (error) {
-    console.error("Error getting pricebooks:", error.message);
-    throw error;
-  }
-};
-
-const getPricebooksByDate = async (daysAgo) => {
-  try {
-    const results = [];
-
-    for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
-      const targetDate = new Date();
-      targetDate.setDate(targetDate.getDate() - currentDaysAgo);
-      const formattedDate = targetDate.toISOString().split("T")[0];
-
-      const token = await getToken();
-      const pageSize = 100;
-      const allPricebooksForDate = [];
-      let currentItem = 0;
-      let hasMoreData = true;
-
-      console.log(`Fetching pricebooks modified on/after ${formattedDate}...`);
-
-      while (hasMoreData) {
-        const response = await makeApiRequest({
-          method: "GET",
-          url: `${KIOTVIET_BASE_URL}/pricebooks`,
-          params: {
-            lastModifiedFrom: formattedDate,
-            pageSize: pageSize,
-            currentItem: currentItem,
-            includePriceBookBranch: true,
-            includePriceBookCustomerGroups: true,
-            includePriceBookUsers: true,
-            orderBy: "id",
-            orderDirection: "ASC",
-          },
-          headers: {
-            Retailer: process.env.KIOT_SHOP_NAME,
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        if (
-          response.data &&
-          response.data.data &&
-          response.data.data.length > 0
-        ) {
-          allPricebooksForDate.push(...response.data.data);
-          currentItem += response.data.data.length;
-          hasMoreData = response.data.data.length === pageSize;
-
-          console.log(
-            `Date ${formattedDate}: Fetched ${response.data.data.length} pricebooks, total: ${allPricebooksForDate.length}`
-          );
-          await new Promise((resolve) => setTimeout(resolve, 100));
-        } else {
-          hasMoreData = false;
-        }
-      }
-
-      results.push({
-        date: formattedDate,
-        daysAgo: currentDaysAgo,
-        data: { data: allPricebooksForDate },
-      });
-
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
-
-    return results;
-  } catch (error) {
-    console.error(`Error getting pricebooks by date:`, error.message);
-    return results;
-  }
-};
-
-// Get pricebook details with product prices
-const getPricebookDetails = async (pricebookId) => {
-  try {
-    const token = await getToken();
-    const pageSize = 100;
-    const allProductPrices = [];
-    let currentItem = 0;
-    let hasMoreData = true;
-
-    console.log(`Fetching pricebook details for ID ${pricebookId}...`);
-
-    while (hasMoreData) {
-      const response = await makeApiRequest({
-        method: "GET",
-        url: `${KIOTVIET_BASE_URL}/pricebooks/${pricebookId}`,
-        params: {
-          pageSize: pageSize,
-          currentItem: currentItem,
-          orderBy: "productId",
-          orderDirection: "ASC",
-        },
-        headers: {
-          Retailer: process.env.KIOT_SHOP_NAME,
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (
-        response.data &&
-        response.data.data &&
-        response.data.data.length > 0
-      ) {
-        allProductPrices.push(...response.data.data);
-        currentItem += response.data.data.length;
-        hasMoreData = response.data.data.length === pageSize;
-
-        console.log(
-          `Fetched ${response.data.data.length} product prices for pricebook ${pricebookId}, total: ${allProductPrices.length}`
-        );
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      } else {
-        hasMoreData = false;
-      }
-    }
-
-    return {
-      pricebookId: pricebookId,
-      data: allProductPrices,
-      total: allProductPrices.length,
-    };
-  } catch (error) {
-    console.error(
-      `Error getting pricebook details for ID ${pricebookId}:`,
-      error.message
-    );
-    throw error;
-  }
-};
-
-console.log("Environment check:");
-console.log("KIOT_BASE_URL:", process.env.KIOT_BASE_URL);
-console.log("KIOT_TOKEN:", process.env.KIOT_TOKEN);
-console.log("KIOT_CLIENT_ID:", process.env.KIOT_CLIEND_ID ? "SET" : "MISSING");
-console.log(
-  "KIOT_SECRET_KEY:",
-  process.env.KIOT_SECRET_KEY ? "SET" : "MISSING"
-);
-console.log("KIOT_SHOP_NAME:", process.env.KIOT_SHOP_NAME ? "SET" : "MISSING");
-
 module.exports = {
   getOrders,
   getOrdersByDate,
@@ -1680,7 +1477,4 @@ module.exports = {
   getPurchaseOrdersByDate,
   getTransfers,
   getTransfersByDate,
-  getPricebooks,
-  getPricebooksByDate,
-  getPricebookDetails,
 };
