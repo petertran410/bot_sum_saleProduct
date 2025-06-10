@@ -7,7 +7,7 @@ const surchargeService = require("../db/surchagesService");
 const cashFlowService = require("../db/cashflowService");
 const purchaseOrderService = require("../db/purchaseOrderService");
 const transferService = require("../db/transferService");
-const salechannelService = require("../db/salechannelService");
+const returnService = require("../db/returnService");
 
 const {
   cashflowScheduler,
@@ -57,6 +57,11 @@ const {
 const {
   salechannelSchedulerCurrent,
 } = require("../../scheduler/salechannelScheduler");
+
+const {
+  returnScheduler,
+  returnSchedulerCurrent,
+} = require("../../scheduler/returnScheduler");
 
 const runOrderSync = async () => {
   try {
@@ -388,6 +393,44 @@ const runSaleChannelSync = async () => {
   }
 };
 
+const runReturnSync = async () => {
+  try {
+    console.log("🚀 Starting Returns Sync Process...");
+    const syncStatus = await returnService.getSyncStatus();
+    console.log("Returns Sync Status:", syncStatus);
+
+    if (!syncStatus.historicalCompleted) {
+      console.log("📅 Running historical returns sync...");
+      const result = await returnScheduler(160); // Same as your other entities
+
+      if (result.success) {
+        console.log("✅ Historical returns data has been saved to database");
+      } else {
+        console.error(
+          "❌ Error when saving historical returns data:",
+          result.error
+        );
+      }
+    } else {
+      console.log("🔄 Running current returns sync...");
+      const currentResult = await returnSchedulerCurrent();
+
+      if (currentResult.success) {
+        console.log(
+          `✅ Current returns data has been added: ${currentResult.savedCount} returns`
+        );
+      } else {
+        console.error(
+          "❌ Error when adding current returns:",
+          currentResult.error
+        );
+      }
+    }
+  } catch (error) {
+    console.error("❌ Cannot get and save data returns:", error);
+  }
+};
+
 module.exports = {
   runOrderSync,
   runInvoiceSync,
@@ -399,4 +442,5 @@ module.exports = {
   runPurchaseOrderSync,
   runTransferSync,
   runSaleChannelSync,
+  runReturnSync,
 };

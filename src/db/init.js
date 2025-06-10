@@ -559,6 +559,76 @@ async function initializeDatabase() {
     `);
 
     await connection.query(`
+      CREATE TABLE IF NOT EXISTS returns (
+        id BIGINT PRIMARY KEY,
+        code VARCHAR(100) NOT NULL,
+        invoiceId BIGINT,
+        returnDate DATETIME,
+        branchId INT,
+        branchName VARCHAR(255),
+        receivedById BIGINT,
+        soldByName VARCHAR(255),
+        customerId BIGINT,
+        customerCode VARCHAR(100),
+        customerName VARCHAR(255),
+        returnTotal DECIMAL(15,2) DEFAULT 0,
+        returnDiscount DECIMAL(15,2) DEFAULT 0,
+        returnFee DECIMAL(15,2) DEFAULT 0,
+        totalPayment DECIMAL(15,2) DEFAULT 0,
+        status INT,
+        statusValue VARCHAR(100),
+        createdDate DATETIME,
+        modifiedDate DATETIME,
+        jsonData JSON,
+        retailerId BIGINT,
+        UNIQUE INDEX (code),
+        INDEX idx_returnDate (returnDate),
+        INDEX idx_branchId (branchId),
+        INDEX idx_customerId (customerId),
+        INDEX idx_status (status),
+        INDEX idx_modifiedDate (modifiedDate)
+      )
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS return_details (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        returnId BIGINT,
+        productId BIGINT,
+        productCode VARCHAR(100),
+        productName VARCHAR(255),
+        quantity DECIMAL(15,2) DEFAULT 0,
+        price DECIMAL(15,2) DEFAULT 0,
+        note TEXT,
+        usePoint BOOLEAN DEFAULT FALSE,
+        subTotal DECIMAL(15,2) DEFAULT 0,
+        FOREIGN KEY (returnId) REFERENCES returns(id) ON DELETE CASCADE,
+        INDEX idx_returnId (returnId),
+        INDEX idx_productId (productId),
+        INDEX idx_productCode (productCode)
+      )
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS return_payments (
+        id BIGINT PRIMARY KEY,
+        returnId BIGINT,
+        code VARCHAR(100),
+        amount DECIMAL(15,2) DEFAULT 0,
+        method VARCHAR(100),
+        status TINYINT,
+        statusValue VARCHAR(100),
+        transDate DATETIME,
+        bankAccount VARCHAR(255),
+        accountId INT,
+        description TEXT,
+        FOREIGN KEY (returnId) REFERENCES returns(id) ON DELETE CASCADE,
+        INDEX idx_returnId (returnId),
+        INDEX idx_transDate (transDate)
+      )
+    `);
+
+    await connection.query(`
       CREATE TABLE IF NOT EXISTS sync_status (
         entity_type VARCHAR(50) PRIMARY KEY,
         last_sync DATETIME,
@@ -577,6 +647,7 @@ async function initializeDatabase() {
       "purchase_orders",
       "transfers",
       "sale_channels",
+      "returns",
     ];
 
     for (const entity of entities) {

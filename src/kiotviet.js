@@ -1469,10 +1469,6 @@ const getSaleChannels = async () => {
       // Change from makeRequest to makeApiRequest
       method: "GET",
       url: `${KIOTVIET_BASE_URL}/salechannel`,
-      params: {
-        orderBy: "name",
-        orderDirection: "Desc",
-      },
       headers: {
         Retailer: process.env.KIOT_SHOP_NAME,
         Authorization: `Bearer ${token}`,
@@ -1486,6 +1482,120 @@ const getSaleChannels = async () => {
     throw error;
   }
 };
+
+async function getReturns() {
+  try {
+    const token = await getToken();
+    const pageSize = 100;
+    const allReturns = [];
+    let currentItem = 0;
+    const hasMoreData = true;
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const fromDate = yesterday.toISOString().split("T")[0];
+
+    while (hasMoreData) {
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/returns`,
+        params: {
+          pageSize: pageSize,
+          currentItem: currentItem,
+          includePayment: true,
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allReturns.push(...response.data.data);
+        currentItem += response.data.data.length;
+        hasMoreData = response.data.data.length === pageSize;
+
+        console.log(
+          `Fetched ${response.data.data.length} returns, total" ${allReturns.length}`
+        );
+
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        hasMoreData = false;
+      }
+    }
+
+    return { data: allReturns, total: allReturns.length };
+  } catch (error) {
+    console.error("❌ Error fetching returns from KiotViet:", error.message);
+    throw error;
+  }
+}
+
+async function getReturnsByDate(daysAgo) {
+  try {
+    const results = [];
+
+    for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() - currentDaysAgo);
+      const formattedDate = targetDate.toISOString().split("T")[0];
+      const token = await getToken();
+      const pageSize = 100;
+      const allReturnsForDate = [];
+      let currentItem = 0;
+      let hasMoreData = true;
+
+      while (hasMoreData) {
+        const response = await makeApiRequest({
+          method: "GET",
+          url: `${KIOTVIET_BASE_URL}/returns`,
+          params: {
+            pageSize: pageSize,
+            currentItem: currentItem,
+            includePayment: true,
+          },
+          headers: {
+            Retailer: process.env.KIOT_SHOP_NAME,
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (
+          response.data &&
+          response.data.data &&
+          response.data.data.length > 0
+        ) {
+          allReturnsForDate.push(...response.data.data);
+          currentItem += response.data.data.length;
+          hasMoreData = response.data.data.length === pageSize;
+
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        } else {
+          hasMoreData = false;
+        }
+      }
+
+      results.push({
+        data: formattedDate,
+        daysAgo,
+        currentDaysAgo,
+        data: { data: allReturnsForDate },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+
+    return results;
+  } catch (error) {
+    console.error("❌ Error in getReturnsByDate:", error.message);
+    throw error;
+  }
+}
 
 module.exports = {
   getOrders,
@@ -1507,4 +1617,6 @@ module.exports = {
   getTransfers,
   getTransfersByDate,
   getSaleChannels,
+  getReturns,
+  getReturnsByDate,
 };

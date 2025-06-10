@@ -13,6 +13,7 @@ const {
   runPurchaseOrderSync,
   runTransferSync,
   runSaleChannelSync,
+  runReturnSync,
 } = require("./syncKiot/syncKiot");
 const { testConnection } = require("./db");
 const { initializeDatabase } = require("./db/init");
@@ -375,125 +376,141 @@ async function startServer() {
           "../src/db/transferService",
           "transfers"
         );
+        const returnSyncStatus = await getSyncStatusSafely(
+          "../src/db/returnService",
+          "returns"
+        );
 
         // Run historical syncs with error handling
-        if (!userSyncStatus.historicalCompleted) {
-          await runSyncSafely(
-            () =>
-              require("../scheduler/userScheduler").userScheduler(
-                historicalDaysAgo
-              ),
-            "historical user"
-          );
-        }
+        // if (!userSyncStatus.historicalCompleted) {
+        //   await runSyncSafely(
+        //     () =>
+        //       require("../scheduler/userScheduler").userScheduler(
+        //         historicalDaysAgo
+        //       ),
+        //     "historical user"
+        //   );
+        // }
 
-        if (!productSyncStatus.historicalCompleted) {
-          await runSyncSafely(
-            () =>
-              require("../scheduler/productScheduler").productScheduler(
-                historicalDaysAgo
-              ),
-            "historical product"
-          );
-        }
+        // if (!productSyncStatus.historicalCompleted) {
+        //   await runSyncSafely(
+        //     () =>
+        //       require("../scheduler/productScheduler").productScheduler(
+        //         historicalDaysAgo
+        //       ),
+        //     "historical product"
+        //   );
+        // }
 
-        if (!surchargeSyncStatus.historicalCompleted) {
-          await runSyncSafely(
-            () =>
-              require("../scheduler/surchargeScheduler").surchargeScheduler(
-                historicalDaysAgo
-              ),
-            "historical surcharge"
-          );
-        }
+        // if (!surchargeSyncStatus.historicalCompleted) {
+        //   await runSyncSafely(
+        //     () =>
+        //       require("../scheduler/surchargeScheduler").surchargeScheduler(
+        //         historicalDaysAgo
+        //       ),
+        //     "historical surcharge"
+        //   );
+        // }
 
-        if (!customerSyncStatus.historicalCompleted) {
-          await runSyncSafely(
-            () =>
-              require("../scheduler/customerScheduler").customerScheduler(
-                historicalDaysAgo
-              ),
-            "historical customer"
-          );
-        }
+        // if (!customerSyncStatus.historicalCompleted) {
+        //   await runSyncSafely(
+        //     () =>
+        //       require("../scheduler/customerScheduler").customerScheduler(
+        //         historicalDaysAgo
+        //       ),
+        //     "historical customer"
+        //   );
+        // }
 
-        if (!orderSyncStatus.historicalCompleted) {
-          await runSyncSafely(
-            () =>
-              require("../scheduler/orderScheduler").orderScheduler(
-                historicalDaysAgo
-              ),
-            "historical order"
-          );
-        }
+        // if (!orderSyncStatus.historicalCompleted) {
+        //   await runSyncSafely(
+        //     () =>
+        //       require("../scheduler/orderScheduler").orderScheduler(
+        //         historicalDaysAgo
+        //       ),
+        //     "historical order"
+        //   );
+        // }
 
-        if (!invoiceSyncStatus.historicalCompleted) {
-          await runSyncSafely(
-            () =>
-              require("../scheduler/invoiceScheduler").invoiceScheduler(
-                historicalDaysAgo
-              ),
-            "historical invoice"
-          );
-        }
+        // if (!invoiceSyncStatus.historicalCompleted) {
+        //   await runSyncSafely(
+        //     () =>
+        //       require("../scheduler/invoiceScheduler").invoiceScheduler(
+        //         historicalDaysAgo
+        //       ),
+        //     "historical invoice"
+        //   );
+        // }
 
-        if (!cashflowSyncStatus.historicalCompleted) {
-          await runSyncSafely(
-            () =>
-              require("../scheduler/cashflowScheduler").cashflowScheduler(
-                historicalDaysAgo
-              ),
-            "historical cashflow"
-          );
-        }
+        // if (!cashflowSyncStatus.historicalCompleted) {
+        //   await runSyncSafely(
+        //     () =>
+        //       require("../scheduler/cashflowScheduler").cashflowScheduler(
+        //         historicalDaysAgo
+        //       ),
+        //     "historical cashflow"
+        //   );
+        // }
 
-        if (!purchaseOrderSyncStatus.historicalCompleted) {
-          await runSyncSafely(
-            () =>
-              require("../scheduler/purchaseOrderScheduler").purchaseOrderScheduler(
-                historicalDaysAgo
-              ),
-            "historical purchase order"
-          );
-        }
+        // if (!purchaseOrderSyncStatus.historicalCompleted) {
+        //   await runSyncSafely(
+        //     () =>
+        //       require("../scheduler/purchaseOrderScheduler").purchaseOrderScheduler(
+        //         historicalDaysAgo
+        //       ),
+        //     "historical purchase order"
+        //   );
+        // }
 
-        if (!transferSyncStatus.historicalCompleted) {
+        // if (!transferSyncStatus.historicalCompleted) {
+        //   await runSyncSafely(
+        //     () =>
+        //       require("../scheduler/transferScheduler").transferScheduler(
+        //         historicalDaysAgo
+        //       ),
+        //     "historical transfer"
+        //   );
+        // }
+
+        if (!returnSyncStatus.historicalCompleted) {
           await runSyncSafely(
             () =>
-              require("../scheduler/transferScheduler").transferScheduler(
+              require("../scheduler/returnScheduler").returnScheduler(
                 historicalDaysAgo
               ),
-            "historical transfer"
+            "historical return"
           );
         }
 
         // Current sync with error handling
         console.log("🔄 Starting current sync cycle...");
-        await runSyncSafely(runUserSync, "current user");
-        await runSyncSafely(runProductSync, "current product");
-        await runSyncSafely(runSurchargeSync, "current surcharge");
-        await runSyncSafely(runCustomerSync, "current customer");
-        await runSyncSafely(runPurchaseOrderSync, "current purchase order");
-        await runSyncSafely(runOrderSync, "current order");
-        await runSyncSafely(runInvoiceSync, "current invoice");
-        await runSyncSafely(runCashflowSync, "current cashflow");
-        await runSyncSafely(runTransferSync, "current transfer");
-        await runSyncSafely(runSaleChannelSync, "current sale channel");
+        // await runSyncSafely(runUserSync, "current user");
+        // await runSyncSafely(runProductSync, "current product");
+        // await runSyncSafely(runSurchargeSync, "current surcharge");
+        // await runSyncSafely(runCustomerSync, "current customer");
+        // await runSyncSafely(runPurchaseOrderSync, "current purchase order");
+        // await runSyncSafely(runOrderSync, "current order");
+        // await runSyncSafely(runInvoiceSync, "current invoice");
+        // await runSyncSafely(runCashflowSync, "current cashflow");
+        // await runSyncSafely(runTransferSync, "current transfer");
+        // await runSyncSafely(runSaleChannelSync, "current sale channel");
+        await runSyncSafely(runReturnSync, "current return");
 
         console.log("✅ Initial sync completed");
 
         const runAllSyncs = async () => {
           try {
             await Promise.allSettled([
-              runUserSync(),
-              runProductSync(),
-              runSurchargeSync(),
-              runCustomerSync(),
-              runPurchaseOrderSync(),
-              runOrderSync(),
-              runInvoiceSync(),
-              runCashflowSync(),
-              runTransferSync(),
+              // runUserSync(),
+              // runProductSync(),
+              // runSurchargeSync(),
+              // runCustomerSync(),
+              // runPurchaseOrderSync(),
+              // runOrderSync(),
+              // runInvoiceSync(),
+              // runCashflowSync(),
+              // runTransferSync(),
+              runReturnSync(),
             ]);
           } catch (error) {
             console.error("❌ Error during scheduled sync:", error.message);
