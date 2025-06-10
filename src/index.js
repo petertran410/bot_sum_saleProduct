@@ -10,6 +10,7 @@ const {
   runCashflowSync,
   runPurchaseOrderSync,
   runTransferSync,
+  runPricebookSync,
 } = require("./syncKiot/syncKiot");
 const { testConnection } = require("./db");
 const { initializeDatabase } = require("./db/init");
@@ -255,6 +256,8 @@ async function startServer() {
         await require("../src/db/purchaseOrderService").getSyncStatus();
       const transferSyncStatus =
         await require("../src/db/transferService").getSyncStatus();
+      const pricebookSyncStatus =
+        await require("../src/db/pricebookService").getSyncStatus();
 
       if (!userSyncStatus.historicalCompleted) {
         console.log("Starting historical user sync...");
@@ -319,6 +322,15 @@ async function startServer() {
         );
       }
 
+      if (!pricebookSyncStatus.historicalCompleted) {
+        console.log(
+          `Syncing ${historicalDaysAgo} days of historical pricebook data...`
+        );
+        await require("../scheduler/pricebookScheduler").pricebookScheduler(
+          historicalDaysAgo
+        );
+      }
+
       // Current sync (maintain same order)
       console.log("Starting current sync cycle...");
       await runUserSync();
@@ -330,19 +342,23 @@ async function startServer() {
       await runInvoiceSync();
       await runCashflowSync();
       await runTransferSync();
+      await runPricebookSync();
 
       const runAllSyncs = async () => {
         try {
+          await Promise.all([
+            runUserSync(),
+            runProductSync(),
+            runSurchargeSync(),
+            runCustomerSync(),
+            runPurchaseOrderSync(),
+            runOrderSync(),
+            runInvoiceSync(),
+            runCashflowSync(),
+            runTransferSync(),
+            runPricebookSync(),
+          ]);
           // Maintain dependency order in ongoing sync
-          await runUserSync();
-          await runProductSync();
-          await runSurchargeSync();
-          await runCustomerSync();
-          await runPurchaseOrderSync();
-          await runOrderSync();
-          await runInvoiceSync();
-          await runCashflowSync();
-          await runTransferSync();
         } catch (error) {
           console.error("Error during simultaneous sync:", error);
         }
