@@ -545,69 +545,6 @@ async function initializeDatabase() {
     `);
 
     await connection.query(`
-      CREATE TABLE IF NOT EXISTS pricebooks (
-        id BIGINT PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        isActive BOOLEAN DEFAULT TRUE,
-        isGlobal BOOLEAN DEFAULT FALSE,
-        startDate DATETIME,
-        endDate DATETIME,
-        forAllCusGroup BOOLEAN DEFAULT FALSE,
-        forAllUser BOOLEAN DEFAULT FALSE,
-        retailerId INT,
-        createdDate DATETIME,
-        modifiedDate DATETIME,
-        jsonData JSON,
-        INDEX idx_retailerId (retailerId),
-        INDEX idx_isActive (isActive)
-      )
-    `);
-
-    // Pricebook branches relationship
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS pricebook_branches (
-        id BIGINT AUTO_INCREMENT PRIMARY KEY,
-        priceBookId BIGINT,
-        branchId INT,
-        branchName VARCHAR(255),
-        FOREIGN KEY (priceBookId) REFERENCES pricebooks(id) ON DELETE     CASCADE,
-        UNIQUE KEY unique_pricebook_branch (priceBookId, branchId)
-      )
-    `);
-
-    // Pricebook customer groups relationship
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS pricebook_customer_groups (
-        id BIGINT AUTO_INCREMENT PRIMARY KEY,
-        priceBookId BIGINT,
-        customerGroupId INT,
-        customerGroupName VARCHAR(255),
-        FOREIGN KEY (priceBookId) REFERENCES pricebooks(id) ON DELETE     CASCADE,
-        UNIQUE KEY unique_pricebook_customer_group (priceBookId,    customerGroupId)
-      )
-    `);
-
-    // Pricebook users relationship
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS pricebook_users (
-        id BIGINT AUTO_INCREMENT PRIMARY KEY,
-        priceBookId BIGINT,
-        userId BIGINT,
-        userName VARCHAR(255),
-        FOREIGN KEY (priceBookId) REFERENCES pricebooks(id) ON DELETE     CASCADE,
-        FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
-        UNIQUE KEY unique_pricebook_user (priceBookId, userId)
-      )
-    `);
-
-    // Update existing product_price_books table to include more fields from the API
-    await connection.query(`
-      ALTER TABLE product_price_books 
-      ADD COLUMN IF NOT EXISTS createdDate DATETIME,
-      ADD COLUMN IF NOT EXISTS modifiedDate DATETIME
-    `);
-
-    await connection.query(`
       CREATE TABLE IF NOT EXISTS sync_status (
         entity_type VARCHAR(50) PRIMARY KEY,
         last_sync DATETIME,
@@ -625,7 +562,6 @@ async function initializeDatabase() {
       "cashflows",
       "purchase_orders",
       "transfers",
-      "pricebooks",
     ];
 
     for (const entity of entities) {
