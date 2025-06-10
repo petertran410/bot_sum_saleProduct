@@ -152,69 +152,133 @@ async function savePurchaseOrder(purchaseOrder, connection = null) {
     // Store the entire purchase order as JSON
     const jsonData = JSON.stringify(purchaseOrder);
 
-    const query = `
-      INSERT INTO purchase_orders 
-        (id, code, branchId, branchName, purchaseDate, discountRatio, discount, total,
-         supplierId, supplierName, supplierCode, partnerType, purchaseById, purchaseName,
-         status, statusValue, description, isDraft, paidAmount, paymentMethod, accountId,
-         retailerId, createdDate, modifiedDate, jsonData)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON DUPLICATE KEY UPDATE
-        branchId = VALUES(branchId),
-        branchName = VALUES(branchName),
-        purchaseDate = VALUES(purchaseDate),
-        discountRatio = VALUES(discountRatio),
-        discount = VALUES(discount),
-        total = VALUES(total),
-        supplierId = VALUES(supplierId),
-        supplierName = VALUES(supplierName),
-        supplierCode = VALUES(supplierCode),
-        partnerType = VALUES(partnerType),
-        purchaseById = VALUES(purchaseById),
-        purchaseName = VALUES(purchaseName),
-        status = VALUES(status),
-        statusValue = VALUES(statusValue),
-        description = VALUES(description),
-        isDraft = VALUES(isDraft),
-        paidAmount = VALUES(paidAmount),
-        paymentMethod = VALUES(paymentMethod),
-        accountId = VALUES(accountId),
-        modifiedDate = VALUES(modifiedDate),
-        jsonData = VALUES(jsonData)
-    `;
+    // ✅ MAIN FIX: Check for existing records by BOTH id and code
+    const [existingByCode] = await connection.execute(
+      "SELECT id, code FROM purchase_orders WHERE code = ?",
+      [code]
+    );
 
-    await connection.execute(query, [
-      id,
-      code,
-      branchId,
-      branchName,
-      purchaseDate,
-      discountRatio,
-      discount,
-      total,
-      supplierId,
-      supplierName,
-      supplierCode,
-      partnerType,
-      purchaseById,
-      purchaseName,
-      status,
-      statusValue,
-      description,
-      isDraft,
-      paidAmount,
-      paymentMethod,
-      accountId,
-      retailerId,
-      createdDate,
-      modifiedDate,
-      jsonData,
-    ]);
+    const [existingById] = await connection.execute(
+      "SELECT id, code FROM purchase_orders WHERE id = ?",
+      [id]
+    );
 
-    // First delete existing details to avoid duplicates on update
+    // Determine the action needed
+    const existsByCode = existingByCode.length > 0;
+    const existsById = existingById.length > 0;
+
+    let actualId = id;
+
+    if (existsByCode && existsById) {
+      // Both exist - check if they're the same record
+      if (existingByCode[0].id === existingById[0].id) {
+        // Same record, update it
+        actualId = existingByCode[0].id;
+      } else {
+        // Different records - this is a data conflict
+        console.warn(
+          `Data conflict: Purchase order code ${code} exists with different ID`
+        );
+        // Use the existing ID from the code match to avoid duplicate
+        actualId = existingByCode[0].id;
+      }
+    } else if (existsByCode && !existsById) {
+      // Code exists but with different ID
+      actualId = existingByCode[0].id;
+    } else if (!existsByCode && existsById) {
+      // ID exists but with different code - this shouldn't happen but handle it
+      console.warn(`Purchase order ID ${id} exists with different code`);
+      actualId = id;
+    }
+    // If neither exists, we can insert with the original ID
+
+    if (existsByCode || existsById) {
+      // Update existing record
+      const updateQuery = `
+        UPDATE purchase_orders SET
+          code = ?, branchId = ?, branchName = ?, purchaseDate = ?, discountRatio = ?, 
+          discount = ?, total = ?, supplierId = ?, supplierName = ?, supplierCode = ?,
+          partnerType = ?, purchaseById = ?, purchaseName = ?, status = ?, statusValue = ?,
+          description = ?, isDraft = ?, paidAmount = ?, paymentMethod = ?, accountId = ?,
+          modifiedDate = ?, jsonData = ?
+        WHERE id = ?
+      `;
+
+      await connection.execute(updateQuery, [
+        code,
+        branchId,
+        branchName,
+        purchaseDate,
+        discountRatio,
+        discount,
+        total,
+        supplierId,
+        supplierName,
+        supplierCode,
+        partnerType,
+        purchaseById,
+        purchaseName,
+        status,
+        statusValue,
+        description,
+        isDraft,
+        paidAmount,
+        paymentMethod,
+        accountId,
+        modifiedDate,
+        jsonData,
+        actualId,
+      ]);
+
+      console.log(
+        `✅ Updated existing purchase order ${code} with ID ${actualId}`
+      );
+    } else {
+      // Insert new record
+      const insertQuery = `
+        INSERT INTO purchase_orders 
+          (id, code, branchId, branchName, purchaseDate, discountRatio, discount, total,
+           supplierId, supplierName, supplierCode, partnerType, purchaseById, purchaseName,
+           status, statusValue, description, isDraft, paidAmount, paymentMethod, accountId,
+           retailerId, createdDate, modifiedDate, jsonData)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `;
+
+      await connection.execute(insertQuery, [
+        actualId,
+        code,
+        branchId,
+        branchName,
+        purchaseDate,
+        discountRatio,
+        discount,
+        total,
+        supplierId,
+        supplierName,
+        supplierCode,
+        partnerType,
+        purchaseById,
+        purchaseName,
+        status,
+        statusValue,
+        description,
+        isDraft,
+        paidAmount,
+        paymentMethod,
+        accountId,
+        retailerId,
+        createdDate,
+        modifiedDate,
+        jsonData,
+      ]);
+
+      console.log(`✅ Inserted new purchase order ${code} with ID ${actualId}`);
+    }
+
+    // Now handle the related records using the correct actualId
     await connection.execute(
       "DELETE FROM purchase_order_details WHERE purchaseOrderId = ?",
-      [id]
+      [actualId]
     );
 
     // Handle purchase order details if present
@@ -235,47 +299,55 @@ async function savePurchaseOrder(purchaseOrder, connection = null) {
           serialNumbers = null,
         } = detail;
 
-        const [detailResult] = await connection.execute(
-          `
-          INSERT INTO purchase_order_details 
-            (purchaseOrderId, productId, productCode, productName, quantity, 
-             price, discount, discountRatio, description, serialNumbers)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `,
-          [
-            id,
-            productId,
-            productCode,
-            productName,
-            quantity,
-            price,
-            discount,
-            discountRatio,
-            description,
-            serialNumbers,
-          ]
-        );
-
-        const detailId = detailResult.insertId;
-
-        // Handle batch expires if present
-        if (detail.productBatchExpire) {
-          const batch = detail.productBatchExpire;
-          await connection.execute(
+        try {
+          const [detailResult] = await connection.execute(
             `
-            INSERT INTO purchase_order_batch_expires
-              (purchaseOrderDetailId, productId, batchName, fullNameVirgule, expireDate, createdDate)
-            VALUES (?, ?, ?, ?, ?, ?)
-          `,
+            INSERT INTO purchase_order_details 
+              (purchaseOrderId, productId, productCode, productName, quantity, 
+               price, discount, discountRatio, description, serialNumbers)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `,
             [
-              detailId,
-              batch.productId || productId,
-              batch.batchName || null,
-              batch.fullNameVirgule || null,
-              batch.expireDate || null,
-              batch.createdDate || null,
+              actualId, // Use actualId instead of original id
+              productId,
+              productCode,
+              productName,
+              quantity,
+              price,
+              discount,
+              discountRatio,
+              description,
+              serialNumbers,
             ]
           );
+
+          const detailId = detailResult.insertId;
+
+          // Handle batch expires if present
+          if (detail.productBatchExpire) {
+            const batch = detail.productBatchExpire;
+            await connection.execute(
+              `
+              INSERT INTO purchase_order_batch_expires
+                (purchaseOrderDetailId, productId, batchName, fullNameVirgule, expireDate, createdDate)
+              VALUES (?, ?, ?, ?, ?, ?)
+              `,
+              [
+                detailId,
+                batch.productId || productId,
+                batch.batchName || null,
+                batch.fullNameVirgule || null,
+                batch.expireDate || null,
+                batch.createdDate || null,
+              ]
+            );
+          }
+        } catch (detailError) {
+          console.error(
+            `Failed to save detail for purchase order ${code}:`,
+            detailError.message
+          );
+          // Don't throw - just log and continue with other details
         }
       }
     }
@@ -284,7 +356,7 @@ async function savePurchaseOrder(purchaseOrder, connection = null) {
     if (purchaseOrder.payments && Array.isArray(purchaseOrder.payments)) {
       await connection.execute(
         "DELETE FROM purchase_order_payments WHERE purchaseOrderId = ?",
-        [id]
+        [actualId]
       );
 
       for (const payment of purchaseOrder.payments) {
@@ -301,27 +373,34 @@ async function savePurchaseOrder(purchaseOrder, connection = null) {
           description = null,
         } = payment;
 
-        await connection.execute(
-          `
-          INSERT INTO purchase_order_payments 
-            (id, purchaseOrderId, code, amount, method, status, statusValue, 
-             transDate, accountId, bankAccount, description)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `,
-          [
-            paymentId,
-            id,
-            paymentCode,
-            amount,
-            method,
-            status,
-            statusValue,
-            transDate,
-            accountId,
-            bankAccount,
-            description,
-          ]
-        );
+        try {
+          await connection.execute(
+            `
+            INSERT INTO purchase_order_payments 
+              (id, purchaseOrderId, code, amount, method, status, statusValue, 
+               transDate, accountId, bankAccount, description)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `,
+            [
+              paymentId,
+              actualId, // Use actualId
+              paymentCode,
+              amount,
+              method,
+              status,
+              statusValue,
+              transDate,
+              accountId,
+              bankAccount,
+              description,
+            ]
+          );
+        } catch (paymentError) {
+          console.error(
+            `Failed to save payment for purchase order ${code}:`,
+            paymentError.message
+          );
+        }
       }
     }
 
@@ -329,7 +408,7 @@ async function savePurchaseOrder(purchaseOrder, connection = null) {
     if (purchaseOrder.surcharges && Array.isArray(purchaseOrder.surcharges)) {
       await connection.execute(
         "DELETE FROM purchase_order_surcharges WHERE purchaseOrderId = ?",
-        [id]
+        [actualId]
       );
 
       for (const surcharge of purchaseOrder.surcharges) {
@@ -342,22 +421,29 @@ async function savePurchaseOrder(purchaseOrder, connection = null) {
           type = 0,
         } = surcharge;
 
-        await connection.execute(
-          `
-          INSERT INTO purchase_order_surcharges
-            (purchaseOrderId, code, name, value, valueRatio, isSupplierExpense, type)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `,
-          [
-            id,
-            surchargeCode,
-            surchargeName,
-            value,
-            valueRatio,
-            isSupplierExpense,
-            type,
-          ]
-        );
+        try {
+          await connection.execute(
+            `
+            INSERT INTO purchase_order_surcharges
+              (purchaseOrderId, code, name, value, valueRatio, isSupplierExpense, type)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            `,
+            [
+              actualId, // Use actualId
+              surchargeCode,
+              surchargeName,
+              value,
+              valueRatio,
+              isSupplierExpense,
+              type,
+            ]
+          );
+        } catch (surchargeError) {
+          console.error(
+            `Failed to save surcharge for purchase order ${code}:`,
+            surchargeError.message
+          );
+        }
       }
     }
 
