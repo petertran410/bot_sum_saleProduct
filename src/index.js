@@ -12,7 +12,6 @@ const {
   runCashflowSync,
   runPurchaseOrderSync,
   runTransferSync,
-  runPricebookSync,
 } = require("./syncKiot/syncKiot");
 const { testConnection } = require("./db");
 const { initializeDatabase } = require("./db/init");
@@ -324,10 +323,6 @@ async function startServer() {
           "../src/db/transferService",
           "transfers"
         );
-        const pricebookSyncStatus = await getSyncStatusSafely(
-          "../src/db/pricebookService",
-          "pricebooks"
-        );
 
         // Run historical syncs with error handling
         if (!userSyncStatus.historicalCompleted) {
@@ -420,16 +415,6 @@ async function startServer() {
           );
         }
 
-        if (!pricebookSyncStatus.historicalCompleted) {
-          await runSyncSafely(
-            () =>
-              require("../scheduler/pricebookScheduler").pricebookScheduler(
-                historicalDaysAgo
-              ),
-            "historical pricebook"
-          );
-        }
-
         // Current sync with error handling
         console.log("🔄 Starting current sync cycle...");
         await runSyncSafely(runUserSync, "current user");
@@ -441,7 +426,6 @@ async function startServer() {
         await runSyncSafely(runInvoiceSync, "current invoice");
         await runSyncSafely(runCashflowSync, "current cashflow");
         await runSyncSafely(runTransferSync, "current transfer");
-        await runSyncSafely(runPricebookSync, "current pricebook");
 
         console.log("✅ Initial sync completed");
 
@@ -458,7 +442,6 @@ async function startServer() {
               runInvoiceSync(),
               runCashflowSync(),
               runTransferSync(),
-              runPricebookSync(),
             ]);
           } catch (error) {
             console.error("❌ Error during scheduled sync:", error.message);

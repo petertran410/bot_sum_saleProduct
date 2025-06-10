@@ -54,11 +54,6 @@ const {
   transferSchedulerCurrent,
 } = require("../../scheduler/transferScheduler");
 
-const {
-  pricebookScheduler,
-  pricebookSchedulerCurrent,
-} = require("../../scheduler/pricebookScheduler");
-
 const runOrderSync = async () => {
   try {
     const syncStatus = await orderService.getSyncStatus();
@@ -369,47 +364,6 @@ const runTransferSync = async () => {
   }
 };
 
-const runPricebookSync = async () => {
-  try {
-    const syncStatus = await pricebookService.getSyncStatus();
-
-    if (!syncStatus.historicalCompleted) {
-      console.log("Starting historical pricebooks data sync...");
-      const result = await pricebookScheduler(160);
-
-      if (result.success) {
-        console.log("Historical pricebooks data has been saved to database");
-      } else {
-        console.error(
-          "Error when saving historical pricebooks data:",
-          result.error
-        );
-      }
-    } else {
-      console.log("Running current pricebooks sync...");
-      const currentResult = await pricebookSchedulerCurrent();
-
-      if (currentResult.success) {
-        console.log(
-          `Current pricebooks data has been added: ${currentResult.savedCount} pricebooks`
-        );
-        if (currentResult.productPricesUpdated) {
-          console.log(
-            `Product prices updated: ${currentResult.productPricesUpdated} prices`
-          );
-        }
-      } else {
-        console.error(
-          "Error when adding current pricebooks:",
-          currentResult.error
-        );
-      }
-    }
-  } catch (error) {
-    console.error("Cannot get and save data pricebooks:", error);
-  }
-};
-
 module.exports = {
   runOrderSync,
   runInvoiceSync,
@@ -420,5 +374,4 @@ module.exports = {
   runCashflowSync,
   runPurchaseOrderSync,
   runTransferSync,
-  runPricebookSync,
 };
