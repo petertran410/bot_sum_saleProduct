@@ -11,30 +11,30 @@ const orderSupplierSchedulerCurrent = async () => {
   while (retryCount < MAX_RETRIES) {
     try {
       console.log(
-        `🚀 Fetching current order suppliers (attempt ${
+        `🚀 Fetching order suppliers (attempt ${
           retryCount + 1
         }/${MAX_RETRIES})...`
       );
 
-      const currentOrderSuppliers = await getOrderSuppliers();
+      const allOrderSuppliers = await getOrderSuppliers();
 
       if (
-        currentOrderSuppliers &&
-        currentOrderSuppliers.data &&
-        Array.isArray(currentOrderSuppliers.data)
+        allOrderSuppliers &&
+        allOrderSuppliers.data &&
+        Array.isArray(allOrderSuppliers.data)
       ) {
-        if (currentOrderSuppliers.data.length === 0) {
-          console.log("No new order suppliers to process");
+        if (allOrderSuppliers.data.length === 0) {
+          console.log("No order suppliers found");
           return { success: true, savedCount: 0, hasNewData: false };
         }
 
         console.log(
-          `📦 Processing ${currentOrderSuppliers.data.length} order suppliers...`
+          `📦 Processing ${allOrderSuppliers.data.length} order suppliers...`
         );
 
         // Log sample order supplier structure for debugging
-        if (currentOrderSuppliers.data.length > 0) {
-          const sample = currentOrderSuppliers.data[0];
+        if (allOrderSuppliers.data.length > 0) {
+          const sample = allOrderSuppliers.data[0];
           console.log("🔍 Sample order supplier structure:", {
             id: sample.id,
             code: sample.code,
@@ -46,7 +46,7 @@ const orderSupplierSchedulerCurrent = async () => {
         }
 
         const result = await orderSupplierService.saveOrderSuppliers(
-          currentOrderSuppliers.data
+          allOrderSuppliers.data
         );
 
         await orderSupplierService.updateSyncStatus(true, new Date());
@@ -82,41 +82,13 @@ const orderSupplierSchedulerCurrent = async () => {
   }
 };
 
+// Since OrderSuppliers API doesn't support date filtering,
+// historical sync is the same as current sync
 const orderSupplierScheduler = async (daysAgo) => {
-  try {
-    console.log(`📅 Fetching order suppliers from last ${daysAgo} days...`);
-    const orderSuppliersByDate = await getOrderSuppliersByDate(daysAgo);
-    let totalSaved = 0;
-
-    for (const dateData of orderSuppliersByDate) {
-      if (
-        dateData.data &&
-        dateData.data.data &&
-        Array.isArray(dateData.data.data)
-      ) {
-        console.log(
-          `Processing ${dateData.data.data.length} order suppliers from ${dateData.date}`
-        );
-        const result = await orderSupplierService.saveOrderSuppliers(
-          dateData.data.data
-        );
-        totalSaved += result.stats.success;
-      }
-    }
-
-    await orderSupplierService.updateSyncStatus(true, new Date());
-    console.log(
-      `📊 Historical order suppliers data saved: ${totalSaved} order suppliers total`
-    );
-
-    return {
-      success: true,
-      message: `Saved ${totalSaved} order suppliers from historical data`,
-    };
-  } catch (error) {
-    console.error("❌ Cannot create orderSupplierSchedulerByDate", error);
-    return { success: false, error: error.message };
-  }
+  console.log(
+    `⚠️  OrderSuppliers API doesn't support historical data by date. Running full sync instead.`
+  );
+  return await orderSupplierSchedulerCurrent();
 };
 
 module.exports = {

@@ -1607,11 +1607,6 @@ const getOrderSuppliers = async () => {
 
     console.log("Fetching current order suppliers...");
 
-    // Get only recent order suppliers (last 24 hours) for current sync
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const fromDate = yesterday.toISOString().split("T")[0];
-
     while (hasMoreData) {
       try {
         const response = await makeApiRequest({
@@ -1620,9 +1615,6 @@ const getOrderSuppliers = async () => {
           params: {
             pageSize: pageSize,
             currentItem: currentItem,
-            orderBy: "createdDate",
-            orderDirection: "DESC",
-            fromOrderDate: fromDate,
           },
           headers: {
             Retailer: process.env.KIOT_SHOP_NAME,
@@ -1669,82 +1661,20 @@ const getOrderSuppliers = async () => {
 };
 
 const getOrderSuppliersByDate = async (daysAgo) => {
-  try {
-    const results = [];
+  console.log(
+    `⚠️  OrderSuppliers API doesn't support date filtering. Fetching all order suppliers instead.`
+  );
 
-    for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
-      const targetDate = new Date();
-      targetDate.setDate(targetDate.getDate() - currentDaysAgo);
-      const formattedDate = targetDate.toISOString().split("T")[0];
+  const allOrderSuppliers = await getOrderSuppliers();
 
-      const token = await getToken();
-      const pageSize = 100;
-      const allOrderSuppliersForDate = [];
-      let currentItem = 0;
-      let hasMoreData = true;
-
-      console.log(`Fetching order suppliers for ${formattedDate}...`);
-
-      while (hasMoreData) {
-        try {
-          const response = await makeApiRequest({
-            method: "GET",
-            url: `${KIOTVIET_BASE_URL}/ordersuppliers`,
-            params: {
-              pageSize: pageSize,
-              currentItem: currentItem,
-              fromOrderDate: formattedDate,
-              toOrderDate: formattedDate,
-            },
-            headers: {
-              Retailer: process.env.KIOT_SHOP_NAME,
-              Authorization: `Bearer ${token}`,
-            },
-          });
-
-          if (
-            response.data &&
-            response.data.data &&
-            response.data.data.length > 0
-          ) {
-            allOrderSuppliersForDate.push(...response.data.data);
-            currentItem += response.data.data.length;
-            hasMoreData = response.data.data.length === pageSize;
-
-            console.log(
-              `Date ${formattedDate}: Fetched ${response.data.data.length} order suppliers, total: ${allOrderSuppliersForDate.length}`
-            );
-            await new Promise((resolve) => setTimeout(resolve, 100));
-          } else {
-            hasMoreData = false;
-          }
-        } catch (error) {
-          console.error(
-            `Error fetching order suppliers for ${formattedDate}:`,
-            error.message
-          );
-          if (error.response?.status === 400) {
-            console.log(`Skipping date ${formattedDate} due to 400 error`);
-            break;
-          }
-          throw error;
-        }
-      }
-
-      results.push({
-        date: formattedDate,
-        daysAgo: currentDaysAgo,
-        data: { data: allOrderSuppliersForDate },
-      });
-
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
-
-    return results;
-  } catch (error) {
-    console.error("Error in getOrderSuppliersByDate:", error.message);
-    throw error;
-  }
+  // Return in the expected format for compatibility
+  return [
+    {
+      date: new Date().toISOString().split("T")[0],
+      daysAgo: 0,
+      data: allOrderSuppliers,
+    },
+  ];
 };
 
 const getLocations = async () => {

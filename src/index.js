@@ -295,7 +295,6 @@ const initializeStaticData = async () => {
   try {
     console.log("🚀 Initializing static data...");
 
-    // Sync locations only if they don't exist
     await runLocationSync();
 
     console.log("✅ Static data initialization completed");
