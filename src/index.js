@@ -1,3 +1,5 @@
+// Fix for src/index.js - Prevent EventEmitter memory leak
+
 require("dotenv").config();
 const express = require("express");
 const {
@@ -10,6 +12,7 @@ const {
   runCashflowSync,
   runPurchaseOrderSync,
   runTransferSync,
+  runPricebookSync,
 } = require("./syncKiot/syncKiot");
 const { testConnection } = require("./db");
 const { initializeDatabase } = require("./db/init");
@@ -18,44 +21,46 @@ const { addRecordToCRMBase, getCRMStats, sendTestMessage } = require("./lark");
 const app = express();
 const PORT = process.env.PORT || 3690;
 
+// Fix 1: Increase max listeners to prevent warning
+process.setMaxListeners(20);
+
+// Fix 2: Global variables for cleanup
+let syncInterval = null;
+let server = null;
+
+// Fix 3: Cleanup function
+function cleanup() {
+  console.log("🛑 Cleaning up resources...");
+
+  if (syncInterval) {
+    clearInterval(syncInterval);
+    syncInterval = null;
+  }
+
+  if (server) {
+    server.close(() => {
+      console.log("🛑 Server stopped");
+      process.exit(0);
+    });
+  } else {
+    process.exit(0);
+  }
+}
+
+// Fix 4: Add process listeners ONCE at module level (not inside app.listen)
+process.on("SIGINT", cleanup);
+process.on("SIGTERM", cleanup);
+process.on("uncaughtException", (error) => {
+  console.error("❌ Uncaught Exception:", error);
+  cleanup();
+});
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("❌ Unhandled Rejection at:", promise, "reason:", reason);
+  cleanup();
+});
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-app.use((req, res, next) => {
-  req.clientIP =
-    req.headers["x-forwarded-for"] ||
-    req.connection.remoteAddress ||
-    req.socket.remoteAddress ||
-    (req.connection.socket ? req.connection.socket.remoteAddress : null);
-  next();
-});
-
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-  res.header(
-    "Access-Control-Allow-Headers",
-    "Origin, X-Requested-With, Content-Type, Accept, Authorization"
-  );
-
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
-  }
-  next();
-});
-
-app.get("/", (req, res) => {
-  res.json({
-    message: "KiotViet API Sync Server with CRM Integration",
-    endpoints: {
-      health: "/api/health",
-      registration: "/api/submit-registration",
-      stats: "/api/crm/stats",
-      test: "/api/test-lark",
-    },
-    timestamp: new Date().toISOString(),
-  });
-});
 
 app.use((req, res, next) => {
   req.clientIP =
@@ -96,6 +101,19 @@ app.use((req, res, next) => {
   }
 
   next();
+});
+
+app.get("/", (req, res) => {
+  res.json({
+    message: "KiotViet API Sync Server with CRM Integration",
+    endpoints: {
+      health: "/api/health",
+      registration: "/api/submit-registration",
+      stats: "/api/crm/stats",
+      test: "/api/test-lark",
+    },
+    timestamp: new Date().toISOString(),
+  });
 });
 
 app.get("/api/health", (req, res) => {
@@ -233,18 +251,15 @@ async function startServer() {
       process.exit(1);
     }
 
-    const server = app.listen(PORT, async () => {
+    // Fix 5: Store server reference globally for cleanup
+    server = app.listen(PORT, async () => {
       try {
         console.log(`🚀 Server is running on port ${PORT}`);
-        console.log(`📊 Starting KiotViet sync operations...`);
-
         const historicalDaysAgo = parseInt(
           process.env.INITIAL_SCAN_DAYS || "7"
         );
 
-        // Get sync status for all entities with error handling
-        console.log("📋 Checking sync status for all entities...");
-
+        // Helper function to safely get sync status
         const getSyncStatusSafely = async (servicePath, entityName) => {
           try {
             const service = require(servicePath);
@@ -258,154 +273,181 @@ async function startServer() {
           }
         };
 
-        const [
-          userSyncStatus,
-          customerSyncStatus,
-          productSyncStatus,
-          orderSyncStatus,
-          invoiceSyncStatus,
-          surchargeSyncStatus,
-          cashflowSyncStatus,
-          purchaseOrderSyncStatus,
-          transferSyncStatus,
-        ] = await Promise.allSettled([
-          getSyncStatusSafely("../src/db/userService", "users"),
-          getSyncStatusSafely("../src/db/customerService", "customers"),
-          getSyncStatusSafely("../src/db/productService", "products"),
-          getSyncStatusSafely("../src/db/orderService", "orders"),
-          getSyncStatusSafely("../src/db/invoiceService", "invoices"),
-          getSyncStatusSafely("../src/db/surchagesService", "surcharges"),
-          getSyncStatusSafely("../src/db/cashflowService", "cashflows"),
-          getSyncStatusSafely(
-            "../src/db/purchaseOrderService",
-            "purchase_orders"
-          ),
-          getSyncStatusSafely("../src/db/transferService", "transfers"),
-        ]);
-
-        // Helper function to safely run historical sync
-        const runHistoricalSyncSafely = async (
-          syncFunction,
-          entityName,
-          daysAgo
-        ) => {
-          try {
-            console.log(`📅 Starting historical ${entityName} sync...`);
-            await syncFunction(daysAgo);
-            console.log(`✅ Historical ${entityName} sync completed`);
-          } catch (error) {
-            console.error(
-              `❌ Historical ${entityName} sync failed:`,
-              error.message
-            );
-            // Don't crash the app, just log the error and continue
-          }
-        };
-
-        // Run historical syncs with error handling
-        console.log("🔄 Starting historical data synchronization...");
-
-        if (!userSyncStatus.value?.historicalCompleted) {
-          await runHistoricalSyncSafely(
-            require("../scheduler/userScheduler").userScheduler,
-            "user",
-            historicalDaysAgo
-          );
-        }
-
-        if (!productSyncStatus.value?.historicalCompleted) {
-          await runHistoricalSyncSafely(
-            require("../scheduler/productScheduler").productScheduler,
-            "product",
-            historicalDaysAgo
-          );
-        }
-
-        if (!surchargeSyncStatus.value?.historicalCompleted) {
-          await runHistoricalSyncSafely(
-            require("../scheduler/surchargeScheduler").surchargeScheduler,
-            "surcharge",
-            historicalDaysAgo
-          );
-        }
-
-        if (!customerSyncStatus.value?.historicalCompleted) {
-          await runHistoricalSyncSafely(
-            require("../scheduler/customerScheduler").customerScheduler,
-            "customer",
-            historicalDaysAgo
-          );
-        }
-
-        if (!orderSyncStatus.value?.historicalCompleted) {
-          await runHistoricalSyncSafely(
-            require("../scheduler/orderScheduler").orderScheduler,
-            "order",
-            historicalDaysAgo
-          );
-        }
-
-        if (!invoiceSyncStatus.value?.historicalCompleted) {
-          await runHistoricalSyncSafely(
-            require("../scheduler/invoiceScheduler").invoiceScheduler,
-            "invoice",
-            historicalDaysAgo
-          );
-        }
-
-        if (!cashflowSyncStatus.value?.historicalCompleted) {
-          await runHistoricalSyncSafely(
-            require("../scheduler/cashflowScheduler").cashflowScheduler,
-            "cashflow",
-            historicalDaysAgo
-          );
-        }
-
-        if (!purchaseOrderSyncStatus.value?.historicalCompleted) {
-          await runHistoricalSyncSafely(
-            require("../scheduler/purchaseOrderScheduler")
-              .purchaseOrderScheduler,
-            "purchase order",
-            historicalDaysAgo
-          );
-        }
-
-        if (!transferSyncStatus.value?.historicalCompleted) {
-          await runHistoricalSyncSafely(
-            require("../scheduler/transferScheduler").transferScheduler,
-            "transfer",
-            historicalDaysAgo
-          );
-        }
-
-        // Current sync (maintain same order) with error handling
-        console.log("🔄 Starting current sync cycle...");
-
+        // Helper function to safely run sync operations
         const runSyncSafely = async (syncFunction, entityName) => {
           try {
+            console.log(`Starting ${entityName} sync...`);
             await syncFunction();
             console.log(`✅ ${entityName} sync completed`);
           } catch (error) {
             console.error(`❌ ${entityName} sync failed:`, error.message);
+            // Don't crash the app, just continue
           }
         };
 
-        await runSyncSafely(runUserSync, "User");
-        await runSyncSafely(runProductSync, "Product");
-        await runSyncSafely(runSurchargeSync, "Surcharge");
-        await runSyncSafely(runCustomerSync, "Customer");
-        await runSyncSafely(runPurchaseOrderSync, "Purchase Order");
-        await runSyncSafely(runOrderSync, "Order");
-        await runSyncSafely(runInvoiceSync, "Invoice");
-        await runSyncSafely(runCashflowSync, "Cashflow");
-        await runSyncSafely(runTransferSync, "Transfer");
+        // Get sync status for all entities
+        console.log("📋 Checking sync status...");
 
-        console.log("✅ Initial sync cycle completed");
+        const userSyncStatus = await getSyncStatusSafely(
+          "../src/db/userService",
+          "users"
+        );
+        const customerSyncStatus = await getSyncStatusSafely(
+          "../src/db/customerService",
+          "customers"
+        );
+        const productSyncStatus = await getSyncStatusSafely(
+          "../src/db/productService",
+          "products"
+        );
+        const orderSyncStatus = await getSyncStatusSafely(
+          "../src/db/orderService",
+          "orders"
+        );
+        const invoiceSyncStatus = await getSyncStatusSafely(
+          "../src/db/invoiceService",
+          "invoices"
+        );
+        const surchargeSyncStatus = await getSyncStatusSafely(
+          "../src/db/surchagesService",
+          "surcharges"
+        );
+        const cashflowSyncStatus = await getSyncStatusSafely(
+          "../src/db/cashflowService",
+          "cashflows"
+        );
+        const purchaseOrderSyncStatus = await getSyncStatusSafely(
+          "../src/db/purchaseOrderService",
+          "purchase_orders"
+        );
+        const transferSyncStatus = await getSyncStatusSafely(
+          "../src/db/transferService",
+          "transfers"
+        );
+        const pricebookSyncStatus = await getSyncStatusSafely(
+          "../src/db/pricebookService",
+          "pricebooks"
+        );
 
-        // Set up recurring sync with error handling
+        // Run historical syncs with error handling
+        if (!userSyncStatus.historicalCompleted) {
+          await runSyncSafely(
+            () =>
+              require("../scheduler/userScheduler").userScheduler(
+                historicalDaysAgo
+              ),
+            "historical user"
+          );
+        }
+
+        if (!productSyncStatus.historicalCompleted) {
+          await runSyncSafely(
+            () =>
+              require("../scheduler/productScheduler").productScheduler(
+                historicalDaysAgo
+              ),
+            "historical product"
+          );
+        }
+
+        if (!surchargeSyncStatus.historicalCompleted) {
+          await runSyncSafely(
+            () =>
+              require("../scheduler/surchargeScheduler").surchargeScheduler(
+                historicalDaysAgo
+              ),
+            "historical surcharge"
+          );
+        }
+
+        if (!customerSyncStatus.historicalCompleted) {
+          await runSyncSafely(
+            () =>
+              require("../scheduler/customerScheduler").customerScheduler(
+                historicalDaysAgo
+              ),
+            "historical customer"
+          );
+        }
+
+        if (!orderSyncStatus.historicalCompleted) {
+          await runSyncSafely(
+            () =>
+              require("../scheduler/orderScheduler").orderScheduler(
+                historicalDaysAgo
+              ),
+            "historical order"
+          );
+        }
+
+        if (!invoiceSyncStatus.historicalCompleted) {
+          await runSyncSafely(
+            () =>
+              require("../scheduler/invoiceScheduler").invoiceScheduler(
+                historicalDaysAgo
+              ),
+            "historical invoice"
+          );
+        }
+
+        if (!cashflowSyncStatus.historicalCompleted) {
+          await runSyncSafely(
+            () =>
+              require("../scheduler/cashflowScheduler").cashflowScheduler(
+                historicalDaysAgo
+              ),
+            "historical cashflow"
+          );
+        }
+
+        if (!purchaseOrderSyncStatus.historicalCompleted) {
+          await runSyncSafely(
+            () =>
+              require("../scheduler/purchaseOrderScheduler").purchaseOrderScheduler(
+                historicalDaysAgo
+              ),
+            "historical purchase order"
+          );
+        }
+
+        if (!transferSyncStatus.historicalCompleted) {
+          await runSyncSafely(
+            () =>
+              require("../scheduler/transferScheduler").transferScheduler(
+                historicalDaysAgo
+              ),
+            "historical transfer"
+          );
+        }
+
+        if (!pricebookSyncStatus.historicalCompleted) {
+          await runSyncSafely(
+            () =>
+              require("../scheduler/pricebookScheduler").pricebookScheduler(
+                historicalDaysAgo
+              ),
+            "historical pricebook"
+          );
+        }
+
+        // Current sync with error handling
+        console.log("🔄 Starting current sync cycle...");
+        await runSyncSafely(runUserSync, "current user");
+        await runSyncSafely(runProductSync, "current product");
+        await runSyncSafely(runSurchargeSync, "current surcharge");
+        await runSyncSafely(runCustomerSync, "current customer");
+        await runSyncSafely(runPurchaseOrderSync, "current purchase order");
+        await runSyncSafely(runOrderSync, "current order");
+        await runSyncSafely(runInvoiceSync, "current invoice");
+        await runSyncSafely(runCashflowSync, "current cashflow");
+        await runSyncSafely(runTransferSync, "current transfer");
+        // await runSyncSafely(runPricebookSync, "current pricebook");
+
+        console.log("✅ Initial sync completed");
+
+        // Fix 6: Store interval reference globally for cleanup
         const runAllSyncs = async () => {
           try {
-            console.log("🔄 Running scheduled sync cycle...");
             await Promise.allSettled([
               runUserSync(),
               runProductSync(),
@@ -416,36 +458,22 @@ async function startServer() {
               runInvoiceSync(),
               runCashflowSync(),
               runTransferSync(),
+              // runPricebookSync(),
             ]);
-            console.log("✅ Scheduled sync cycle completed");
           } catch (error) {
             console.error("❌ Error during scheduled sync:", error.message);
-            // Don't crash the app, just log the error
           }
         };
 
-        const syncInterval = setInterval(runAllSyncs, 10 * 60 * 1000);
+        syncInterval = setInterval(runAllSyncs, 10 * 60 * 1000);
 
-        process.on("SIGINT", () => {
-          console.log("🛑 Received SIGINT, shutting down gracefully...");
-          clearInterval(syncInterval);
-          server.close(() => {
-            console.log("🛑 Server stopped");
-            process.exit(0);
-          });
-        });
+        console.log("🎉 Application startup completed!");
 
-        console.log("🎉 Application startup completed successfully!");
+        // Fix 7: Remove the process.on listeners from here since they're now at module level
       } catch (startupError) {
-        console.error(
-          "❌ Error during application startup:",
-          startupError.message
-        );
+        console.error("❌ Error during startup:", startupError.message);
         console.error("Stack trace:", startupError.stack);
-        // Don't crash the server, just log the error
-        console.log(
-          "⚠️ Server is running but sync operations failed to initialize"
-        );
+        console.log("⚠️ Server is running but some sync operations failed");
       }
     });
 
