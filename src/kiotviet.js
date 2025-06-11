@@ -97,7 +97,12 @@ const getOrders = async () => {
     let currentItem = 0;
     let hasMoreData = true;
 
-    console.log("Fetching current orders...");
+    // 🎯 TIME-FILTERED: Get only orders modified in last 48 hours
+    const fromDate = new Date();
+    fromDate.setDate(fromDate.getDate() - 2); // 48h buffer for safety
+    const fromDateStr = fromDate.toISOString().split("T")[0];
+
+    console.log(`Fetching orders modified since ${fromDateStr}...`);
 
     while (hasMoreData) {
       const response = await makeApiRequest({
@@ -106,7 +111,8 @@ const getOrders = async () => {
         params: {
           pageSize: pageSize,
           currentItem: currentItem,
-          orderBy: "createdDate",
+          lastModifiedFrom: fromDateStr, // 🔥 KEY CHANGE: Time filtering
+          orderBy: "modifiedDate", // Sort by modification date
           orderDirection: "DESC",
           includePayment: true,
           includeOrderDelivery: true,
@@ -127,7 +133,7 @@ const getOrders = async () => {
         hasMoreData = response.data.data.length === pageSize;
 
         console.log(
-          `Fetched ${response.data.data.length} orders, total: ${allOrders.length}`
+          `Fetched ${response.data.data.length} orders (modified since ${fromDateStr}), total: ${allOrders.length}`
         );
         await new Promise((resolve) => setTimeout(resolve, 100));
       } else {
@@ -135,9 +141,10 @@ const getOrders = async () => {
       }
     }
 
+    console.log(`✅ Total time-filtered orders fetched: ${allOrders.length}`);
     return { data: allOrders, total: allOrders.length };
   } catch (error) {
-    console.error("Error getting orders:", error.message);
+    console.error("Error getting time-filtered orders:", error.message);
     throw error;
   }
 };
@@ -221,7 +228,12 @@ const getInvoices = async () => {
     let currentItem = 0;
     let hasMoreData = true;
 
-    console.log("Fetching current invoices...");
+    // 🎯 TIME-FILTERED: Get only invoices modified in last 48 hours
+    const fromDate = new Date();
+    fromDate.setDate(fromDate.getDate() - 2); // 48h buffer for safety
+    const fromDateStr = fromDate.toISOString().split("T")[0];
+
+    console.log(`Fetching invoices modified since ${fromDateStr}...`);
 
     while (hasMoreData) {
       const response = await makeApiRequest({
@@ -230,7 +242,8 @@ const getInvoices = async () => {
         params: {
           pageSize: pageSize,
           currentItem: currentItem,
-          orderBy: "createdDate",
+          lastModifiedFrom: fromDateStr, // 🔥 KEY CHANGE: Time filtering
+          orderBy: "modifiedDate", // Sort by modification date
           orderDirection: "DESC",
           includePayment: true,
           includeInvoiceDelivery: true,
@@ -251,7 +264,7 @@ const getInvoices = async () => {
         hasMoreData = response.data.data.length === pageSize;
 
         console.log(
-          `Fetched ${response.data.data.length} invoices, total: ${allInvoices.length}`
+          `Fetched ${response.data.data.length} invoices (modified since ${fromDateStr}), total: ${allInvoices.length}`
         );
         await new Promise((resolve) => setTimeout(resolve, 100));
       } else {
@@ -259,9 +272,12 @@ const getInvoices = async () => {
       }
     }
 
+    console.log(
+      `✅ Total time-filtered invoices fetched: ${allInvoices.length}`
+    );
     return { data: allInvoices, total: allInvoices.length };
   } catch (error) {
-    console.error("Error getting invoices:", error.message);
+    console.error("Error getting time-filtered invoices:", error.message);
     throw error;
   }
 };
@@ -483,12 +499,12 @@ const getCustomers = async () => {
     let currentItem = 0;
     let hasMoreData = true;
 
-    console.log("Fetching current customers...");
+    // 🎯 TIME-FILTERED: Get only customers modified in last 48 hours
+    const fromDate = new Date();
+    fromDate.setDate(fromDate.getDate() - 2); // 48h buffer for safety
+    const fromDateStr = fromDate.toISOString().split("T")[0];
 
-    // Get only recent customers (last 24 hours)
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const fromDate = yesterday.toISOString().split("T")[0];
+    console.log(`Fetching customers modified since ${fromDateStr}...`);
 
     while (hasMoreData) {
       const response = await makeApiRequest({
@@ -497,12 +513,12 @@ const getCustomers = async () => {
         params: {
           pageSize: pageSize,
           currentItem: currentItem,
-          orderBy: "createdDate",
+          lastModifiedFrom: fromDateStr, // 🔥 KEY CHANGE: Time filtering
+          orderBy: "modifiedDate", // Sort by modification date
           orderDirection: "DESC",
-          lastModifiedFrom: fromDate,
-          includeTotal: true,
-          includeCustomerGroup: true,
-          includeCustomerSocial: true,
+          includeRemoveIds: true, // Include deleted customers
+          includeTotal: false, // Don't include heavy calculations
+          includeCustomerGroup: true, // Include group info
         },
         headers: {
           Retailer: process.env.KIOT_SHOP_NAME,
@@ -520,7 +536,7 @@ const getCustomers = async () => {
         hasMoreData = response.data.data.length === pageSize;
 
         console.log(
-          `Fetched ${response.data.data.length} customers, total: ${allCustomers.length}`
+          `Fetched ${response.data.data.length} customers (modified since ${fromDateStr}), total: ${allCustomers.length}`
         );
         await new Promise((resolve) => setTimeout(resolve, 100));
       } else {
@@ -528,9 +544,12 @@ const getCustomers = async () => {
       }
     }
 
+    console.log(
+      `✅ Total time-filtered customers fetched: ${allCustomers.length}`
+    );
     return { data: allCustomers, total: allCustomers.length };
   } catch (error) {
-    console.error("Error fetching customers:", error.message);
+    console.error("Error getting time-filtered customers:", error.message);
     throw error;
   }
 };

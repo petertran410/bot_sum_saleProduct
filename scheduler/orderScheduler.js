@@ -62,9 +62,11 @@ const orderSchedulerCurrent = async () => {
   while (retryCount < MAX_RETRIES) {
     try {
       console.log(
-        `Fetching current orders (attempt ${retryCount + 1}/${MAX_RETRIES})...`
+        `🎯 Fetching time-filtered orders (attempt ${
+          retryCount + 1
+        }/${MAX_RETRIES})...`
       );
-      const currentOrders = await getOrders();
+      const currentOrders = await getOrders(); // Now uses time-filtering!
 
       if (
         currentOrders &&
@@ -72,17 +74,19 @@ const orderSchedulerCurrent = async () => {
         Array.isArray(currentOrders.data)
       ) {
         if (currentOrders.data.length === 0) {
-          console.log("No new orders to process");
+          console.log("✅ No orders modified in last 48 hours");
           return { success: true, savedCount: 0, hasNewData: false };
         }
 
-        console.log(`Processing ${currentOrders.data.length} orders...`);
+        console.log(
+          `🚀 Processing ${currentOrders.data.length} time-filtered orders...`
+        );
         const result = await orderService.saveOrders(currentOrders.data);
 
         await orderService.updateSyncStatus(true, new Date());
 
         console.log(
-          `Order sync completed: ${result.stats.success} processed, ${result.stats.newRecords} new`
+          `✅ Time-filtered order sync: ${result.stats.success} processed, ${result.stats.newRecords} new`
         );
 
         return {
@@ -95,15 +99,19 @@ const orderSchedulerCurrent = async () => {
       return { success: true, savedCount: 0, hasNewData: false };
     } catch (error) {
       retryCount++;
-      console.error(`Order sync attempt ${retryCount} failed:`, error.message);
+      console.error(
+        `❌ Time-filtered order sync attempt ${retryCount} failed:`,
+        error.message
+      );
 
       if (retryCount < MAX_RETRIES) {
-        // Wait before retry (exponential backoff)
         const waitTime = Math.pow(2, retryCount) * 1000;
-        console.log(`Waiting ${waitTime}ms before retry...`);
+        console.log(`⏳ Waiting ${waitTime}ms before retry...`);
         await new Promise((resolve) => setTimeout(resolve, waitTime));
       } else {
-        console.error("Max retries reached. Order sync failed.");
+        console.error(
+          "💥 Max retries reached. Time-filtered order sync failed."
+        );
         return { success: false, error: error.message, hasNewData: false };
       }
     }
