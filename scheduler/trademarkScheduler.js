@@ -1,4 +1,3 @@
-// scheduler/trademarkScheduler.js
 const { getTrademarks } = require("../src/kiotviet");
 const trademarkService = require("../src/db/trademarkService");
 
@@ -74,11 +73,9 @@ const trademarkSchedulerCurrent = async () => {
   }
 };
 
-// Trademarks API doesn't support date filtering based on the documentation,
-// so historical sync is the same as current sync
 const trademarkScheduler = async (daysAgo) => {
   console.log(
-    `⚠️  Trademarks API doesn't support historical data by date. Running full sync instead.`
+    `ℹ️  Trademarks are reference data without date filtering. Running full sync...`
   );
   return await trademarkSchedulerCurrent();
 };

@@ -1804,7 +1804,7 @@ const getTrademarks = async () => {
         params: {
           pageSize: pageSize,
           currentItem: currentItem,
-          orderBy: "tradeMarkName", // Sort alphabetically as per API documentation
+          orderBy: "name",
           orderDirection: "ASC",
         },
         headers: {
