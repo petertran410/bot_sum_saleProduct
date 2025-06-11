@@ -1860,6 +1860,33 @@ const getTrademarks = async () => {
   }
 };
 
+const getAttributes = async () => {
+  try {
+    console.log("Fetching product attributes...");
+    const token = await getToken();
+
+    const response = await makeApiRequest({
+      method: "GET",
+      url: `${KIOTVIET_BASE_URL}/attributes/allwithdistinctvalue`,
+      headers: {
+        Retailer: process.env.KIOT_SHOP_NAME,
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (response.data && Array.isArray(response.data)) {
+      console.log(`Fetched ${response.data.length} attributes`);
+      return { data: response.data, total: response.data.length };
+    } else {
+      console.log("No attributes data received");
+      return { data: [], total: 0 };
+    }
+  } catch (error) {
+    console.error("Error getting attributes:", error.message);
+    throw error;
+  }
+};
+
 module.exports = {
   getOrders,
   getOrdersByDate,
@@ -1886,4 +1913,5 @@ module.exports = {
   getOrderSuppliersByDate,
   getLocations,
   getTrademarks,
+  getAttributes,
 };
