@@ -1,4 +1,4 @@
-const { getPool } = require("./connection");
+const { getPool } = require("../db");
 
 const saveBranches = async (branches) => {
   const pool = await getPool();
