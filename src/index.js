@@ -18,6 +18,7 @@ const {
   runTrademarkSync,
   runAttributeSync,
   runProductOnHandsSync,
+  runBranchSync,
 } = require("./syncKiot/syncKiot");
 const { testConnection } = require("./db");
 const { initializeDatabase } = require("./db/init");
@@ -406,6 +407,11 @@ async function startServer() {
           "product_on_hands"
         );
 
+        const branchSyncStatus = await getSyncStatusSafely(
+          "../src/db/branchService",
+          "branches"
+        );
+
         if (!userSyncStatus.historicalCompleted) {
           await runSyncSafely(
             () =>
@@ -536,6 +542,16 @@ async function startServer() {
           );
         }
 
+        if (!productOnHandsSyncStatus.historicalCompleted) {
+          await runSyncSafely(
+            () =>
+              require("../scheduler/productOnHandsScheduler").productOnHandsScheduler(
+                historicalDaysAgo
+              ),
+            "historical productOnHands"
+          );
+        }
+
         console.log("🔄 Starting current sync cycle...");
         await runSyncSafely(runUserSync, "current user");
         await runSyncSafely(runProductSync, "current product");
@@ -552,6 +568,7 @@ async function startServer() {
         await runSyncSafely(runTrademarkSync, "current trademark");
         await runSyncSafely(runAttributeSync, "current attribute");
         await runSyncSafely(runProductOnHandsSync, "current productOnHands");
+        await runSyncSafely(runBranchSync, "current branch");
 
         const runAllSyncs = async () => {
           try {
@@ -565,11 +582,13 @@ async function startServer() {
               runInvoiceSync(),
               runCashflowSync(),
               runTransferSync(),
+              runSaleChannelSync(),
               runReturnSync(),
               runOrderSupplierSync(),
               runTrademarkSync(),
               runAttributeSync(),
-              runSyncSafely(),
+              runProductOnHandsSync(),
+              runBranchSync(),
             ]);
           } catch (error) {
             console.error("❌ Error during scheduled sync:", error.message);

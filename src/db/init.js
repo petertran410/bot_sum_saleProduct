@@ -774,6 +774,26 @@ async function initializeDatabase() {
     `);
 
     await connection.query(`
+      CREATE TABLE IF NOT EXISTS branches (
+        id INT PRIMARY KEY,
+        branch_name VARCHAR(255),
+        branch_code VARCHAR(100),
+        contact_number VARCHAR(50),
+        retailer_id INT,
+        email VARCHAR(255),
+        address TEXT,
+        created_date DATETIME,
+        modified_date DATETIME,
+        raw_data JSON,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE      CURRENT_TIMESTAMP,
+        INDEX idx_branch_retailer (retailer_id),
+        INDEX idx_branch_modified (modified_date),
+        INDEX idx_branch_code (branch_code)
+      );
+    `);
+
+    await connection.query(`
       CREATE TABLE IF NOT EXISTS sync_status (
         entity_type VARCHAR(50) PRIMARY KEY,
         last_sync DATETIME,
@@ -797,6 +817,7 @@ async function initializeDatabase() {
       "trademarks",
       "attributes",
       "product_on_hands",
+      "branches",
     ];
 
     for (const entity of entities) {

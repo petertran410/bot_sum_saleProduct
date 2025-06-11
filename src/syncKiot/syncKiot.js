@@ -11,6 +11,7 @@ const returnService = require("../db/returnService");
 const trademarkService = require("../db/trademarkService");
 const attributeService = require("../db/attributeService");
 const productOnHandsService = require("../db/productOnHandsService");
+const branchService = require("../db/branchService");
 
 const {
   cashflowScheduler,
@@ -80,6 +81,11 @@ const {
   productOnHandsScheduler,
   productOnHandsSchedulerCurrent,
 } = require("../../scheduler/productOnHandsScheduler");
+
+const {
+  branchScheduler,
+  branchSchedulerCurrent,
+} = require("../../scheduler/branchScheduler");
 
 const runOrderSync = async () => {
   try {
@@ -640,6 +646,45 @@ const runProductOnHandsSync = async () => {
   }
 };
 
+const runBranchSync = async () => {
+  console.log("🚀 Starting Branch Sync Process...");
+  try {
+    const syncStatus = await branchService.getSyncStatus();
+    console.log("Branch Sync Status:", syncStatus);
+
+    if (!syncStatus.historicalCompleted) {
+      console.log("📅 Running historical branch sync...");
+      const result = await branchScheduler(160);
+
+      if (result.success) {
+        console.log("✅ Historical branches data has been saved to database");
+      } else {
+        console.error(
+          "❌ Error when saving historical branches data:",
+          result.error
+        );
+      }
+    } else {
+      console.log("🔄 Running current branch sync...");
+      const currentResult = await branchSchedulerCurrent();
+
+      if (currentResult.success) {
+        console.log(
+          `✅ Current branches data has been added: ${currentResult.savedCount} branches`
+        );
+      } else {
+        console.error(
+          "❌ Error when saving current branches data:",
+          currentResult.error
+        );
+      }
+    }
+  } catch (error) {
+    console.error("❌ Cannot sync branches data:", error);
+    console.error("Stack trace:", error.stack);
+  }
+};
+
 module.exports = {
   runOrderSync,
   runInvoiceSync,
@@ -657,4 +702,5 @@ module.exports = {
   runTrademarkSync,
   runAttributeSync,
   runProductOnHandsSync,
+  runBranchSync,
 };
