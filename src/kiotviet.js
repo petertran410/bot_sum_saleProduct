@@ -2019,14 +2019,8 @@ const getBranches = async () => {
     const allBranches = [];
     let currentItem = 0;
     let hasMoreData = true;
-    let removedIds = [];
 
-    // 🎯 TIME-FILTERED: Get only branches modified in last 48 hours
-    const fromDate = new Date();
-    fromDate.setDate(fromDate.getDate() - 2); // 48h buffer for safety
-    const fromDateStr = fromDate.toISOString().split("T")[0];
-
-    console.log(`Fetching branches modified since ${fromDateStr}...`);
+    console.log(`Fetching all current branches...`);
 
     while (hasMoreData) {
       const response = await makeApiRequest({
@@ -2035,10 +2029,10 @@ const getBranches = async () => {
         params: {
           pageSize: pageSize,
           currentItem: currentItem,
-          lastModifiedFrom: fromDateStr, // 🔥 KEY CHANGE: Time filtering
-          orderBy: "modifiedDate", // Sort by modification date
-          orderDirection: "DESC",
-          includeRemoveIds: true, // Include deleted branch IDs
+          orderBy: "id", // Sort by ID for consistent pagination
+          orderDirection: "ASC",
+          // ✅ REMOVED lastModifiedFrom to get ALL branches
+          // includeRemoveIds: true, // Only needed if using time filtering
         },
         headers: {
           Retailer: process.env.KIOT_SHOP_NAME,
@@ -2055,13 +2049,8 @@ const getBranches = async () => {
         currentItem += response.data.data.length;
         hasMoreData = response.data.data.length === pageSize;
 
-        // ✅ FIXED: Capture removedIds properly within the loop
-        if (response.data.removedIds && response.data.removedIds.length > 0) {
-          removedIds.push(...response.data.removedIds);
-        }
-
         console.log(
-          `Fetched ${response.data.data.length} branches (modified since ${fromDateStr}), total: ${allBranches.length}`
+          `Fetched ${response.data.data.length} branches, total: ${allBranches.length}`
         );
         await new Promise((resolve) => setTimeout(resolve, 100));
       } else {
@@ -2069,92 +2058,49 @@ const getBranches = async () => {
       }
     }
 
-    console.log(
-      `✅ Total time-filtered branches fetched: ${allBranches.length}`
-    );
+    console.log(`✅ Total branches fetched: ${allBranches.length}`);
     return {
       data: allBranches,
       total: allBranches.length,
-      removedIds: removedIds,
     };
   } catch (error) {
-    console.error("Error getting time-filtered branches:", error.message);
+    console.error("Error getting branches:", error.message);
     throw error;
   }
 };
 
-// HISTORICAL Branches sync (for initial full sync)
+// HISTORICAL Branches sync - SIMPLIFIED to get all branches once
 const getBranchesByDate = async (daysAgo) => {
   try {
-    const results = [];
+    console.log(
+      `🔄 Getting all branches for historical sync (branches are relatively static)...`
+    );
 
-    for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
-      const targetDate = new Date();
-      targetDate.setDate(targetDate.getDate() - currentDaysAgo);
-      const formattedDate = targetDate.toISOString().split("T")[0];
+    // ✅ FIXED: Just get all branches in one go since branches don't change often
+    const allBranchesData = await getBranches();
 
-      const token = await getToken();
-      const pageSize = 100;
-      const allBranchesForDate = [];
-      let currentItem = 0;
-      let hasMoreData = true;
-
-      console.log(`Fetching branches for ${formattedDate}...`);
-
-      while (hasMoreData) {
-        const response = await makeApiRequest({
-          method: "GET",
-          url: `${KIOTVIET_BASE_URL}/branches`,
-          params: {
-            pageSize: pageSize,
-            currentItem: currentItem,
-            orderBy: "modifiedDate",
-            orderDirection: "DESC",
-            lastModifiedFrom: formattedDate,
-            includeRemoveIds: true,
-          },
-          headers: {
-            Retailer: process.env.KIOT_SHOP_NAME,
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        if (
-          response.data &&
-          response.data.data &&
-          response.data.data.length > 0
-        ) {
-          allBranchesForDate.push(...response.data.data);
-          currentItem += response.data.data.length;
-          hasMoreData = response.data.data.length === pageSize;
-
-          console.log(
-            `Fetched ${response.data.data.length} branches from ${formattedDate}, total: ${allBranchesForDate.length}`
-          );
-          await new Promise((resolve) => setTimeout(resolve, 100));
-        } else {
-          hasMoreData = false;
-        }
-      }
-
-      // ✅ FIXED: Don't access response outside loop, follow pattern of other historical syncs
-      if (allBranchesForDate.length > 0) {
-        results.push({
-          date: formattedDate,
-          data: {
-            data: allBranchesForDate,
-            total: allBranchesForDate.length,
-            // removedIds not needed for historical sync (only current sync uses this)
-          },
-        });
-      }
-
+    if (
+      allBranchesData &&
+      allBranchesData.data &&
+      allBranchesData.data.length > 0
+    ) {
       console.log(
-        `✅ Completed fetching branches for ${formattedDate}: ${allBranchesForDate.length} branches`
+        `✅ Historical branches sync: Found ${allBranchesData.data.length} branches total`
       );
+
+      return [
+        {
+          date: new Date().toISOString().split("T")[0],
+          data: {
+            data: allBranchesData.data,
+            total: allBranchesData.data.length,
+          },
+        },
+      ];
     }
 
-    return results;
+    console.log("No branches found");
+    return [];
   } catch (error) {
     console.error("Error getting historical branches:", error.message);
     throw error;
