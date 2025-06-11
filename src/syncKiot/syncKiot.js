@@ -9,6 +9,7 @@ const purchaseOrderService = require("../db/purchaseOrderService");
 const transferService = require("../db/transferService");
 const returnService = require("../db/returnService");
 const trademarkService = require("../db/trademarkService");
+const attributeService = require("../db/attributeService");
 
 const {
   cashflowScheduler,
@@ -68,6 +69,11 @@ const {
   trademarkScheduler,
   trademarkSchedulerCurrent,
 } = require("../../scheduler/trademarkScheduler");
+
+const {
+  attributeScheduler,
+  attributeSchedulerCurrent,
+} = require("../../scheduler/attributeScheduler");
 
 const runOrderSync = async () => {
   try {
@@ -549,6 +555,44 @@ const runTrademarkSync = async () => {
   }
 };
 
+const runAttributeSync = async () => {
+  console.log("🏷️ Starting Attribute Sync Process...");
+  try {
+    const syncStatus = await attributeService.getSyncStatus();
+    console.log("Attribute Sync Status:", syncStatus);
+
+    if (!syncStatus.historicalCompleted) {
+      console.log("📅 Running initial attribute sync...");
+      const result = await attributeScheduler();
+
+      if (result.success) {
+        console.log("✅ Initial attributes data has been saved to database");
+      } else {
+        console.error(
+          "❌ Error when saving initial attributes data:",
+          result.error
+        );
+      }
+    } else {
+      console.log("🔄 Running current attribute sync...");
+      const currentResult = await attributeSchedulerCurrent();
+
+      if (currentResult.success) {
+        console.log(
+          `✅ Current attributes data has been synced: ${currentResult.savedCount} attributes`
+        );
+      } else {
+        console.error(
+          "❌ Error when syncing current attributes:",
+          currentResult.error
+        );
+      }
+    }
+  } catch (error) {
+    console.error("❌ Cannot get and save attribute data:", error);
+  }
+};
+
 module.exports = {
   runOrderSync,
   runInvoiceSync,
@@ -564,4 +608,5 @@ module.exports = {
   runOrderSupplierSync,
   runLocationSync,
   runTrademarkSync,
+  runAttributeSync,
 };

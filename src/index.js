@@ -16,6 +16,7 @@ const {
   runReturnSync,
   runOrderSupplierSync,
   runTrademarkSync,
+  runAttributeSync,
 } = require("./syncKiot/syncKiot");
 const { testConnection } = require("./db");
 const { initializeDatabase } = require("./db/init");
@@ -549,6 +550,7 @@ async function startServer() {
               runReturnSync(),
               runOrderSupplierSync(),
               runTrademarkSync(),
+              runAttributeSync(),
             ]);
           } catch (error) {
             console.error("❌ Error during scheduled sync:", error.message);

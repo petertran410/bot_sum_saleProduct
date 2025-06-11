@@ -731,6 +731,31 @@ async function initializeDatabase() {
     `);
 
     await connection.query(`
+      CREATE TABLE IF NOT EXISTS attributes (
+        id BIGINT PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        createdDate DATETIME DEFAULT CURRENT_TIMESTAMP,
+        modifiedDate DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        jsonData JSON,
+        UNIQUE INDEX idx_attribute_name (name)
+      )
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS attribute_values (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        attributeId BIGINT NOT NULL,
+        value VARCHAR(500) NOT NULL,
+        createdDate DATETIME DEFAULT CURRENT_TIMESTAMP,
+        modifiedDate DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (attributeId) REFERENCES attributes(id) ON DELETE CASCADE,
+        UNIQUE INDEX idx_attribute_value (attributeId, value),
+        INDEX idx_attributeId (attributeId),
+        INDEX idx_value (value)
+      )
+    `);
+
+    await connection.query(`
       CREATE TABLE IF NOT EXISTS sync_status (
         entity_type VARCHAR(50) PRIMARY KEY,
         last_sync DATETIME,
@@ -752,6 +777,7 @@ async function initializeDatabase() {
       "returns",
       "order_suppliers",
       "trademarks",
+      "attributes",
     ];
 
     for (const entity of entities) {
