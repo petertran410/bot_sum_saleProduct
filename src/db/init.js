@@ -545,6 +545,328 @@ async function initializeDatabase() {
     `);
 
     await connection.query(`
+      CREATE TABLE IF NOT EXISTS sale_channels (
+        id BIGINT PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        isActive BOOLEAN DEFAULT TRUE,
+        img VARCHAR(500),
+        isNotDelete BOOLEAN DEFAULT FALSE,
+        jsonData JSON,
+        createdDate DATETIME DEFAULT CURRENT_TIMESTAMP,
+        modifiedDate DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE     CURRENT_TIMESTAMP,
+        UNIQUE INDEX (name)
+      )
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS returns (
+        id BIGINT PRIMARY KEY,
+        code VARCHAR(100) NOT NULL,
+        invoiceId BIGINT,
+        returnDate DATETIME,
+        branchId INT,
+        branchName VARCHAR(255),
+        receivedById BIGINT,
+        soldByName VARCHAR(255),
+        customerId BIGINT,
+        customerCode VARCHAR(100),
+        customerName VARCHAR(255),
+        returnTotal DECIMAL(15,2) DEFAULT 0,
+        returnDiscount DECIMAL(15,2) DEFAULT 0,
+        returnFee DECIMAL(15,2) DEFAULT 0,
+        totalPayment DECIMAL(15,2) DEFAULT 0,
+        status INT,
+        statusValue VARCHAR(100),
+        createdDate DATETIME,
+        modifiedDate DATETIME,
+        jsonData JSON,
+        retailerId BIGINT,
+        UNIQUE INDEX (code),
+        INDEX idx_returnDate (returnDate),
+        INDEX idx_branchId (branchId),
+        INDEX idx_customerId (customerId),
+        INDEX idx_status (status),
+        INDEX idx_modifiedDate (modifiedDate)
+      )
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS return_details (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        returnId BIGINT,
+        productId BIGINT,
+        productCode VARCHAR(100),
+        productName VARCHAR(255),
+        quantity DECIMAL(15,2) DEFAULT 0,
+        price DECIMAL(15,2) DEFAULT 0,
+        note TEXT,
+        usePoint BOOLEAN DEFAULT FALSE,
+        subTotal DECIMAL(15,2) DEFAULT 0,
+        FOREIGN KEY (returnId) REFERENCES returns(id) ON DELETE CASCADE,
+        INDEX idx_returnId (returnId),
+        INDEX idx_productId (productId),
+        INDEX idx_productCode (productCode)
+      )
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS return_payments (
+        id BIGINT PRIMARY KEY,
+        returnId BIGINT,
+        code VARCHAR(100),
+        amount DECIMAL(15,2) DEFAULT 0,
+        method VARCHAR(100),
+        status TINYINT,
+        statusValue VARCHAR(100),
+        transDate DATETIME,
+        bankAccount VARCHAR(255),
+        accountId INT,
+        description TEXT,
+        FOREIGN KEY (returnId) REFERENCES returns(id) ON DELETE CASCADE,
+        INDEX idx_returnId (returnId),
+        INDEX idx_transDate (transDate)
+      )
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS order_suppliers (
+        id BIGINT PRIMARY KEY,
+        code VARCHAR(50) NOT NULL,
+        invoiceId BIGINT,
+        orderDate DATETIME,
+        branchId INT,
+        retailerId INT,
+        userId BIGINT,
+        description TEXT,
+        status INT,
+        statusValue VARCHAR(50),
+        discountRatio VARCHAR(10),
+        productQty DECIMAL(15,2),
+        discount DECIMAL(15,2),
+        createdDate DATETIME,
+        createdBy BIGINT,
+        total DECIMAL(15,2),
+        exReturnSuppliers DECIMAL(15,2),
+        exReturnThirdParty DECIMAL(15,2),
+        totalAmt DECIMAL(15,2),
+        totalQty DECIMAL(15,2),
+        totalQuantity DECIMAL(15,2),
+        subTotal DECIMAL(15,2),
+        paidAmount DECIMAL(15,2),
+        toComplete BOOLEAN,
+        viewPrice BOOLEAN,
+        supplierDebt DECIMAL(15,2),
+        supplierOldDebt DECIMAL(15,2),
+        purchaseOrderCodes TEXT,
+        jsonData JSON,
+        UNIQUE INDEX (code),
+        INDEX idx_orderDate (orderDate),
+        INDEX idx_status (status),
+        INDEX idx_createdBy (createdBy)
+      )
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS order_supplier_details (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        orderSupplierId BIGINT,
+        productId BIGINT,
+        quantity DECIMAL(15,2),
+        price DECIMAL(15,2),
+        discount DECIMAL(15,2),
+        allocation DECIMAL(15,2),
+        createdDate DATETIME,
+        description TEXT,
+        orderByNumber INT,
+        allocationSuppliers DECIMAL(15,2),
+        allocationThirdParty DECIMAL(15,2),
+        orderQuantity DECIMAL(15,2),
+        subTotal DECIMAL(15,2),
+        FOREIGN KEY (orderSupplierId) REFERENCES order_suppliers(id) ON DELETE CASCADE,
+        INDEX idx_productId (productId)
+      )
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS order_supplier_expenses_others (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        orderSupplierId BIGINT,
+        form INT,
+        expensesOtherOrder TINYINT,
+        expensesOtherCode VARCHAR(50),
+        expensesOtherName VARCHAR(255),
+        expensesOtherId INT,
+        price DECIMAL(15,2),
+        isReturnAuto BOOLEAN,
+        exValue DECIMAL(15,2),
+        createdDate DATETIME,
+        FOREIGN KEY (orderSupplierId) REFERENCES order_suppliers(id) ON DELETE CASCADE
+      )
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS locations (
+        id BIGINT PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        normalName VARCHAR(255),
+        jsonData JSON,
+        lastSyncDate DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE INDEX (id),
+        INDEX idx_name (name),
+        INDEX idx_normalName (normalName)
+      )
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS trademarks (
+        id BIGINT PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        createdDate DATETIME,
+        modifiedDate DATETIME,
+        jsonData JSON,
+        UNIQUE INDEX (id),
+        INDEX idx_name (name),
+        INDEX idx_modifiedDate (modifiedDate)
+      )
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS attributes (
+        id BIGINT PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        createdDate DATETIME DEFAULT CURRENT_TIMESTAMP,
+        modifiedDate DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        jsonData JSON,
+        UNIQUE INDEX idx_attribute_name (name)
+      )
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS attribute_values (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        attributeId BIGINT NOT NULL,
+        value VARCHAR(500) NOT NULL,
+        createdDate DATETIME DEFAULT CURRENT_TIMESTAMP,
+        modifiedDate DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (attributeId) REFERENCES attributes(id) ON DELETE CASCADE,
+        UNIQUE INDEX idx_attribute_value (attributeId, value),
+        INDEX idx_attributeId (attributeId),
+        INDEX idx_value (value)
+      )
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS product_on_hands (
+        id BIGINT PRIMARY KEY,
+        code VARCHAR(50) NOT NULL,
+        createdDate DATETIME,
+        name VARCHAR(255),
+        unit VARCHAR(50),
+        basePrice DECIMAL(15,2),
+        weight DECIMAL(10,3),
+        modifiedDate DATETIME,
+        jsonData JSON,
+        lastSyncDate DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE     CURRENT_TIMESTAMP,
+        UNIQUE INDEX (code),
+        INDEX idx_modifiedDate (modifiedDate),
+        INDEX idx_lastSyncDate (lastSyncDate)
+      )
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS branches (
+        id INT PRIMARY KEY,
+        branch_name VARCHAR(255),
+        branch_code VARCHAR(100),
+        contact_number VARCHAR(50),
+        retailer_id INT,
+        email VARCHAR(255),
+        address TEXT,
+        created_date DATETIME,
+        modified_date DATETIME,
+        raw_data JSON,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE      CURRENT_TIMESTAMP,
+        INDEX idx_branch_retailer (retailer_id),
+        INDEX idx_branch_modified (modified_date),
+        INDEX idx_branch_code (branch_code)
+      );
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS pricebooks (
+        id BIGINT PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        isActive BOOLEAN DEFAULT TRUE,
+        isGlobal BOOLEAN DEFAULT FALSE,
+        startDate DATETIME,
+        endDate DATETIME,
+        forAllCusGroup BOOLEAN DEFAULT FALSE,
+        forAllUser BOOLEAN DEFAULT FALSE,
+        createdDate DATETIME DEFAULT CURRENT_TIMESTAMP,
+        modifiedDate DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE     CURRENT_TIMESTAMP,
+        jsonData JSON,
+        INDEX idx_name (name),
+        INDEX idx_isActive (isActive),
+        INDEX idx_startDate (startDate),
+        INDEX idx_endDate (endDate)
+      )
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS pricebook_branches (
+        id BIGINT PRIMARY KEY,
+        priceBookId BIGINT,
+        branchId BIGINT,
+        branchName VARCHAR(255),
+        FOREIGN KEY (priceBookId) REFERENCES pricebooks(id) ON DELETE     CASCADE,
+        INDEX idx_priceBookId (priceBookId),
+        INDEX idx_branchId (branchId)
+      )
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS pricebook_customer_groups (
+        id BIGINT PRIMARY KEY,
+        priceBookId BIGINT,
+        customerGroupId BIGINT,
+        customerGroupName VARCHAR(255),
+        FOREIGN KEY (priceBookId) REFERENCES pricebooks(id) ON DELETE     CASCADE,
+        INDEX idx_priceBookId (priceBookId),
+        INDEX idx_customerGroupId (customerGroupId)
+      )
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS pricebook_users (
+        id BIGINT PRIMARY KEY,
+        priceBookId BIGINT,
+        userId BIGINT,
+        userName VARCHAR(255),
+        FOREIGN KEY (priceBookId) REFERENCES pricebooks(id) ON DELETE     CASCADE,
+        INDEX idx_priceBookId (priceBookId),
+        INDEX idx_userId (userId)
+      )
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS pricebook_details (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        pricebookId BIGINT,
+        productId BIGINT,
+        productCode VARCHAR(50),
+        price DECIMAL(15,2),
+        createdDate DATETIME DEFAULT CURRENT_TIMESTAMP,
+        modifiedDate DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE     CURRENT_TIMESTAMP,
+        FOREIGN KEY (pricebookId) REFERENCES pricebooks(id) ON DELETE     CASCADE,
+        UNIQUE KEY unique_pricebook_product (pricebookId, productId),
+        INDEX idx_pricebookId (pricebookId),
+        INDEX idx_productId (productId),
+        INDEX idx_productCode (productCode)
+      )
+    `);
+
+    await connection.query(`
       CREATE TABLE IF NOT EXISTS sync_status (
         entity_type VARCHAR(50) PRIMARY KEY,
         last_sync DATETIME,
@@ -562,6 +884,14 @@ async function initializeDatabase() {
       "cashflows",
       "purchase_orders",
       "transfers",
+      "sale_channels",
+      "returns",
+      "order_suppliers",
+      "trademarks",
+      "attributes",
+      "product_on_hands",
+      "branches",
+      "pricebooks",
     ];
 
     for (const entity of entities) {

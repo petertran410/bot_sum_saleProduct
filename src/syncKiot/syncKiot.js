@@ -7,6 +7,12 @@ const surchargeService = require("../db/surchagesService");
 const cashFlowService = require("../db/cashflowService");
 const purchaseOrderService = require("../db/purchaseOrderService");
 const transferService = require("../db/transferService");
+const returnService = require("../db/returnService");
+const trademarkService = require("../db/trademarkService");
+const attributeService = require("../db/attributeService");
+const productOnHandsService = require("../db/productOnHandsService");
+const branchService = require("../db/branchService");
+const pricebookService = require("../db/pricebookService");
 
 const {
   cashflowScheduler,
@@ -52,6 +58,40 @@ const {
   transferScheduler,
   transferSchedulerCurrent,
 } = require("../../scheduler/transferScheduler");
+
+const {
+  salechannelSchedulerCurrent,
+} = require("../../scheduler/salechannelScheduler");
+
+const {
+  returnScheduler,
+  returnSchedulerCurrent,
+} = require("../../scheduler/returnScheduler");
+
+const {
+  trademarkScheduler,
+  trademarkSchedulerCurrent,
+} = require("../../scheduler/trademarkScheduler");
+
+const {
+  attributeScheduler,
+  attributeSchedulerCurrent,
+} = require("../../scheduler/attributeScheduler");
+
+const {
+  productOnHandsScheduler,
+  productOnHandsSchedulerCurrent,
+} = require("../../scheduler/productOnHandsScheduler");
+
+const {
+  branchScheduler,
+  branchSchedulerCurrent,
+} = require("../../scheduler/branchScheduler");
+
+const {
+  pricebookScheduler,
+  pricebookSchedulerCurrent,
+} = require("../../scheduler/pricebookScheduler");
 
 const runOrderSync = async () => {
   try {
@@ -363,6 +403,332 @@ const runTransferSync = async () => {
   }
 };
 
+const runSaleChannelSync = async () => {
+  try {
+    console.log("🚀 Starting Sale Channel Sync Process...");
+    const currentResult = await salechannelSchedulerCurrent();
+
+    if (currentResult.success) {
+      console.log(
+        `✅ Current sale channels data has been added: ${currentResult.savedCount} sale channels`
+      );
+    } else {
+      console.error(
+        "❌ Error when adding current sale channels:",
+        currentResult.error
+      );
+    }
+  } catch (error) {
+    console.error("❌ Cannot get and save sale channels data:", error);
+  }
+};
+
+const runReturnSync = async () => {
+  try {
+    console.log("🚀 Starting Returns Sync Process...");
+    const syncStatus = await returnService.getSyncStatus();
+    console.log("Returns Sync Status:", syncStatus);
+
+    if (!syncStatus.historicalCompleted) {
+      console.log("📅 Running historical returns sync...");
+      const result = await returnScheduler(160); // Same as your other entities
+
+      if (result.success) {
+        console.log("✅ Historical returns data has been saved to database");
+      } else {
+        console.error(
+          "❌ Error when saving historical returns data:",
+          result.error
+        );
+      }
+    } else {
+      console.log("🔄 Running current returns sync...");
+      const currentResult = await returnSchedulerCurrent();
+
+      if (currentResult.success) {
+        console.log(
+          `✅ Current returns data has been added: ${currentResult.savedCount} returns`
+        );
+      } else {
+        console.error(
+          "❌ Error when adding current returns:",
+          currentResult.error
+        );
+      }
+    }
+  } catch (error) {
+    console.error("❌ Cannot get and save data returns:", error);
+  }
+};
+
+const runOrderSupplierSync = async () => {
+  try {
+    console.log("🚀 Starting Order Supplier Sync Process...");
+    const orderSupplierService = require("../db/orderSupplierService");
+    const {
+      orderSupplierSchedulerCurrent,
+    } = require("../../scheduler/orderSupplierScheduler");
+
+    // OrderSuppliers API doesn't support historical data, so we always run current sync
+    console.log("🔄 Running order supplier sync (all records)...");
+    const result = await orderSupplierSchedulerCurrent();
+
+    if (result.success) {
+      console.log(
+        `✅ Order supplier sync completed: ${result.savedCount} new order suppliers`
+      );
+    } else {
+      console.error("❌ Error when syncing order suppliers:", result.error);
+    }
+  } catch (error) {
+    console.error("❌ Cannot sync order suppliers data:", error);
+    console.error("Stack trace:", error.stack);
+  }
+};
+
+const runLocationSync = async (forceSync = false) => {
+  try {
+    console.log("🏢 Starting Location Sync Process...");
+    const locationService = require("../db/locationService");
+    const {
+      locationSchedulerOneTime,
+      checkLocationSyncStatus,
+    } = require("../../scheduler/locationScheduler");
+
+    // Check current status
+    const status = await checkLocationSyncStatus();
+    console.log("Location Status:", {
+      locationCount: status.locationCount,
+      lastSync: status.lastSync,
+      needsSync: status.needsSync,
+    });
+
+    if (!status.needsSync && !forceSync) {
+      console.log(
+        `✅ Locations already synchronized (${status.locationCount} locations). Use forceSync=true to re-sync.`
+      );
+      return {
+        success: true,
+        message: `${status.locationCount} locations already exist`,
+        skipped: true,
+      };
+    }
+
+    console.log(
+      forceSync
+        ? "🔄 Force syncing locations..."
+        : "🔄 Running initial location sync..."
+    );
+    const result = await locationSchedulerOneTime(forceSync);
+
+    if (result.success) {
+      console.log(`✅ Location sync completed: ${result.message || "Success"}`);
+    } else {
+      console.error("❌ Error when syncing locations:", result.error);
+    }
+
+    return result;
+  } catch (error) {
+    console.error("❌ Cannot sync locations data:", error);
+    console.error("Stack trace:", error.stack);
+    return { success: false, error: error.message };
+  }
+};
+
+const runTrademarkSync = async () => {
+  console.log("🚀 Starting Trademark Sync Process...");
+  try {
+    const syncStatus = await trademarkService.getSyncStatus();
+    console.log("Trademark Sync Status:", syncStatus);
+
+    if (!syncStatus.historicalCompleted) {
+      console.log("📅 Running historical trademark sync...");
+      const result = await trademarkScheduler(250);
+
+      if (result.success) {
+        console.log("✅ Historical trademarks data has been saved to database");
+      } else {
+        console.error(
+          "❌ Error when saving historical trademarks data:",
+          result.error
+        );
+      }
+    } else {
+      console.log("🔄 Running current trademark sync...");
+      const currentResult = await trademarkSchedulerCurrent();
+
+      if (currentResult.success) {
+        console.log(
+          `✅ Current trademarks data has been added: ${currentResult.savedCount} trademarks`
+        );
+      } else {
+        console.error(
+          "❌ Error when adding current trademarks:",
+          currentResult.error
+        );
+      }
+    }
+  } catch (error) {
+    console.error("💥 Cannot get and save trademark data:", error);
+  }
+};
+
+const runAttributeSync = async () => {
+  console.log("🏷️ Starting Attribute Sync Process...");
+  try {
+    const syncStatus = await attributeService.getSyncStatus();
+    console.log("Attribute Sync Status:", syncStatus);
+
+    if (!syncStatus.historicalCompleted) {
+      console.log("📅 Running initial attribute sync...");
+      const result = await attributeScheduler();
+
+      if (result.success) {
+        console.log("✅ Initial attributes data has been saved to database");
+      } else {
+        console.error(
+          "❌ Error when saving initial attributes data:",
+          result.error
+        );
+      }
+    } else {
+      console.log("🔄 Running current attribute sync...");
+      const currentResult = await attributeSchedulerCurrent();
+
+      if (currentResult.success) {
+        console.log(
+          `✅ Current attributes data has been synced: ${currentResult.savedCount} attributes`
+        );
+      } else {
+        console.error(
+          "❌ Error when syncing current attributes:",
+          currentResult.error
+        );
+      }
+    }
+  } catch (error) {
+    console.error("❌ Cannot get and save attribute data:", error);
+  }
+};
+
+const runProductOnHandsSync = async () => {
+  try {
+    console.log("🚀 Starting ProductOnHands Sync Process...");
+    const syncStatus = await productOnHandsService.getSyncStatus();
+    console.log("ProductOnHands Sync Status:", syncStatus);
+
+    if (!syncStatus.historicalCompleted) {
+      console.log("📅 Running historical productOnHands sync...");
+      const result = await productOnHandsScheduler(160);
+
+      if (result.success) {
+        console.log(
+          "✅ Historical productOnHands data has been saved to database"
+        );
+      } else {
+        console.error(
+          "❌ Error when saving historical productOnHands data:",
+          result.error
+        );
+      }
+    } else {
+      console.log("🔄 Running current productOnHands sync...");
+      const currentResult = await productOnHandsSchedulerCurrent();
+
+      if (currentResult.success) {
+        console.log(
+          `✅ Current productOnHands data has been added: ${currentResult.savedCount} items`
+        );
+      } else {
+        console.error(
+          "❌ Error when adding current productOnHands:",
+          currentResult.error
+        );
+      }
+    }
+  } catch (error) {
+    console.error("❌ Cannot get and save productOnHands data:", error);
+    console.error("Stack trace:", error.stack);
+  }
+};
+
+const runBranchSync = async () => {
+  console.log("🚀 Starting Branch Sync Process...");
+  try {
+    const syncStatus = await branchService.getSyncStatus();
+    console.log("Branch Sync Status:", syncStatus);
+
+    if (!syncStatus.historicalCompleted) {
+      console.log("📅 Running historical branch sync...");
+      const result = await branchScheduler(160);
+
+      if (result.success) {
+        console.log("✅ Historical branches data has been saved to database");
+      } else {
+        console.error(
+          "❌ Error when saving historical branches data:",
+          result.error
+        );
+      }
+    } else {
+      console.log("🔄 Running current branch sync...");
+      const currentResult = await branchSchedulerCurrent();
+
+      if (currentResult.success) {
+        console.log(
+          `✅ Current branches data has been added: ${currentResult.savedCount} branches`
+        );
+      } else {
+        console.error(
+          "❌ Error when saving current branches data:",
+          currentResult.error
+        );
+      }
+    }
+  } catch (error) {
+    console.error("❌ Cannot sync branches data:", error);
+    console.error("Stack trace:", error.stack);
+  }
+};
+
+const runPricebookSync = async () => {
+  console.log("💰 Starting Pricebook Sync Process...");
+  try {
+    const syncStatus = await pricebookService.getSyncStatus();
+    console.log("Pricebook Sync Status:", syncStatus);
+
+    if (!syncStatus.historicalCompleted) {
+      console.log("📅 Running historical pricebook sync...");
+      const result = await pricebookScheduler(250); // Parameter ignored for full sync
+
+      if (result.success) {
+        console.log("✅ Historical pricebook data has been saved to database");
+      } else {
+        console.error(
+          "❌ Error when saving historical pricebook data:",
+          result.error
+        );
+      }
+    } else {
+      console.log("🔄 Running current pricebook sync...");
+      const currentResult = await pricebookSchedulerCurrent();
+
+      if (currentResult.success) {
+        console.log(
+          `✅ Current pricebook data has been added: ${currentResult.savedCount} pricebooks`
+        );
+      } else {
+        console.error(
+          "❌ Error when adding current pricebooks:",
+          currentResult.error
+        );
+      }
+    }
+  } catch (error) {
+    console.error("💥 Cannot get and save pricebook data:", error);
+  }
+};
+
 module.exports = {
   runOrderSync,
   runInvoiceSync,
@@ -373,4 +739,13 @@ module.exports = {
   runCashflowSync,
   runPurchaseOrderSync,
   runTransferSync,
+  runSaleChannelSync,
+  runReturnSync,
+  runOrderSupplierSync,
+  runLocationSync,
+  runTrademarkSync,
+  runAttributeSync,
+  runProductOnHandsSync,
+  runBranchSync,
+  runPricebookSync,
 };

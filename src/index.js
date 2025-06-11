@@ -12,6 +12,14 @@ const {
   runCashflowSync,
   runPurchaseOrderSync,
   runTransferSync,
+  runSaleChannelSync,
+  runReturnSync,
+  runOrderSupplierSync,
+  runTrademarkSync,
+  runAttributeSync,
+  runProductOnHandsSync,
+  runBranchSync,
+  runPricebookSync,
 } = require("./syncKiot/syncKiot");
 const { testConnection } = require("./db");
 const { initializeDatabase } = require("./db/init");
@@ -20,14 +28,11 @@ const { addRecordToCRMBase, getCRMStats, sendTestMessage } = require("./lark");
 const app = express();
 const PORT = process.env.PORT || 3690;
 
-// Fix 1: Increase max listeners to prevent warning
-process.setMaxListeners(20);
+process.setMaxListeners(30);
 
-// Fix 2: Global variables for cleanup
 let syncInterval = null;
 let server = null;
 
-// Fix 3: Cleanup function
 function cleanup() {
   console.log("🛑 Cleaning up resources...");
 
@@ -46,7 +51,6 @@ function cleanup() {
   }
 }
 
-// Fix 4: Add process listeners ONCE at module level (not inside app.listen)
 process.on("SIGINT", cleanup);
 process.on("SIGTERM", cleanup);
 process.on("uncaughtException", (error) => {
@@ -110,6 +114,10 @@ app.get("/", (req, res) => {
       registration: "/api/submit-registration",
       stats: "/api/crm/stats",
       test: "/api/test-lark",
+      syncSaleChannels: "POST /api/sync/salechannels",
+      saleChannelStatus: "GET /api/sync/salechannels/status",
+      syncTrademarks: "POST /api/sync/trademarks",
+      trademarkStatus: "GET /api/sync/trademarks/status",
     },
     timestamp: new Date().toISOString(),
   });
@@ -236,6 +244,71 @@ app.post("/api/webhook/lark", (req, res) => {
   }
 });
 
+app.post("/api/sync/salechannels", async (req, res) => {
+  try {
+    console.log("🚀 Manual sale channel sync requested");
+
+    // Import the scheduler function
+    const {
+      salechannelSchedulerCurrent,
+    } = require("../scheduler/salechannelScheduler");
+
+    // Execute the sync
+    const result = await salechannelSchedulerCurrent();
+
+    if (result.success) {
+      console.log(`✅ Manual sale channel sync completed successfully`);
+
+      res.json({
+        success: true,
+        message: "Sale channels synchronized successfully",
+        data: {
+          totalProcessed: result.savedCount || 0,
+          hasNewData: result.hasNewData || false,
+          syncTimestamp: new Date().toISOString(),
+          operation: "manual_sync",
+        },
+      });
+    } else {
+      console.error(`❌ Manual sale channel sync failed: ${result.error}`);
+
+      res.status(500).json({
+        success: false,
+        message: "Sale channel synchronization failed",
+        error: result.error || "Unknown error occurred",
+        operation: "manual_sync",
+      });
+    }
+  } catch (error) {
+    console.error("❌ Manual sale channel sync endpoint error:", error.message);
+    console.error("Stack trace:", error.stack);
+
+    res.status(500).json({
+      success: false,
+      message: "Internal server error during sale channel sync",
+      error: error.message,
+      operation: "manual_sync",
+      details: process.env.NODE_ENV === "development" ? error.stack : undefined,
+    });
+  }
+});
+
+const initializeStaticData = async () => {
+  try {
+    console.log("🚀 Initializing static data...");
+
+    // Add location sync here
+    const { runLocationSync } = require("./syncKiot/syncKiot");
+    await runLocationSync();
+
+    console.log("✅ Static data initialization completed");
+  } catch (error) {
+    console.error("❌ Static data initialization failed:", error);
+  }
+};
+
+// initializeStaticData();
+
 async function startServer() {
   try {
     const dbConnected = await testConnection();
@@ -250,15 +323,12 @@ async function startServer() {
       process.exit(1);
     }
 
-    // Fix 5: Store server reference globally for cleanup
     server = app.listen(PORT, async () => {
       try {
-        console.log(`🚀 Server is running on port ${PORT}`);
         const historicalDaysAgo = parseInt(
           process.env.INITIAL_SCAN_DAYS || "7"
         );
 
-        // Helper function to safely get sync status
         const getSyncStatusSafely = async (servicePath, entityName) => {
           try {
             const service = require(servicePath);
@@ -280,12 +350,8 @@ async function startServer() {
             console.log(`✅ ${entityName} sync completed`);
           } catch (error) {
             console.error(`❌ ${entityName} sync failed:`, error.message);
-            // Don't crash the app, just continue
           }
         };
-
-        // Get sync status for all entities
-        console.log("📋 Checking sync status...");
 
         const userSyncStatus = await getSyncStatusSafely(
           "../src/db/userService",
@@ -323,8 +389,35 @@ async function startServer() {
           "../src/db/transferService",
           "transfers"
         );
+        const returnSyncStatus = await getSyncStatusSafely(
+          "../src/db/returnService",
+          "returns"
+        );
+        const trademarkSyncStatus = await getSyncStatusSafely(
+          "../src/db/trademarkService",
+          "trademarks"
+        );
 
-        // Run historical syncs with error handling
+        const orderSupplierSyncStatus = await getSyncStatusSafely(
+          "../src/db/orderSupplierService",
+          "order_suppliers"
+        );
+
+        const productOnHandsSyncStatus = await getSyncStatusSafely(
+          "../src/db/productOnHandsService",
+          "product_on_hands"
+        );
+
+        const branchSyncStatus = await getSyncStatusSafely(
+          "../src/db/branchService",
+          "branches"
+        );
+
+        const pricebookSyncStatus = await getSyncStatusSafely(
+          "../src/db/pricebookService",
+          "pricebook"
+        );
+
         if (!userSyncStatus.historicalCompleted) {
           await runSyncSafely(
             () =>
@@ -415,7 +508,66 @@ async function startServer() {
           );
         }
 
-        // Current sync with error handling
+        if (!returnSyncStatus.historicalCompleted) {
+          await runSyncSafely(
+            () =>
+              require("../scheduler/returnScheduler").returnScheduler(
+                historicalDaysAgo
+              ),
+            "historical return"
+          );
+        }
+
+        if (!orderSupplierSyncStatus.historicalCompleted) {
+          await runSyncSafely(
+            () =>
+              require("../scheduler/orderSupplierScheduler").orderSupplierScheduler(
+                historicalDaysAgo
+              ),
+            "historical order supplier"
+          );
+        }
+
+        if (!trademarkSyncStatus.historicalCompleted) {
+          await runSyncSafely(
+            () =>
+              require("../scheduler/trademarkScheduler").trademarkScheduler(
+                historicalDaysAgo
+              ),
+            "historical trademark"
+          );
+        }
+
+        if (!productOnHandsSyncStatus.historicalCompleted) {
+          await runSyncSafely(
+            () =>
+              require("../scheduler/productOnHandsScheduler").productOnHandsScheduler(
+                historicalDaysAgo
+              ),
+            "historical productOnHands"
+          );
+        }
+
+        if (!branchSyncStatus.historicalCompleted) {
+          await runSyncSafely(
+            () =>
+              require("../scheduler/branchScheduler").branchScheduler(
+                historicalDaysAgo
+              ),
+            "historical branches"
+          );
+        }
+
+        if (!pricebookSyncStatus.historicalCompleted) {
+          await runSyncSafely(
+            () =>
+              require("../scheduler/pricebookScheduler").pricebookScheduler(
+                historicalDaysAgo
+              ),
+            "historical pricebook"
+          );
+        }
+
         console.log("🔄 Starting current sync cycle...");
         await runSyncSafely(runUserSync, "current user");
         await runSyncSafely(runProductSync, "current product");
@@ -426,10 +578,15 @@ async function startServer() {
         await runSyncSafely(runInvoiceSync, "current invoice");
         await runSyncSafely(runCashflowSync, "current cashflow");
         await runSyncSafely(runTransferSync, "current transfer");
+        await runSyncSafely(runSaleChannelSync, "current sale channel");
+        await runSyncSafely(runReturnSync, "current return");
+        await runSyncSafely(runOrderSupplierSync, "current order supplier");
+        await runSyncSafely(runTrademarkSync, "current trademark");
+        await runSyncSafely(runAttributeSync, "current attribute");
+        await runSyncSafely(runProductOnHandsSync, "current productOnHands");
+        await runSyncSafely(runBranchSync, "current branch");
+        await runSyncSafely(runPricebookSync, "current pricebook");
 
-        console.log("✅ Initial sync completed");
-
-        // Fix 6: Store interval reference globally for cleanup
         const runAllSyncs = async () => {
           try {
             await Promise.allSettled([
@@ -442,6 +599,14 @@ async function startServer() {
               runInvoiceSync(),
               runCashflowSync(),
               runTransferSync(),
+              runSaleChannelSync(),
+              runReturnSync(),
+              runOrderSupplierSync(),
+              runTrademarkSync(),
+              runAttributeSync(),
+              runProductOnHandsSync(),
+              runBranchSync(),
+              runPricebookSync(),
             ]);
           } catch (error) {
             console.error("❌ Error during scheduled sync:", error.message);
@@ -449,10 +614,6 @@ async function startServer() {
         };
 
         syncInterval = setInterval(runAllSyncs, 10 * 60 * 1000);
-
-        console.log("🎉 Application startup completed!");
-
-        // Fix 7: Remove the process.on listeners from here since they're now at module level
       } catch (startupError) {
         console.error("❌ Error during startup:", startupError.message);
         console.error("Stack trace:", startupError.stack);

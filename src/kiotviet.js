@@ -94,7 +94,12 @@ const getOrders = async () => {
     let currentItem = 0;
     let hasMoreData = true;
 
-    console.log("Fetching current orders...");
+    // 🎯 TIME-FILTERED: Get only orders modified in last 48 hours
+    const fromDate = new Date();
+    fromDate.setDate(fromDate.getDate() - 2); // 48h buffer for safety
+    const fromDateStr = fromDate.toISOString().split("T")[0];
+
+    console.log(`Fetching orders modified since ${fromDateStr}...`);
 
     while (hasMoreData) {
       const response = await makeApiRequest({
@@ -103,7 +108,8 @@ const getOrders = async () => {
         params: {
           pageSize: pageSize,
           currentItem: currentItem,
-          orderBy: "createdDate",
+          lastModifiedFrom: fromDateStr, // 🔥 KEY CHANGE: Time filtering
+          orderBy: "modifiedDate", // Sort by modification date
           orderDirection: "DESC",
           includePayment: true,
           includeOrderDelivery: true,
@@ -124,7 +130,7 @@ const getOrders = async () => {
         hasMoreData = response.data.data.length === pageSize;
 
         console.log(
-          `Fetched ${response.data.data.length} orders, total: ${allOrders.length}`
+          `Fetched ${response.data.data.length} orders (modified since ${fromDateStr}), total: ${allOrders.length}`
         );
         await new Promise((resolve) => setTimeout(resolve, 100));
       } else {
@@ -132,9 +138,10 @@ const getOrders = async () => {
       }
     }
 
+    console.log(`✅ Total time-filtered orders fetched: ${allOrders.length}`);
     return { data: allOrders, total: allOrders.length };
   } catch (error) {
-    console.error("Error getting orders:", error.message);
+    console.error("Error getting time-filtered orders:", error.message);
     throw error;
   }
 };
@@ -218,7 +225,12 @@ const getInvoices = async () => {
     let currentItem = 0;
     let hasMoreData = true;
 
-    console.log("Fetching current invoices...");
+    // 🎯 TIME-FILTERED: Get only invoices modified in last 48 hours
+    const fromDate = new Date();
+    fromDate.setDate(fromDate.getDate() - 2); // 48h buffer for safety
+    const fromDateStr = fromDate.toISOString().split("T")[0];
+
+    console.log(`Fetching invoices modified since ${fromDateStr}...`);
 
     while (hasMoreData) {
       const response = await makeApiRequest({
@@ -227,7 +239,8 @@ const getInvoices = async () => {
         params: {
           pageSize: pageSize,
           currentItem: currentItem,
-          orderBy: "createdDate",
+          lastModifiedFrom: fromDateStr, // 🔥 KEY CHANGE: Time filtering
+          orderBy: "modifiedDate", // Sort by modification date
           orderDirection: "DESC",
           includePayment: true,
           includeInvoiceDelivery: true,
@@ -248,7 +261,7 @@ const getInvoices = async () => {
         hasMoreData = response.data.data.length === pageSize;
 
         console.log(
-          `Fetched ${response.data.data.length} invoices, total: ${allInvoices.length}`
+          `Fetched ${response.data.data.length} invoices (modified since ${fromDateStr}), total: ${allInvoices.length}`
         );
         await new Promise((resolve) => setTimeout(resolve, 100));
       } else {
@@ -256,9 +269,12 @@ const getInvoices = async () => {
       }
     }
 
+    console.log(
+      `✅ Total time-filtered invoices fetched: ${allInvoices.length}`
+    );
     return { data: allInvoices, total: allInvoices.length };
   } catch (error) {
-    console.error("Error getting invoices:", error.message);
+    console.error("Error getting time-filtered invoices:", error.message);
     throw error;
   }
 };
@@ -480,12 +496,12 @@ const getCustomers = async () => {
     let currentItem = 0;
     let hasMoreData = true;
 
-    console.log("Fetching current customers...");
+    // 🎯 TIME-FILTERED: Get only customers modified in last 48 hours
+    const fromDate = new Date();
+    fromDate.setDate(fromDate.getDate() - 2); // 48h buffer for safety
+    const fromDateStr = fromDate.toISOString().split("T")[0];
 
-    // Get only recent customers (last 24 hours)
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const fromDate = yesterday.toISOString().split("T")[0];
+    console.log(`Fetching customers modified since ${fromDateStr}...`);
 
     while (hasMoreData) {
       const response = await makeApiRequest({
@@ -494,12 +510,12 @@ const getCustomers = async () => {
         params: {
           pageSize: pageSize,
           currentItem: currentItem,
-          orderBy: "createdDate",
+          lastModifiedFrom: fromDateStr, // 🔥 KEY CHANGE: Time filtering
+          orderBy: "modifiedDate", // Sort by modification date
           orderDirection: "DESC",
-          lastModifiedFrom: fromDate,
-          includeTotal: true,
-          includeCustomerGroup: true,
-          includeCustomerSocial: true,
+          includeRemoveIds: true, // Include deleted customers
+          includeTotal: false, // Don't include heavy calculations
+          includeCustomerGroup: true, // Include group info
         },
         headers: {
           Retailer: process.env.KIOT_SHOP_NAME,
@@ -517,7 +533,7 @@ const getCustomers = async () => {
         hasMoreData = response.data.data.length === pageSize;
 
         console.log(
-          `Fetched ${response.data.data.length} customers, total: ${allCustomers.length}`
+          `Fetched ${response.data.data.length} customers (modified since ${fromDateStr}), total: ${allCustomers.length}`
         );
         await new Promise((resolve) => setTimeout(resolve, 100));
       } else {
@@ -525,9 +541,12 @@ const getCustomers = async () => {
       }
     }
 
+    console.log(
+      `✅ Total time-filtered customers fetched: ${allCustomers.length}`
+    );
     return { data: allCustomers, total: allCustomers.length };
   } catch (error) {
-    console.error("Error fetching customers:", error.message);
+    console.error("Error getting time-filtered customers:", error.message);
     throw error;
   }
 };
@@ -1458,6 +1477,699 @@ const getTransfersByDate = async (daysAgo) => {
   }
 };
 
+const getSaleChannels = async () => {
+  try {
+    const token = await getToken(); // Get authentication token first
+
+    const response = await makeApiRequest({
+      // Change from makeRequest to makeApiRequest
+      method: "GET",
+      url: `${KIOTVIET_BASE_URL}/salechannel`,
+      headers: {
+        Retailer: process.env.KIOT_SHOP_NAME,
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    console.log(`✅ Total sale channels fetched: ${response.data.total}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error getting sale channels:`, error.message);
+    throw error;
+  }
+};
+
+async function getReturns() {
+  try {
+    const token = await getToken();
+    const pageSize = 100;
+    const allReturns = [];
+    let currentItem = 0;
+    let hasMoreData = true;
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const fromDate = yesterday.toISOString().split("T")[0];
+
+    while (hasMoreData) {
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/returns`,
+        params: {
+          pageSize: pageSize,
+          currentItem: currentItem,
+          includePayment: true,
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allReturns.push(...response.data.data);
+        currentItem += response.data.data.length;
+        hasMoreData = response.data.data.length === pageSize;
+
+        console.log(
+          `Fetched ${response.data.data.length} returns, total" ${allReturns.length}`
+        );
+
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        hasMoreData = false;
+      }
+    }
+
+    return { data: allReturns, total: allReturns.length };
+  } catch (error) {
+    console.error("❌ Error fetching returns from KiotViet:", error.message);
+    throw error;
+  }
+}
+
+async function getReturnsByDate(daysAgo) {
+  try {
+    const results = [];
+
+    for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() - currentDaysAgo);
+      const formattedDate = targetDate.toISOString().split("T")[0];
+      const token = await getToken();
+      const pageSize = 100;
+      const allReturnsForDate = [];
+      let currentItem = 0;
+      let hasMoreData = true;
+
+      while (hasMoreData) {
+        const response = await makeApiRequest({
+          method: "GET",
+          url: `${KIOTVIET_BASE_URL}/returns`,
+          params: {
+            pageSize: pageSize,
+            currentItem: currentItem,
+            includePayment: true,
+          },
+          headers: {
+            Retailer: process.env.KIOT_SHOP_NAME,
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (
+          response.data &&
+          response.data.data &&
+          response.data.data.length > 0
+        ) {
+          allReturnsForDate.push(...response.data.data);
+          currentItem += response.data.data.length;
+          hasMoreData = response.data.data.length === pageSize;
+
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        } else {
+          hasMoreData = false;
+        }
+      }
+
+      results.push({
+        data: formattedDate,
+        daysAgo,
+        currentDaysAgo,
+        data: { data: allReturnsForDate },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+
+    return results;
+  } catch (error) {
+    console.error("❌ Error in getReturnsByDate:", error.message);
+    throw error;
+  }
+}
+
+const getOrderSuppliers = async () => {
+  try {
+    const token = await getToken();
+    const pageSize = 100;
+    const allOrderSuppliers = [];
+    let currentItem = 0;
+    let hasMoreData = true;
+
+    console.log("Fetching current order suppliers...");
+
+    while (hasMoreData) {
+      try {
+        const response = await makeApiRequest({
+          method: "GET",
+          url: `${KIOTVIET_BASE_URL}/ordersuppliers`,
+          params: {
+            pageSize: pageSize,
+            currentItem: currentItem,
+          },
+          headers: {
+            Retailer: process.env.KIOT_SHOP_NAME,
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (
+          response.data &&
+          response.data.data &&
+          response.data.data.length > 0
+        ) {
+          allOrderSuppliers.push(...response.data.data);
+          currentItem += response.data.data.length;
+          hasMoreData = response.data.data.length === pageSize;
+
+          console.log(
+            `Fetched ${response.data.data.length} order suppliers, total: ${allOrderSuppliers.length}`
+          );
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        } else {
+          hasMoreData = false;
+        }
+      } catch (error) {
+        if (error.response?.status === 400 && allOrderSuppliers.length > 0) {
+          console.log(
+            `Returning ${allOrderSuppliers.length} order suppliers despite pagination error`
+          );
+          break;
+        }
+        throw error;
+      }
+    }
+
+    return { data: allOrderSuppliers, total: allOrderSuppliers.length };
+  } catch (error) {
+    console.error("Error getting order suppliers:", error.message);
+    if (error.response) {
+      console.error("Response status:", error.response.status);
+      console.error("Response data:", error.response.data);
+    }
+    throw error;
+  }
+};
+
+const getOrderSuppliersByDate = async (daysAgo) => {
+  console.log(
+    `⚠️  OrderSuppliers API doesn't support date filtering. Fetching all order suppliers instead.`
+  );
+
+  const allOrderSuppliers = await getOrderSuppliers();
+
+  // Return in the expected format for compatibility
+  return [
+    {
+      date: new Date().toISOString().split("T")[0],
+      daysAgo: 0,
+      data: allOrderSuppliers,
+    },
+  ];
+};
+
+const getLocations = async () => {
+  try {
+    const token = await getToken();
+    const pageSize = 100; // Maximum allowed by KiotViet API
+    const allLocations = [];
+    let currentItem = 0;
+    let hasMoreData = true;
+
+    console.log("Fetching all locations with pagination...");
+
+    while (hasMoreData) {
+      try {
+        const response = await makeApiRequest({
+          method: "GET",
+          url: `${KIOTVIET_BASE_URL}/locations`,
+          params: {
+            pageSize: pageSize,
+            currentItem: currentItem,
+          },
+          headers: {
+            Retailer: process.env.KIOT_SHOP_NAME,
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        console.log("API Response Debug:", {
+          total: response.data?.total,
+          pageSize: response.data?.pageSize,
+          dataLength: response.data?.data?.length,
+          currentItem: currentItem,
+        });
+
+        if (
+          response.data &&
+          response.data.data &&
+          Array.isArray(response.data.data) &&
+          response.data.data.length > 0
+        ) {
+          // Add locations from this page
+          allLocations.push(...response.data.data);
+
+          // Update pagination tracker
+          currentItem += response.data.data.length;
+
+          // Determine if more data exists
+          hasMoreData = response.data.data.length === pageSize;
+
+          // Additional check: if we have total count, use it
+          if (
+            response.data.total &&
+            allLocations.length >= response.data.total
+          ) {
+            hasMoreData = false;
+          }
+
+          console.log(
+            `✅ Fetched ${response.data.data.length} locations | Total: ${
+              allLocations.length
+            }/${response.data.total || "unknown"}`
+          );
+
+          // Rate limiting - prevent API throttling
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        } else {
+          console.log("No more location data available");
+          hasMoreData = false;
+        }
+
+        // Safety check to prevent infinite loops
+        if (currentItem > 10000) {
+          console.log("⚠️ Safety limit reached, stopping pagination");
+          break;
+        }
+      } catch (error) {
+        console.error(
+          `Pagination error at currentItem ${currentItem}:`,
+          error.message
+        );
+
+        // If we already have some data, return what we got
+        if (allLocations.length > 0) {
+          console.log(
+            `Returning ${allLocations.length} locations despite pagination error`
+          );
+          break;
+        }
+        throw error;
+      }
+    }
+
+    console.log(`🎉 Successfully synced ${allLocations.length} locations`);
+
+    // Return data in the same format as your current function
+    return {
+      data: allLocations,
+      total: allLocations.length,
+    };
+  } catch (error) {
+    console.error("❌ Error getting locations:", error.message);
+    if (error.response) {
+      console.error("Response status:", error.response.status);
+      console.error(
+        "Response data:",
+        JSON.stringify(error.response.data, null, 2)
+      );
+    }
+    throw error;
+  }
+};
+
+const getTrademarks = async () => {
+  try {
+    const token = await getToken();
+    const pageSize = 100; // Maximum allowed by API
+    const allTrademarks = [];
+    let currentItem = 0;
+    let hasMoreData = true;
+
+    console.log("Fetching current trademarks...");
+
+    while (hasMoreData) {
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/trademark`,
+        params: {
+          pageSize: pageSize,
+          currentItem: currentItem,
+          orderBy: "name",
+          orderDirection: "ASC",
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allTrademarks.push(...response.data.data);
+        currentItem += response.data.data.length;
+        hasMoreData = response.data.data.length === pageSize;
+
+        console.log(
+          `Fetched ${response.data.data.length} trademarks, total: ${allTrademarks.length}`
+        );
+
+        // Add small delay to respect API rate limits
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        hasMoreData = false;
+      }
+    }
+
+    console.log(`✅ Total trademarks fetched: ${allTrademarks.length}`);
+    return { data: allTrademarks };
+  } catch (error) {
+    console.error("Error getting trademarks:", error.message);
+    throw error;
+  }
+};
+
+const getAttributes = async () => {
+  try {
+    console.log("Fetching product attributes...");
+    const token = await getToken();
+
+    const response = await makeApiRequest({
+      method: "GET",
+      url: `${KIOTVIET_BASE_URL}/attributes/allwithdistinctvalue`,
+      headers: {
+        Retailer: process.env.KIOT_SHOP_NAME,
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (response.data && Array.isArray(response.data)) {
+      console.log(`Fetched ${response.data.length} attributes`);
+      return { data: response.data, total: response.data.length };
+    } else {
+      console.log("No attributes data received");
+      return { data: [], total: 0 };
+    }
+  } catch (error) {
+    console.error("Error getting attributes:", error.message);
+    throw error;
+  }
+};
+
+const getProductOnHands = async () => {
+  try {
+    const token = await getToken();
+    const pageSize = 100;
+    const allProductOnHands = [];
+    let currentItem = 0;
+    let hasMoreData = true;
+
+    // 🎯 TIME-FILTERED: Get only productOnHands modified in last 48 hours
+    const fromDate = new Date();
+    fromDate.setDate(fromDate.getDate() - 2); // 48h buffer for safety
+    const fromDateStr = fromDate.toISOString().split("T")[0];
+
+    console.log(`Fetching productOnHands modified since ${fromDateStr}...`);
+
+    while (hasMoreData) {
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/productOnHands`,
+        params: {
+          pageSize: pageSize,
+          currentItem: currentItem,
+          lastModifiedFrom: fromDateStr, // 🔥 KEY: Time filtering
+          orderBy: "code", // Sort by product code
+          orderDirection: "ASC",
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allProductOnHands.push(...response.data.data);
+        currentItem += response.data.data.length;
+        hasMoreData = response.data.data.length === pageSize;
+
+        console.log(
+          `Fetched ${response.data.data.length} productOnHands (modified since ${fromDateStr}), total: ${allProductOnHands.length}`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        hasMoreData = false;
+      }
+    }
+
+    console.log(
+      `✅ Total time-filtered productOnHands fetched: ${allProductOnHands.length}`
+    );
+    return { data: allProductOnHands, total: allProductOnHands.length };
+  } catch (error) {
+    console.error("Error getting time-filtered productOnHands:", error.message);
+    throw error;
+  }
+};
+
+// HISTORICAL ProductOnHands sync (for initial full sync)
+const getProductOnHandsByDate = async (daysAgo) => {
+  try {
+    const results = [];
+
+    for (let i = 0; i <= daysAgo; i++) {
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() - i);
+      const dateStr = targetDate.toISOString().split("T")[0];
+
+      console.log(`Fetching productOnHands for date: ${dateStr}`);
+
+      const token = await getToken();
+      const allProductOnHandsForDate = [];
+      let hasMoreData = true;
+      let currentItem = 0;
+      const pageSize = 100;
+
+      while (hasMoreData) {
+        const response = await makeApiRequest({
+          method: "GET",
+          url: `${KIOTVIET_BASE_URL}/productOnHands`,
+          params: {
+            pageSize,
+            currentItem,
+            lastModifiedFrom: dateStr,
+            orderBy: "code",
+            orderDirection: "ASC",
+          },
+          headers: {
+            Retailer: process.env.KIOT_SHOP_NAME,
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (
+          response.data &&
+          response.data.data &&
+          response.data.data.length > 0
+        ) {
+          allProductOnHandsForDate.push(...response.data.data);
+          currentItem += response.data.data.length;
+          hasMoreData = response.data.data.length === pageSize;
+        } else {
+          hasMoreData = false;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+
+      if (allProductOnHandsForDate.length > 0) {
+        results.push({
+          date: dateStr,
+          data: { data: allProductOnHandsForDate },
+        });
+      }
+    }
+
+    return results;
+  } catch (error) {
+    console.error("Error getting productOnHands by date:", error.message);
+    throw error;
+  }
+};
+
+const getBranches = async () => {
+  try {
+    const token = await getToken();
+    const pageSize = 100;
+    const allBranches = [];
+    let currentItem = 0;
+    let hasMoreData = true;
+
+    console.log(`Fetching all current branches...`);
+
+    while (hasMoreData) {
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/branches`,
+        params: {
+          pageSize: pageSize,
+          currentItem: currentItem,
+          orderBy: "id", // Sort by ID for consistent pagination
+          orderDirection: "ASC",
+          // ✅ REMOVED lastModifiedFrom to get ALL branches
+          // includeRemoveIds: true, // Only needed if using time filtering
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allBranches.push(...response.data.data);
+        currentItem += response.data.data.length;
+        hasMoreData = response.data.data.length === pageSize;
+
+        console.log(
+          `Fetched ${response.data.data.length} branches, total: ${allBranches.length}`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        hasMoreData = false;
+      }
+    }
+
+    console.log(`✅ Total branches fetched: ${allBranches.length}`);
+    return {
+      data: allBranches,
+      total: allBranches.length,
+    };
+  } catch (error) {
+    console.error("Error getting branches:", error.message);
+    throw error;
+  }
+};
+
+// HISTORICAL Branches sync - SIMPLIFIED to get all branches once
+const getBranchesByDate = async (daysAgo) => {
+  try {
+    console.log(
+      `🔄 Getting all branches for historical sync (branches are relatively static)...`
+    );
+
+    // ✅ FIXED: Just get all branches in one go since branches don't change often
+    const allBranchesData = await getBranches();
+
+    if (
+      allBranchesData &&
+      allBranchesData.data &&
+      allBranchesData.data.length > 0
+    ) {
+      console.log(
+        `✅ Historical branches sync: Found ${allBranchesData.data.length} branches total`
+      );
+
+      return [
+        {
+          date: new Date().toISOString().split("T")[0],
+          data: {
+            data: allBranchesData.data,
+            total: allBranchesData.data.length,
+          },
+        },
+      ];
+    }
+
+    console.log("No branches found");
+    return [];
+  } catch (error) {
+    console.error("Error getting historical branches:", error.message);
+    throw error;
+  }
+};
+
+const getPricebooks = async () => {
+  try {
+    const token = await getToken();
+    const pageSize = 100; // Maximum allowed by API
+    const allPricebooks = [];
+    let currentItem = 0;
+    let hasMoreData = true;
+
+    console.log("Fetching all pricebooks...");
+
+    while (hasMoreData) {
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/pricebooks`,
+        params: {
+          pageSize: pageSize,
+          currentItem: currentItem,
+          // NO lastModifiedFrom - pure full sync like trademarks
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allPricebooks.push(...response.data.data);
+        currentItem += response.data.data.length;
+        hasMoreData = response.data.data.length === pageSize;
+
+        console.log(
+          `Fetched ${response.data.data.length} pricebooks, total: ${allPricebooks.length}`
+        );
+
+        // Add small delay to respect API rate limits
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        hasMoreData = false;
+      }
+
+      // Safety check to prevent infinite loops
+      if (currentItem > 10000) {
+        console.log("⚠️ Safety limit reached, stopping pagination");
+        break;
+      }
+    }
+
+    console.log(`🎉 Successfully synced ${allPricebooks.length} pricebooks`);
+    return { data: allPricebooks, total: allPricebooks.length };
+  } catch (error) {
+    console.error("❌ Error getting pricebooks:", error.message);
+    if (error.response) {
+      console.error("Response status:", error.response.status);
+      console.error(
+        "Response data:",
+        JSON.stringify(error.response.data, null, 2)
+      );
+    }
+    throw error;
+  }
+};
+
 module.exports = {
   getOrders,
   getOrdersByDate,
@@ -1477,4 +2189,17 @@ module.exports = {
   getPurchaseOrdersByDate,
   getTransfers,
   getTransfersByDate,
+  getSaleChannels,
+  getReturns,
+  getReturnsByDate,
+  getOrderSuppliers,
+  getOrderSuppliersByDate,
+  getLocations,
+  getTrademarks,
+  getAttributes,
+  getProductOnHands,
+  getProductOnHandsByDate,
+  getBranches,
+  getBranchesByDate,
+  getPricebooks,
 };

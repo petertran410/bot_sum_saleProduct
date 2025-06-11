@@ -1,24 +1,24 @@
-const { getOrders, getOrdersByDate } = require("../src/kiotviet");
-const orderService = require("../src/db/orderService");
+const { getBranches, getBranchesByDate } = require("../src/kiotviet");
+const branchService = require("../src/db/branchService");
 const {
   saveJsonDataToFile,
   appendJsonDataToFile,
   saveBothJsonAndMySQL,
 } = require("../saveData/saveData");
 
-const orderScheduler = async (daysAgo) => {
+const branchScheduler = async (daysAgo) => {
   try {
-    const ordersByDate = await getOrdersByDate(daysAgo);
+    const branchesByDate = await getBranchesByDate(daysAgo);
 
     let totalSaved = 0;
 
-    for (const dateData of ordersByDate) {
+    for (const dateData of branchesByDate) {
       if (
         dateData.data &&
         dateData.data.data &&
         Array.isArray(dateData.data.data)
       ) {
-        const result = await orderService.saveOrders(dateData.data.data);
+        const result = await branchService.saveBranches(dateData.data.data);
         totalSaved += result.stats.success;
 
         if (dateData.data.data.length > 0) {
@@ -28,26 +28,26 @@ const orderScheduler = async (daysAgo) => {
               data: dateData.data.data,
             },
             "saveJson",
-            "orders.json"
+            "branches.json"
           );
         }
 
         console.log(
-          `Saved ${result.stats.success} orders from ${dateData.date}`
+          `Saved ${result.stats.success} branches from ${dateData.date}`
         );
       }
     }
 
-    await orderService.updateSyncStatus(true, new Date());
+    await branchService.updateSyncStatus(true, new Date());
 
-    console.log(`Historical orders data saved: ${totalSaved} orders total`);
+    console.log(`Historical branches data saved: ${totalSaved} branches total`);
 
     return {
       success: true,
-      message: `Saved ${totalSaved} orders from historical data`,
+      message: `Saved ${totalSaved} branches from historical data`,
     };
   } catch (error) {
-    console.log("Cannot create orderSchedulerByDate", error);
+    console.log("Cannot create branchSchedulerByDate", error);
     return {
       success: false,
       error: error.message,
@@ -55,38 +55,38 @@ const orderScheduler = async (daysAgo) => {
   }
 };
 
-const orderSchedulerCurrent = async () => {
+const branchSchedulerCurrent = async () => {
   const MAX_RETRIES = 3;
   let retryCount = 0;
 
   while (retryCount < MAX_RETRIES) {
     try {
       console.log(
-        `🎯 Fetching time-filtered orders (attempt ${
+        `🎯 Fetching time-filtered branches (attempt ${
           retryCount + 1
         }/${MAX_RETRIES})...`
       );
-      const currentOrders = await getOrders(); // Now uses time-filtering!
+      const currentBranches = await getBranches(); // Now uses time-filtering!
 
       if (
-        currentOrders &&
-        currentOrders.data &&
-        Array.isArray(currentOrders.data)
+        currentBranches &&
+        currentBranches.data &&
+        Array.isArray(currentBranches.data)
       ) {
-        if (currentOrders.data.length === 0) {
-          console.log("✅ No orders modified in last 48 hours");
+        if (currentBranches.data.length === 0) {
+          console.log("✅ No branches modified in last 48 hours");
           return { success: true, savedCount: 0, hasNewData: false };
         }
 
         console.log(
-          `🚀 Processing ${currentOrders.data.length} time-filtered orders...`
+          `🚀 Processing ${currentBranches.data.length} time-filtered branches...`
         );
-        const result = await orderService.saveOrders(currentOrders.data);
+        const result = await branchService.saveBranches(currentBranches.data);
 
-        await orderService.updateSyncStatus(true, new Date());
+        await branchService.updateSyncStatus(true, new Date());
 
         console.log(
-          `✅ Time-filtered order sync: ${result.stats.success} processed, ${result.stats.newRecords} new`
+          `✅ Time-filtered branch sync: ${result.stats.success} processed, ${result.stats.newRecords} new`
         );
 
         return {
@@ -100,7 +100,7 @@ const orderSchedulerCurrent = async () => {
     } catch (error) {
       retryCount++;
       console.error(
-        `❌ Time-filtered order sync attempt ${retryCount} failed:`,
+        `❌ Time-filtered branch sync attempt ${retryCount} failed:`,
         error.message
       );
 
@@ -110,7 +110,7 @@ const orderSchedulerCurrent = async () => {
         await new Promise((resolve) => setTimeout(resolve, waitTime));
       } else {
         console.error(
-          "💥 Max retries reached. Time-filtered order sync failed."
+          "💥 Max retries reached. Time-filtered branch sync failed."
         );
         return { success: false, error: error.message, hasNewData: false };
       }
@@ -119,6 +119,6 @@ const orderSchedulerCurrent = async () => {
 };
 
 module.exports = {
-  orderScheduler,
-  orderSchedulerCurrent,
+  branchScheduler,
+  branchSchedulerCurrent,
 };
