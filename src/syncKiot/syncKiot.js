@@ -699,7 +699,7 @@ const runPricebookSync = async () => {
 
     if (!syncStatus.historicalCompleted) {
       console.log("📅 Running historical pricebook sync...");
-      const result = await pricebookScheduler(30); // 30 days historical sync
+      const result = await pricebookScheduler(250); // Parameter ignored for full sync
 
       if (result.success) {
         console.log("✅ Historical pricebook data has been saved to database");

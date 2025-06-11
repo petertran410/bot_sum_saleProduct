@@ -1,14 +1,10 @@
-// scheduler/pricebookScheduler.js
-const {
-  getPricebooks,
-  getPricebooksByDate,
-  getPricebookDetails,
-} = require("../src/kiotviet");
+// scheduler/pricebookScheduler.js - FULL-SYNC pattern (like Trademarks)
+const { getPricebooks, getPricebookDetails } = require("../src/kiotviet");
 const pricebookService = require("../src/db/pricebookService");
 
 /**
- * Current pricebook sync (time-filtered)
- * Used for ongoing sync after historical data is complete
+ * Current pricebook sync (full sync - like trademarks)
+ * Used for all pricebook syncing since they don't support date filtering
  */
 const pricebookSchedulerCurrent = async () => {
   const MAX_RETRIES = 3;
@@ -57,6 +53,7 @@ const pricebookSchedulerCurrent = async () => {
         // Optional: Sync pricebook details (products and prices) for each pricebook
         // Uncomment if client wants detailed product prices per pricebook
         /*
+        console.log("🔍 Syncing pricebook details...");
         for (const pricebook of allPricebooks.data) {
           if (pricebook.isActive) {
             try {
@@ -107,107 +104,14 @@ const pricebookSchedulerCurrent = async () => {
 };
 
 /**
- * Historical pricebook sync (date-based)
- * Used for initial full sync of historical data
+ * Historical pricebook sync (same as current - full sync)
+ * Pricebooks are reference data like trademarks, no date filtering
  */
 const pricebookScheduler = async (daysAgo) => {
-  const MAX_RETRIES = 3;
-  let retryCount = 0;
-
-  while (retryCount < MAX_RETRIES) {
-    try {
-      console.log(
-        `🚀 Fetching historical pricebooks for ${daysAgo} days (attempt ${
-          retryCount + 1
-        }/${MAX_RETRIES})...`
-      );
-
-      const pricebooksByDate = await getPricebooksByDate(daysAgo);
-
-      if (!Array.isArray(pricebooksByDate)) {
-        console.log("No historical pricebook data found");
-        return { success: true, savedCount: 0, hasNewData: false };
-      }
-
-      let totalSavedCount = 0;
-      let totalProcessedCount = 0;
-
-      for (const dateResult of pricebooksByDate) {
-        if (
-          dateResult.data &&
-          dateResult.data.data &&
-          Array.isArray(dateResult.data.data) &&
-          dateResult.data.data.length > 0
-        ) {
-          console.log(
-            `📅 Processing ${dateResult.data.data.length} pricebooks for ${dateResult.date}...`
-          );
-
-          const result = await pricebookService.savePricebooks(
-            dateResult.data.data
-          );
-
-          totalSavedCount += result.stats.newRecords;
-          totalProcessedCount += result.stats.success;
-
-          // Optional: Sync pricebook details for active pricebooks
-          // Uncomment if client wants detailed product prices per pricebook
-          /*
-          for (const pricebook of dateResult.data.data) {
-            if (pricebook.isActive) {
-              try {
-                console.log(`Fetching details for pricebook: ${pricebook.name} (ID: ${pricebook.id})`);
-                const pricebookDetails = await getPricebookDetails(pricebook.id);
-                
-                if (pricebookDetails.data && pricebookDetails.data.length > 0) {
-                  await pricebookService.savePricebookDetails(pricebook.id, pricebookDetails.data);
-                }
-              } catch (detailError) {
-                console.warn(`Could not fetch details for pricebook ${pricebook.id}: ${detailError.message}`);
-              }
-            }
-          }
-          */
-
-          console.log(
-            `✅ Date ${dateResult.date}: ${result.stats.success} processed, ${result.stats.newRecords} new`
-          );
-        } else {
-          console.log(`📅 No pricebooks found for ${dateResult.date}`);
-        }
-      }
-
-      // Mark historical sync as completed
-      await pricebookService.updateSyncStatus(true, new Date());
-
-      console.log(
-        `🎉 Historical pricebook sync completed: ${totalProcessedCount} total processed, ${totalSavedCount} new pricebooks saved`
-      );
-
-      return {
-        success: true,
-        savedCount: totalSavedCount,
-        hasNewData: totalSavedCount > 0,
-      };
-    } catch (error) {
-      retryCount++;
-      console.error(
-        `❌ Historical pricebook sync attempt ${retryCount} failed:`,
-        error.message
-      );
-
-      if (retryCount < MAX_RETRIES) {
-        const waitTime = Math.pow(2, retryCount) * 1000;
-        console.log(`⏳ Waiting ${waitTime}ms before retry...`);
-        await new Promise((resolve) => setTimeout(resolve, waitTime));
-      } else {
-        console.error(
-          "💥 Max retries reached. Historical pricebook sync failed."
-        );
-        return { success: false, error: error.message, hasNewData: false };
-      }
-    }
-  }
+  console.log(
+    `ℹ️  Pricebooks are reference data without date filtering. Running full sync...`
+  );
+  return await pricebookSchedulerCurrent();
 };
 
 module.exports = {

@@ -2130,11 +2130,12 @@ const getPricebooks = async () => {
           pageSize: pageSize,
           currentItem: currentItem,
           lastModifiedFrom: fromDateStr, // 🔥 KEY: Time filtering
-          includePriceBookBranch: true,
-          includePriceBookCustomerGroups: true,
-          includePriceBookUsers: true,
-          orderBy: "name",
-          orderDirection: "ASC",
+          // Removed problematic parameters that cause 400 errors
+          // includePriceBookBranch: true,
+          // includePriceBookCustomerGroups: true,
+          // includePriceBookUsers: true,
+          // orderBy: "name",
+          // orderDirection: "ASC",
         },
         headers: {
           Retailer: process.env.KIOT_SHOP_NAME,
@@ -2172,9 +2173,9 @@ const getPricebooks = async () => {
 
 // HISTORICAL PRICEBOOKS sync (for initial full sync)
 const getPricebooksByDate = async (daysAgo) => {
-  try {
-    const results = [];
+  const results = []; // Declare results outside try block to fix scope issue
 
+  try {
     for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
       const targetDate = new Date();
       targetDate.setDate(targetDate.getDate() - currentDaysAgo);
@@ -2189,39 +2190,56 @@ const getPricebooksByDate = async (daysAgo) => {
       console.log(`Fetching pricebooks modified on/after ${formattedDate}...`);
 
       while (hasMoreData) {
-        const response = await makeApiRequest({
-          method: "GET",
-          url: `${KIOTVIET_BASE_URL}/pricebooks`,
-          params: {
-            lastModifiedFrom: formattedDate,
-            pageSize: pageSize,
-            currentItem: currentItem,
-            includePriceBookBranch: true,
-            includePriceBookCustomerGroups: true,
-            includePriceBookUsers: true,
-            orderBy: "name",
-            orderDirection: "ASC",
-          },
-          headers: {
-            Retailer: process.env.KIOT_SHOP_NAME,
-            Authorization: `Bearer ${token}`,
-          },
-        });
+        try {
+          const response = await makeApiRequest({
+            method: "GET",
+            url: `${KIOTVIET_BASE_URL}/pricebooks`,
+            params: {
+              lastModifiedFrom: formattedDate,
+              pageSize: pageSize,
+              currentItem: currentItem,
+              // Removed problematic parameters that cause 400 errors
+              // includePriceBookBranch: true,
+              // includePriceBookCustomerGroups: true,
+              // includePriceBookUsers: true,
+              // orderBy: "name",
+              // orderDirection: "ASC",
+            },
+            headers: {
+              Retailer: process.env.KIOT_SHOP_NAME,
+              Authorization: `Bearer ${token}`,
+            },
+          });
 
-        if (
-          response.data &&
-          response.data.data &&
-          response.data.data.length > 0
-        ) {
-          allPricebooksForDate.push(...response.data.data);
-          currentItem += response.data.data.length;
-          hasMoreData = response.data.data.length === pageSize;
+          if (
+            response.data &&
+            response.data.data &&
+            response.data.data.length > 0
+          ) {
+            allPricebooksForDate.push(...response.data.data);
+            currentItem += response.data.data.length;
+            hasMoreData = response.data.data.length === pageSize;
 
-          console.log(
-            `Date ${formattedDate}: Fetched ${response.data.data.length} pricebooks, total: ${allPricebooksForDate.length}`
+            console.log(
+              `Date ${formattedDate}: Fetched ${response.data.data.length} pricebooks, total: ${allPricebooksForDate.length}`
+            );
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          } else {
+            hasMoreData = false;
+          }
+        } catch (pageError) {
+          console.error(
+            `Error in pricebooks pagination at item ${currentItem} for date ${formattedDate}:`,
+            pageError.message
           );
-          await new Promise((resolve) => setTimeout(resolve, 100));
-        } else {
+          // If we get data but have an error on subsequent pages, return what we have
+          if (allPricebooksForDate.length > 0) {
+            console.log(
+              `Returning ${allPricebooksForDate.length} pricebooks for ${formattedDate} despite pagination error`
+            );
+            break;
+          }
+          // Continue to next date if no data yet
           hasMoreData = false;
         }
       }
@@ -2238,7 +2256,11 @@ const getPricebooksByDate = async (daysAgo) => {
     return results;
   } catch (error) {
     console.error(`Error getting pricebooks by date:`, error.message);
-    return results;
+    if (error.response) {
+      console.error("Response status:", error.response.status);
+      console.error("Response data:", error.response.data);
+    }
+    return results; // Return whatever we have collected so far
   }
 };
 
