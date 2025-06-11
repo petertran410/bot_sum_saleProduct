@@ -15,7 +15,7 @@ const productOnHandsScheduler = async (daysAgo) => {
         dateData.data.data &&
         Array.isArray(dateData.data.data)
       ) {
-        const result = await productOnHandsService.saveProductOnHands(
+        const result = await productOnHandsService.saveProductOnHandsArray(
           dateData.data.data
         );
         totalSaved += result.stats.success;
@@ -72,7 +72,7 @@ const productOnHandsSchedulerCurrent = async () => {
         console.log(
           `🚀 Processing ${currentProductOnHands.data.length} time-filtered productOnHands...`
         );
-        const result = await productOnHandsService.saveProductOnHands(
+        const result = await productOnHandsService.saveProductOnHandsArray(
           currentProductOnHands.data
         );
 
