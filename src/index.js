@@ -19,6 +19,7 @@ const {
   runAttributeSync,
   runProductOnHandsSync,
   runBranchSync,
+  runPricebookSync,
 } = require("./syncKiot/syncKiot");
 const { testConnection } = require("./db");
 const { initializeDatabase } = require("./db/init");
@@ -27,7 +28,7 @@ const { addRecordToCRMBase, getCRMStats, sendTestMessage } = require("./lark");
 const app = express();
 const PORT = process.env.PORT || 3690;
 
-process.setMaxListeners(20);
+process.setMaxListeners(30);
 
 let syncInterval = null;
 let server = null;
@@ -412,6 +413,11 @@ async function startServer() {
           "branches"
         );
 
+        const pricebookSyncStatus = await getSyncStatusSafely(
+          "../src/db/pricebookService",
+          "pricebook"
+        );
+
         if (!userSyncStatus.historicalCompleted) {
           await runSyncSafely(
             () =>
@@ -542,13 +548,23 @@ async function startServer() {
           );
         }
 
-        if (!productOnHandsSyncStatus.historicalCompleted) {
+        if (!branchSyncStatus.historicalCompleted) {
           await runSyncSafely(
             () =>
-              require("../scheduler/productOnHandsScheduler").productOnHandsScheduler(
+              require("../scheduler/branchScheduler").branchScheduler(
                 historicalDaysAgo
               ),
-            "historical productOnHands"
+            "historical branches"
+          );
+        }
+
+        if (!pricebookSyncStatus.historicalCompleted) {
+          await runSyncSafely(
+            () =>
+              require("../scheduler/pricebookScheduler").pricebookScheduler(
+                historicalDaysAgo
+              ),
+            "historical pricebook"
           );
         }
 
@@ -569,6 +585,7 @@ async function startServer() {
         await runSyncSafely(runAttributeSync, "current attribute");
         await runSyncSafely(runProductOnHandsSync, "current productOnHands");
         await runSyncSafely(runBranchSync, "current branch");
+        await runSyncSafely(runPricebookSync, "current pricebook");
 
         const runAllSyncs = async () => {
           try {
@@ -589,6 +606,7 @@ async function startServer() {
               runAttributeSync(),
               runProductOnHandsSync(),
               runBranchSync(),
+              runPricebookSync(),
             ]);
           } catch (error) {
             console.error("❌ Error during scheduled sync:", error.message);

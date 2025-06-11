@@ -12,6 +12,7 @@ const trademarkService = require("../db/trademarkService");
 const attributeService = require("../db/attributeService");
 const productOnHandsService = require("../db/productOnHandsService");
 const branchService = require("../db/branchService");
+const pricebookService = require("../db/pricebookService");
 
 const {
   cashflowScheduler,
@@ -86,6 +87,11 @@ const {
   branchScheduler,
   branchSchedulerCurrent,
 } = require("../../scheduler/branchScheduler");
+
+const {
+  pricebookScheduler,
+  pricebookSchedulerCurrent,
+} = require("../../scheduler/pricebookScheduler");
 
 const runOrderSync = async () => {
   try {
@@ -685,6 +691,44 @@ const runBranchSync = async () => {
   }
 };
 
+const runPricebookSync = async () => {
+  console.log("💰 Starting Pricebook Sync Process...");
+  try {
+    const syncStatus = await pricebookService.getSyncStatus();
+    console.log("Pricebook Sync Status:", syncStatus);
+
+    if (!syncStatus.historicalCompleted) {
+      console.log("📅 Running historical pricebook sync...");
+      const result = await pricebookScheduler(30); // 30 days historical sync
+
+      if (result.success) {
+        console.log("✅ Historical pricebook data has been saved to database");
+      } else {
+        console.error(
+          "❌ Error when saving historical pricebook data:",
+          result.error
+        );
+      }
+    } else {
+      console.log("🔄 Running current pricebook sync...");
+      const currentResult = await pricebookSchedulerCurrent();
+
+      if (currentResult.success) {
+        console.log(
+          `✅ Current pricebook data has been added: ${currentResult.savedCount} pricebooks`
+        );
+      } else {
+        console.error(
+          "❌ Error when adding current pricebooks:",
+          currentResult.error
+        );
+      }
+    }
+  } catch (error) {
+    console.error("💥 Cannot get and save pricebook data:", error);
+  }
+};
+
 module.exports = {
   runOrderSync,
   runInvoiceSync,
@@ -703,4 +747,5 @@ module.exports = {
   runAttributeSync,
   runProductOnHandsSync,
   runBranchSync,
+  runPricebookSync,
 };

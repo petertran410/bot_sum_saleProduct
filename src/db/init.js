@@ -794,6 +794,79 @@ async function initializeDatabase() {
     `);
 
     await connection.query(`
+      CREATE TABLE IF NOT EXISTS pricebooks (
+        id BIGINT PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        isActive BOOLEAN DEFAULT TRUE,
+        isGlobal BOOLEAN DEFAULT FALSE,
+        startDate DATETIME,
+        endDate DATETIME,
+        forAllCusGroup BOOLEAN DEFAULT FALSE,
+        forAllUser BOOLEAN DEFAULT FALSE,
+        createdDate DATETIME DEFAULT CURRENT_TIMESTAMP,
+        modifiedDate DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE     CURRENT_TIMESTAMP,
+        jsonData JSON,
+        INDEX idx_name (name),
+        INDEX idx_isActive (isActive),
+        INDEX idx_startDate (startDate),
+        INDEX idx_endDate (endDate)
+      )
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS pricebook_branches (
+        id BIGINT PRIMARY KEY,
+        priceBookId BIGINT,
+        branchId BIGINT,
+        branchName VARCHAR(255),
+        FOREIGN KEY (priceBookId) REFERENCES pricebooks(id) ON DELETE     CASCADE,
+        INDEX idx_priceBookId (priceBookId),
+        INDEX idx_branchId (branchId)
+      )
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS pricebook_customer_groups (
+        id BIGINT PRIMARY KEY,
+        priceBookId BIGINT,
+        customerGroupId BIGINT,
+        customerGroupName VARCHAR(255),
+        FOREIGN KEY (priceBookId) REFERENCES pricebooks(id) ON DELETE     CASCADE,
+        INDEX idx_priceBookId (priceBookId),
+        INDEX idx_customerGroupId (customerGroupId)
+      )
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS pricebook_users (
+        id BIGINT PRIMARY KEY,
+        priceBookId BIGINT,
+        userId BIGINT,
+        userName VARCHAR(255),
+        FOREIGN KEY (priceBookId) REFERENCES pricebooks(id) ON DELETE     CASCADE,
+        INDEX idx_priceBookId (priceBookId),
+        INDEX idx_userId (userId)
+      )
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS pricebook_details (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        pricebookId BIGINT,
+        productId BIGINT,
+        productCode VARCHAR(50),
+        price DECIMAL(15,2),
+        createdDate DATETIME DEFAULT CURRENT_TIMESTAMP,
+        modifiedDate DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE     CURRENT_TIMESTAMP,
+        FOREIGN KEY (pricebookId) REFERENCES pricebooks(id) ON DELETE     CASCADE,
+        UNIQUE KEY unique_pricebook_product (pricebookId, productId),
+        INDEX idx_pricebookId (pricebookId),
+        INDEX idx_productId (productId),
+        INDEX idx_productCode (productCode)
+      )
+    `);
+
+    await connection.query(`
       CREATE TABLE IF NOT EXISTS sync_status (
         entity_type VARCHAR(50) PRIMARY KEY,
         last_sync DATETIME,
@@ -818,6 +891,7 @@ async function initializeDatabase() {
       "attributes",
       "product_on_hands",
       "branches",
+      "pricebooks",
     ];
 
     for (const entity of entities) {
