@@ -2019,6 +2019,7 @@ const getBranches = async () => {
     const allBranches = [];
     let currentItem = 0;
     let hasMoreData = true;
+    let removedIds = [];
 
     // 🎯 TIME-FILTERED: Get only branches modified in last 48 hours
     const fromDate = new Date();
@@ -2054,6 +2055,11 @@ const getBranches = async () => {
         currentItem += response.data.data.length;
         hasMoreData = response.data.data.length === pageSize;
 
+        // ✅ FIXED: Capture removedIds properly within the loop
+        if (response.data.removedIds && response.data.removedIds.length > 0) {
+          removedIds.push(...response.data.removedIds);
+        }
+
         console.log(
           `Fetched ${response.data.data.length} branches (modified since ${fromDateStr}), total: ${allBranches.length}`
         );
@@ -2069,7 +2075,7 @@ const getBranches = async () => {
     return {
       data: allBranches,
       total: allBranches.length,
-      removedIds: response.data?.removedIds || [],
+      removedIds: removedIds,
     };
   } catch (error) {
     console.error("Error getting time-filtered branches:", error.message);
@@ -2131,13 +2137,14 @@ const getBranchesByDate = async (daysAgo) => {
         }
       }
 
+      // ✅ FIXED: Don't access response outside loop, follow pattern of other historical syncs
       if (allBranchesForDate.length > 0) {
         results.push({
           date: formattedDate,
           data: {
             data: allBranchesForDate,
             total: allBranchesForDate.length,
-            removedIds: response.data?.removedIds || [],
+            // removedIds not needed for historical sync (only current sync uses this)
           },
         });
       }
