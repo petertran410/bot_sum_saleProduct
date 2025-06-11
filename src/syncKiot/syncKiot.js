@@ -8,6 +8,7 @@ const cashFlowService = require("../db/cashflowService");
 const purchaseOrderService = require("../db/purchaseOrderService");
 const transferService = require("../db/transferService");
 const returnService = require("../db/returnService");
+const trademarkService = require("../db/trademarkService");
 
 const {
   cashflowScheduler,
@@ -62,6 +63,11 @@ const {
   returnScheduler,
   returnSchedulerCurrent,
 } = require("../../scheduler/returnScheduler");
+
+const {
+  trademarkScheduler,
+  trademarkSchedulerCurrent,
+} = require("../../scheduler/trademarkScheduler");
 
 const runOrderSync = async () => {
   try {
@@ -505,6 +511,44 @@ const runLocationSync = async (forceSync = false) => {
   }
 };
 
+const runTrademarkSync = async () => {
+  console.log("🚀 Starting Trademark Sync Process...");
+  try {
+    const syncStatus = await trademarkService.getSyncStatus();
+    console.log("Trademark Sync Status:", syncStatus);
+
+    if (!syncStatus.historicalCompleted) {
+      console.log("📅 Running historical trademark sync...");
+      const result = await trademarkScheduler(250);
+
+      if (result.success) {
+        console.log("✅ Historical trademarks data has been saved to database");
+      } else {
+        console.error(
+          "❌ Error when saving historical trademarks data:",
+          result.error
+        );
+      }
+    } else {
+      console.log("🔄 Running current trademark sync...");
+      const currentResult = await trademarkSchedulerCurrent();
+
+      if (currentResult.success) {
+        console.log(
+          `✅ Current trademarks data has been added: ${currentResult.savedCount} trademarks`
+        );
+      } else {
+        console.error(
+          "❌ Error when adding current trademarks:",
+          currentResult.error
+        );
+      }
+    }
+  } catch (error) {
+    console.error("💥 Cannot get and save trademark data:", error);
+  }
+};
+
 module.exports = {
   runOrderSync,
   runInvoiceSync,
@@ -519,4 +563,5 @@ module.exports = {
   runReturnSync,
   runOrderSupplierSync,
   runLocationSync,
+  runTrademarkSync,
 };

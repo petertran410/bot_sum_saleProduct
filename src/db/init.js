@@ -718,6 +718,19 @@ async function initializeDatabase() {
     `);
 
     await connection.query(`
+      CREATE TABLE IF NOT EXISTS trademarks (
+        id BIGINT PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        createdDate DATETIME,
+        modifiedDate DATETIME,
+        jsonData JSON,
+        UNIQUE INDEX (id),
+        INDEX idx_name (name),
+        INDEX idx_modifiedDate (modifiedDate)
+      )
+    `);
+
+    await connection.query(`
       CREATE TABLE IF NOT EXISTS sync_status (
         entity_type VARCHAR(50) PRIMARY KEY,
         last_sync DATETIME,
@@ -738,6 +751,7 @@ async function initializeDatabase() {
       "sale_channels",
       "returns",
       "order_suppliers",
+      "trademarks",
     ];
 
     for (const entity of entities) {

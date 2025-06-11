@@ -1787,6 +1787,60 @@ const getLocations = async () => {
   }
 };
 
+const getTrademarks = async () => {
+  try {
+    const token = await getToken();
+    const pageSize = 100; // Maximum allowed by API
+    const allTrademarks = [];
+    let currentItem = 0;
+    let hasMoreData = true;
+
+    console.log("Fetching current trademarks...");
+
+    while (hasMoreData) {
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/trademark`,
+        params: {
+          pageSize: pageSize,
+          currentItem: currentItem,
+          orderBy: "tradeMarkName", // Sort alphabetically as per API documentation
+          orderDirection: "ASC",
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allTrademarks.push(...response.data.data);
+        currentItem += response.data.data.length;
+        hasMoreData = response.data.data.length === pageSize;
+
+        console.log(
+          `Fetched ${response.data.data.length} trademarks, total: ${allTrademarks.length}`
+        );
+
+        // Add small delay to respect API rate limits
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        hasMoreData = false;
+      }
+    }
+
+    console.log(`✅ Total trademarks fetched: ${allTrademarks.length}`);
+    return { data: allTrademarks };
+  } catch (error) {
+    console.error("Error getting trademarks:", error.message);
+    throw error;
+  }
+};
+
 module.exports = {
   getOrders,
   getOrdersByDate,
@@ -1812,4 +1866,5 @@ module.exports = {
   getOrderSuppliers,
   getOrderSuppliersByDate,
   getLocations,
+  getTrademarks,
 };

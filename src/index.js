@@ -15,23 +15,20 @@ const {
   runSaleChannelSync,
   runReturnSync,
   runOrderSupplierSync,
+  runTrademarkSync,
 } = require("./syncKiot/syncKiot");
 const { testConnection } = require("./db");
 const { initializeDatabase } = require("./db/init");
 const { addRecordToCRMBase, getCRMStats, sendTestMessage } = require("./lark");
-const { locationSchedulerOneTime } = require("../scheduler/locationScheduler");
 
 const app = express();
 const PORT = process.env.PORT || 3690;
 
-// Fix 1: Increase max listeners to prevent warning
 process.setMaxListeners(20);
 
-// Fix 2: Global variables for cleanup
 let syncInterval = null;
 let server = null;
 
-// Fix 3: Cleanup function
 function cleanup() {
   console.log("🛑 Cleaning up resources...");
 
@@ -50,7 +47,6 @@ function cleanup() {
   }
 }
 
-// Fix 4: Add process listeners ONCE at module level (not inside app.listen)
 process.on("SIGINT", cleanup);
 process.on("SIGTERM", cleanup);
 process.on("uncaughtException", (error) => {
@@ -116,6 +112,8 @@ app.get("/", (req, res) => {
       test: "/api/test-lark",
       syncSaleChannels: "POST /api/sync/salechannels",
       saleChannelStatus: "GET /api/sync/salechannels/status",
+      syncTrademarks: "POST /api/sync/trademarks",
+      trademarkStatus: "GET /api/sync/trademarks/status",
     },
     timestamp: new Date().toISOString(),
   });
@@ -305,7 +303,7 @@ const initializeStaticData = async () => {
   }
 };
 
-initializeStaticData();
+// initializeStaticData();
 
 async function startServer() {
   try {
@@ -348,7 +346,6 @@ async function startServer() {
             console.log(`✅ ${entityName} sync completed`);
           } catch (error) {
             console.error(`❌ ${entityName} sync failed:`, error.message);
-            // Don't crash the app, just continue
           }
         };
 
@@ -391,6 +388,10 @@ async function startServer() {
         const returnSyncStatus = await getSyncStatusSafely(
           "../src/db/returnService",
           "returns"
+        );
+        const trademarkSyncStatus = await getSyncStatusSafely(
+          "../src/db/trademarkService",
+          "trademarks"
         );
 
         const orderSupplierSyncStatus = await getSyncStatusSafely(
@@ -508,7 +509,16 @@ async function startServer() {
           );
         }
 
-        // Current sync with error handling
+        if (!trademarkSyncStatus.historicalCompleted) {
+          await runSyncSafely(
+            () =>
+              require("../scheduler/trademarkScheduler").trademarkScheduler(
+                historicalDaysAgo
+              ),
+            "historical trademark"
+          );
+        }
+
         console.log("🔄 Starting current sync cycle...");
         await runSyncSafely(runUserSync, "current user");
         await runSyncSafely(runProductSync, "current product");
@@ -522,6 +532,7 @@ async function startServer() {
         await runSyncSafely(runSaleChannelSync, "current sale channel");
         await runSyncSafely(runReturnSync, "current return");
         await runSyncSafely(runOrderSupplierSync, "current order supplier");
+        await runSyncSafely(runTrademarkSync, "current trademark");
 
         const runAllSyncs = async () => {
           try {
@@ -537,6 +548,7 @@ async function startServer() {
               runTransferSync(),
               runReturnSync(),
               runOrderSupplierSync(),
+              runTrademarkSync(),
             ]);
           } catch (error) {
             console.error("❌ Error during scheduled sync:", error.message);
@@ -544,10 +556,6 @@ async function startServer() {
         };
 
         syncInterval = setInterval(runAllSyncs, 10 * 60 * 1000);
-
-        console.log("🎉 Application startup completed!");
-
-        // Fix 7: Remove the process.on listeners from here since they're now at module level
       } catch (startupError) {
         console.error("❌ Error during startup:", startupError.message);
         console.error("Stack trace:", startupError.stack);
