@@ -534,6 +534,7 @@ async function startServer() {
         await runSyncSafely(runReturnSync, "current return");
         await runSyncSafely(runOrderSupplierSync, "current order supplier");
         await runSyncSafely(runTrademarkSync, "current trademark");
+        await runSyncSafely(runAttributeSync, "current attribute");
 
         const runAllSyncs = async () => {
           try {
