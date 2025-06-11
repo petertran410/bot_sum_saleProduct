@@ -2110,17 +2110,12 @@ const getBranchesByDate = async (daysAgo) => {
 const getPricebooks = async () => {
   try {
     const token = await getToken();
-    const pageSize = 100;
+    const pageSize = 100; // Maximum allowed by API
     const allPricebooks = [];
     let currentItem = 0;
     let hasMoreData = true;
 
-    // 🎯 TIME-FILTERED: Get only pricebooks modified in last 48 hours
-    const fromDate = new Date();
-    fromDate.setDate(fromDate.getDate() - 2); // 48h buffer for safety
-    const fromDateStr = fromDate.toISOString().split("T")[0];
-
-    console.log(`Fetching pricebooks modified since ${fromDateStr}...`);
+    console.log("Fetching all pricebooks...");
 
     while (hasMoreData) {
       const response = await makeApiRequest({
@@ -2129,13 +2124,7 @@ const getPricebooks = async () => {
         params: {
           pageSize: pageSize,
           currentItem: currentItem,
-          lastModifiedFrom: fromDateStr, // 🔥 KEY: Time filtering
-          // Removed problematic parameters that cause 400 errors
-          // includePriceBookBranch: true,
-          // includePriceBookCustomerGroups: true,
-          // includePriceBookUsers: true,
-          // orderBy: "name",
-          // orderDirection: "ASC",
+          // NO lastModifiedFrom - pure full sync like trademarks
         },
         headers: {
           Retailer: process.env.KIOT_SHOP_NAME,
@@ -2153,168 +2142,33 @@ const getPricebooks = async () => {
         hasMoreData = response.data.data.length === pageSize;
 
         console.log(
-          `Fetched ${response.data.data.length} pricebooks (modified since ${fromDateStr}), total: ${allPricebooks.length}`
+          `Fetched ${response.data.data.length} pricebooks, total: ${allPricebooks.length}`
         );
+
+        // Add small delay to respect API rate limits
         await new Promise((resolve) => setTimeout(resolve, 100));
       } else {
         hasMoreData = false;
       }
+
+      // Safety check to prevent infinite loops
+      if (currentItem > 10000) {
+        console.log("⚠️ Safety limit reached, stopping pagination");
+        break;
+      }
     }
 
-    console.log(
-      `✅ Total time-filtered pricebooks fetched: ${allPricebooks.length}`
-    );
+    console.log(`🎉 Successfully synced ${allPricebooks.length} pricebooks`);
     return { data: allPricebooks, total: allPricebooks.length };
   } catch (error) {
-    console.error("Error getting time-filtered pricebooks:", error.message);
-    throw error;
-  }
-};
-
-// HISTORICAL PRICEBOOKS sync (for initial full sync)
-const getPricebooksByDate = async (daysAgo) => {
-  const results = []; // Declare results outside try block to fix scope issue
-
-  try {
-    for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
-      const targetDate = new Date();
-      targetDate.setDate(targetDate.getDate() - currentDaysAgo);
-      const formattedDate = targetDate.toISOString().split("T")[0];
-
-      const token = await getToken();
-      const pageSize = 100;
-      const allPricebooksForDate = [];
-      let currentItem = 0;
-      let hasMoreData = true;
-
-      console.log(`Fetching pricebooks modified on/after ${formattedDate}...`);
-
-      while (hasMoreData) {
-        try {
-          const response = await makeApiRequest({
-            method: "GET",
-            url: `${KIOTVIET_BASE_URL}/pricebooks`,
-            params: {
-              lastModifiedFrom: formattedDate,
-              pageSize: pageSize,
-              currentItem: currentItem,
-              // Removed problematic parameters that cause 400 errors
-              // includePriceBookBranch: true,
-              // includePriceBookCustomerGroups: true,
-              // includePriceBookUsers: true,
-              // orderBy: "name",
-              // orderDirection: "ASC",
-            },
-            headers: {
-              Retailer: process.env.KIOT_SHOP_NAME,
-              Authorization: `Bearer ${token}`,
-            },
-          });
-
-          if (
-            response.data &&
-            response.data.data &&
-            response.data.data.length > 0
-          ) {
-            allPricebooksForDate.push(...response.data.data);
-            currentItem += response.data.data.length;
-            hasMoreData = response.data.data.length === pageSize;
-
-            console.log(
-              `Date ${formattedDate}: Fetched ${response.data.data.length} pricebooks, total: ${allPricebooksForDate.length}`
-            );
-            await new Promise((resolve) => setTimeout(resolve, 100));
-          } else {
-            hasMoreData = false;
-          }
-        } catch (pageError) {
-          console.error(
-            `Error in pricebooks pagination at item ${currentItem} for date ${formattedDate}:`,
-            pageError.message
-          );
-          // If we get data but have an error on subsequent pages, return what we have
-          if (allPricebooksForDate.length > 0) {
-            console.log(
-              `Returning ${allPricebooksForDate.length} pricebooks for ${formattedDate} despite pagination error`
-            );
-            break;
-          }
-          // Continue to next date if no data yet
-          hasMoreData = false;
-        }
-      }
-
-      results.push({
-        date: formattedDate,
-        daysAgo: currentDaysAgo,
-        data: { data: allPricebooksForDate },
-      });
-
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
-
-    return results;
-  } catch (error) {
-    console.error(`Error getting pricebooks by date:`, error.message);
+    console.error("❌ Error getting pricebooks:", error.message);
     if (error.response) {
       console.error("Response status:", error.response.status);
-      console.error("Response data:", error.response.data);
+      console.error(
+        "Response data:",
+        JSON.stringify(error.response.data, null, 2)
+      );
     }
-    return results; // Return whatever we have collected so far
-  }
-};
-
-// GET PRICEBOOK DETAILS (including products and prices)
-const getPricebookDetails = async (pricebookId) => {
-  try {
-    const token = await getToken();
-    const pageSize = 100;
-    const allPricebookDetails = [];
-    let currentItem = 0;
-    let hasMoreData = true;
-
-    console.log(`Fetching details for pricebook ID: ${pricebookId}...`);
-
-    while (hasMoreData) {
-      const response = await makeApiRequest({
-        method: "GET",
-        url: `${KIOTVIET_BASE_URL}/pricebooks/${pricebookId}`,
-        params: {
-          pageSize: pageSize,
-          currentItem: currentItem,
-          orderBy: "productCode",
-          orderDirection: "ASC",
-        },
-        headers: {
-          Retailer: process.env.KIOT_SHOP_NAME,
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (
-        response.data &&
-        response.data.data &&
-        response.data.data.length > 0
-      ) {
-        allPricebookDetails.push(...response.data.data);
-        currentItem += response.data.data.length;
-        hasMoreData = response.data.data.length === pageSize;
-
-        console.log(
-          `Fetched ${response.data.data.length} pricebook details, total: ${allPricebookDetails.length}`
-        );
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      } else {
-        hasMoreData = false;
-      }
-    }
-
-    return { data: allPricebookDetails, total: allPricebookDetails.length };
-  } catch (error) {
-    console.error(
-      `Error getting pricebook details for ID ${pricebookId}:`,
-      error.message
-    );
     throw error;
   }
 };
@@ -2351,6 +2205,4 @@ module.exports = {
   getBranches,
   getBranchesByDate,
   getPricebooks,
-  getPricebooksByDate,
-  getPricebookDetails,
 };

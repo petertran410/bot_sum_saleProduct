@@ -1,11 +1,7 @@
-// scheduler/pricebookScheduler.js - FULL-SYNC pattern (like Trademarks)
-const { getPricebooks, getPricebookDetails } = require("../src/kiotviet");
+// scheduler/pricebookScheduler.js - EXACTLY like trademarkScheduler.js
+const { getPricebooks } = require("../src/kiotviet");
 const pricebookService = require("../src/db/pricebookService");
 
-/**
- * Current pricebook sync (full sync - like trademarks)
- * Used for all pricebook syncing since they don't support date filtering
- */
 const pricebookSchedulerCurrent = async () => {
   const MAX_RETRIES = 3;
   let retryCount = 0;
@@ -50,26 +46,6 @@ const pricebookSchedulerCurrent = async () => {
           allPricebooks.data
         );
 
-        // Optional: Sync pricebook details (products and prices) for each pricebook
-        // Uncomment if client wants detailed product prices per pricebook
-        /*
-        console.log("🔍 Syncing pricebook details...");
-        for (const pricebook of allPricebooks.data) {
-          if (pricebook.isActive) {
-            try {
-              console.log(`Fetching details for pricebook: ${pricebook.name} (ID: ${pricebook.id})`);
-              const pricebookDetails = await getPricebookDetails(pricebook.id);
-              
-              if (pricebookDetails.data && pricebookDetails.data.length > 0) {
-                await pricebookService.savePricebookDetails(pricebook.id, pricebookDetails.data);
-              }
-            } catch (detailError) {
-              console.warn(`Could not fetch details for pricebook ${pricebook.id}: ${detailError.message}`);
-            }
-          }
-        }
-        */
-
         await pricebookService.updateSyncStatus(true, new Date());
 
         console.log(
@@ -103,10 +79,7 @@ const pricebookSchedulerCurrent = async () => {
   }
 };
 
-/**
- * Historical pricebook sync (same as current - full sync)
- * Pricebooks are reference data like trademarks, no date filtering
- */
+// Same as trademarks - historical sync is same as current
 const pricebookScheduler = async (daysAgo) => {
   console.log(
     `ℹ️  Pricebooks are reference data without date filtering. Running full sync...`

@@ -1,5 +1,10 @@
+// src/db/pricebookService.js
 const { getPool } = require("../db");
 
+/**
+ * Save a single pricebook to database
+ * Based on actual data structure from KiotViet API
+ */
 async function savePricebook(pricebook, connection = null) {
   const shouldReleaseConnection = !connection;
   if (!connection) {
@@ -50,17 +55,21 @@ async function savePricebook(pricebook, connection = null) {
     await connection.execute(pricebookQuery, [
       id,
       name || null,
-      isActive || false,
-      isGlobal || false,
+      isActive !== undefined ? isActive : false,
+      isGlobal !== undefined ? isGlobal : false,
       parsedStartDate,
       parsedEndDate,
-      forAllCusGroup || false,
-      forAllUser || false,
+      forAllCusGroup !== undefined ? forAllCusGroup : false,
+      forAllUser !== undefined ? forAllUser : false,
       JSON.stringify(pricebook),
     ]);
 
-    // Handle pricebook branches
-    if (priceBookBranches && Array.isArray(priceBookBranches)) {
+    // Handle pricebook branches (if any)
+    if (
+      priceBookBranches &&
+      Array.isArray(priceBookBranches) &&
+      priceBookBranches.length > 0
+    ) {
       // Delete existing branches for this pricebook
       await connection.execute(
         "DELETE FROM pricebook_branches WHERE priceBookId = ?",
@@ -76,9 +85,9 @@ async function savePricebook(pricebook, connection = null) {
           `;
 
           await connection.execute(branchQuery, [
-            branch.id,
+            branch.id || null,
             branch.priceBookId || id,
-            branch.branchId,
+            branch.branchId || null,
             branch.branchName || null,
           ]);
         } catch (branchError) {
@@ -89,8 +98,12 @@ async function savePricebook(pricebook, connection = null) {
       }
     }
 
-    // Handle pricebook customer groups
-    if (priceBookCustomerGroups && Array.isArray(priceBookCustomerGroups)) {
+    // Handle pricebook customer groups (if any)
+    if (
+      priceBookCustomerGroups &&
+      Array.isArray(priceBookCustomerGroups) &&
+      priceBookCustomerGroups.length > 0
+    ) {
       // Delete existing customer groups for this pricebook
       await connection.execute(
         "DELETE FROM pricebook_customer_groups WHERE priceBookId = ?",
@@ -106,9 +119,9 @@ async function savePricebook(pricebook, connection = null) {
           `;
 
           await connection.execute(customerGroupQuery, [
-            customerGroup.id,
+            customerGroup.id || null,
             customerGroup.priceBookId || id,
-            customerGroup.customerGroupId,
+            customerGroup.customerGroupId || null,
             customerGroup.customerGroupName || null,
           ]);
         } catch (cgError) {
@@ -119,8 +132,12 @@ async function savePricebook(pricebook, connection = null) {
       }
     }
 
-    // Handle pricebook users
-    if (priceBookUsers && Array.isArray(priceBookUsers)) {
+    // Handle pricebook users (if any)
+    if (
+      priceBookUsers &&
+      Array.isArray(priceBookUsers) &&
+      priceBookUsers.length > 0
+    ) {
       // Delete existing users for this pricebook
       await connection.execute(
         "DELETE FROM pricebook_users WHERE priceBookId = ?",
@@ -136,9 +153,9 @@ async function savePricebook(pricebook, connection = null) {
           `;
 
           await connection.execute(userQuery, [
-            user.id,
+            user.id || null,
             user.priceBookId || id,
-            user.userId,
+            user.userId || null,
             user.userName || null,
           ]);
         } catch (userError) {
@@ -160,6 +177,10 @@ async function savePricebook(pricebook, connection = null) {
   }
 }
 
+/**
+ * Save multiple pricebooks in a transaction
+ * Follows the same pattern as other services
+ */
 async function savePricebooks(pricebooks) {
   const connection = await getPool().getConnection();
 
