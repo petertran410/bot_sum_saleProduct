@@ -10,6 +10,7 @@ const transferService = require("../db/transferService");
 const returnService = require("../db/returnService");
 const trademarkService = require("../db/trademarkService");
 const attributeService = require("../db/attributeService");
+const productOnHandsService = require("../db/productOnHandsService");
 
 const {
   cashflowScheduler,
@@ -74,6 +75,11 @@ const {
   attributeScheduler,
   attributeSchedulerCurrent,
 } = require("../../scheduler/attributeScheduler");
+
+const {
+  productOnHandsScheduler,
+  productOnHandsSchedulerCurrent,
+} = require("../../scheduler/productOnHandsScheduler");
 
 const runOrderSync = async () => {
   try {
@@ -593,6 +599,47 @@ const runAttributeSync = async () => {
   }
 };
 
+const runProductOnHandsSync = async () => {
+  try {
+    console.log("🚀 Starting ProductOnHands Sync Process...");
+    const syncStatus = await productOnHandsService.getSyncStatus();
+    console.log("ProductOnHands Sync Status:", syncStatus);
+
+    if (!syncStatus.historicalCompleted) {
+      console.log("📅 Running historical productOnHands sync...");
+      const result = await productOnHandsScheduler(160);
+
+      if (result.success) {
+        console.log(
+          "✅ Historical productOnHands data has been saved to database"
+        );
+      } else {
+        console.error(
+          "❌ Error when saving historical productOnHands data:",
+          result.error
+        );
+      }
+    } else {
+      console.log("🔄 Running current productOnHands sync...");
+      const currentResult = await productOnHandsSchedulerCurrent();
+
+      if (currentResult.success) {
+        console.log(
+          `✅ Current productOnHands data has been added: ${currentResult.savedCount} items`
+        );
+      } else {
+        console.error(
+          "❌ Error when adding current productOnHands:",
+          currentResult.error
+        );
+      }
+    }
+  } catch (error) {
+    console.error("❌ Cannot get and save productOnHands data:", error);
+    console.error("Stack trace:", error.stack);
+  }
+};
+
 module.exports = {
   runOrderSync,
   runInvoiceSync,
@@ -609,4 +656,5 @@ module.exports = {
   runLocationSync,
   runTrademarkSync,
   runAttributeSync,
+  runProductOnHandsSync,
 };

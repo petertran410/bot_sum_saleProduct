@@ -1887,6 +1887,131 @@ const getAttributes = async () => {
   }
 };
 
+const getProductOnHands = async () => {
+  try {
+    const token = await getToken();
+    const pageSize = 100;
+    const allProductOnHands = [];
+    let currentItem = 0;
+    let hasMoreData = true;
+
+    // 🎯 TIME-FILTERED: Get only productOnHands modified in last 48 hours
+    const fromDate = new Date();
+    fromDate.setDate(fromDate.getDate() - 2); // 48h buffer for safety
+    const fromDateStr = fromDate.toISOString().split("T")[0];
+
+    console.log(`Fetching productOnHands modified since ${fromDateStr}...`);
+
+    while (hasMoreData) {
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/productOnHands`,
+        params: {
+          pageSize: pageSize,
+          currentItem: currentItem,
+          lastModifiedFrom: fromDateStr, // 🔥 KEY: Time filtering
+          orderBy: "code", // Sort by product code
+          orderDirection: "ASC",
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allProductOnHands.push(...response.data.data);
+        currentItem += response.data.data.length;
+        hasMoreData = response.data.data.length === pageSize;
+
+        console.log(
+          `Fetched ${response.data.data.length} productOnHands (modified since ${fromDateStr}), total: ${allProductOnHands.length}`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        hasMoreData = false;
+      }
+    }
+
+    console.log(
+      `✅ Total time-filtered productOnHands fetched: ${allProductOnHands.length}`
+    );
+    return { data: allProductOnHands, total: allProductOnHands.length };
+  } catch (error) {
+    console.error("Error getting time-filtered productOnHands:", error.message);
+    throw error;
+  }
+};
+
+// HISTORICAL ProductOnHands sync (for initial full sync)
+const getProductOnHandsByDate = async (daysAgo) => {
+  try {
+    const results = [];
+
+    for (let i = 0; i <= daysAgo; i++) {
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() - i);
+      const dateStr = targetDate.toISOString().split("T")[0];
+
+      console.log(`Fetching productOnHands for date: ${dateStr}`);
+
+      const token = await getToken();
+      const allProductOnHandsForDate = [];
+      let hasMoreData = true;
+      let currentItem = 0;
+      const pageSize = 100;
+
+      while (hasMoreData) {
+        const response = await makeApiRequest({
+          method: "GET",
+          url: `${KIOTVIET_BASE_URL}/productOnHands`,
+          params: {
+            pageSize,
+            currentItem,
+            lastModifiedFrom: dateStr,
+            orderBy: "code",
+            orderDirection: "ASC",
+          },
+          headers: {
+            Retailer: process.env.KIOT_SHOP_NAME,
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (
+          response.data &&
+          response.data.data &&
+          response.data.data.length > 0
+        ) {
+          allProductOnHandsForDate.push(...response.data.data);
+          currentItem += response.data.data.length;
+          hasMoreData = response.data.data.length === pageSize;
+        } else {
+          hasMoreData = false;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+
+      if (allProductOnHandsForDate.length > 0) {
+        results.push({
+          date: dateStr,
+          data: { data: allProductOnHandsForDate },
+        });
+      }
+    }
+
+    return results;
+  } catch (error) {
+    console.error("Error getting productOnHands by date:", error.message);
+    throw error;
+  }
+};
+
 module.exports = {
   getOrders,
   getOrdersByDate,
@@ -1914,4 +2039,6 @@ module.exports = {
   getLocations,
   getTrademarks,
   getAttributes,
+  getProductOnHands,
+  getProductOnHandsByDate,
 };

@@ -756,6 +756,24 @@ async function initializeDatabase() {
     `);
 
     await connection.query(`
+      CREATE TABLE IF NOT EXISTS product_on_hands (
+        id BIGINT PRIMARY KEY,
+        code VARCHAR(50) NOT NULL,
+        createdDate DATETIME,
+        name VARCHAR(255),
+        unit VARCHAR(50),
+        basePrice DECIMAL(15,2),
+        weight DECIMAL(10,3),
+        modifiedDate DATETIME,
+        jsonData JSON,
+        lastSyncDate DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE     CURRENT_TIMESTAMP,
+        UNIQUE INDEX (code),
+        INDEX idx_modifiedDate (modifiedDate),
+        INDEX idx_lastSyncDate (lastSyncDate)
+      )
+    `);
+
+    await connection.query(`
       CREATE TABLE IF NOT EXISTS sync_status (
         entity_type VARCHAR(50) PRIMARY KEY,
         last_sync DATETIME,
@@ -778,6 +796,7 @@ async function initializeDatabase() {
       "order_suppliers",
       "trademarks",
       "attributes",
+      "product_on_hands",
     ];
 
     for (const entity of entities) {
