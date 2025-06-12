@@ -952,15 +952,30 @@ const getCashflow = async () => {
     let currentItem = 0;
     let hasMoreData = true;
 
-    console.log("Fetching current cashflows...");
+    // ✅ TIME-FILTERED: Get last 7 days for current sync
+    const today = new Date();
+    const fromDate = new Date();
+    fromDate.setDate(today.getDate() - 7); // 7 days buffer for current sync
+    const startDate = fromDate.toISOString().split("T")[0];
+    const endDate = today.toISOString().split("T")[0];
+
+    console.log(
+      `📅 Fetching current cashflows from ${startDate} to ${endDate}...`
+    );
 
     while (hasMoreData) {
+      console.log(
+        `📄 Fetching cashflow page starting at item ${currentItem}...`
+      );
+
       const response = await makeApiRequest({
         method: "GET",
         url: `${KIOTVIET_BASE_URL}/cashflow`,
         params: {
           pageSize: pageSize,
           currentItem: currentItem,
+          startDate: startDate, // ✅ KEY FIX: Add start date
+          endDate: endDate, // ✅ KEY FIX: Add end date
           includeAccount: true,
           includeBranch: true,
           includeUser: true,
@@ -970,6 +985,10 @@ const getCashflow = async () => {
           Authorization: `Bearer ${token}`,
         },
       });
+
+      console.log(
+        `📊 API Response - Total: ${response.data?.total}, Current batch: ${response.data?.data?.length}`
+      );
 
       if (
         response.data &&
@@ -985,8 +1004,10 @@ const getCashflow = async () => {
           response.data.data.length === pageSize;
 
         console.log(
-          `Fetched ${response.data.data.length} cashflows, total: ${allCashflows.length}/${response.data.total}`
+          `✅ Fetched ${response.data.data.length} cashflows, total: ${allCashflows.length}/${response.data.total}`
         );
+
+        // Rate limiting
         await new Promise((resolve) => setTimeout(resolve, 100));
       } else {
         hasMoreData = false;
@@ -999,29 +1020,46 @@ const getCashflow = async () => {
       }
     }
 
-    console.log(`Total cashflows fetched: ${allCashflows.length}`);
+    console.log(`🎉 Total current cashflows fetched: ${allCashflows.length}`);
     return { data: allCashflows, total: allCashflows.length };
   } catch (error) {
-    console.error("Error getting cashflows:", error.message);
+    console.error("❌ Error getting current cashflows:", error.message);
     throw error;
   }
 };
 
+// ✅ Function 2: getCashflowByDate(daysAgo) - For historical sync
+// Purpose: Get historical cashflows based on INITIAL_SCAN_DAYS
 const getCashflowByDate = async (daysAgo) => {
   try {
-    const results = [];
+    console.log(
+      `🗓️ Starting cashflow historical sync for ${daysAgo} days back...`
+    );
 
-    console.log("Attempting to fetch all cashflow data...");
+    // ✅ Calculate the actual date range from INITIAL_SCAN_DAYS
+    const endDate = new Date(); // Today
+    const startDate = new Date();
+    startDate.setDate(endDate.getDate() - daysAgo); // Go back daysAgo days
+
+    const formattedStartDate = startDate.toISOString().split("T")[0];
+    const formattedEndDate = endDate.toISOString().split("T")[0];
+
+    console.log(
+      `📅 Fetching cashflows from ${formattedStartDate} to ${formattedEndDate}`
+    );
+    console.log(`🎯 This covers ${daysAgo + 1} days of historical data`);
 
     const token = await getToken();
     const pageSize = 100;
     const allCashflows = [];
     let currentItem = 0;
     let hasMoreData = true;
-    let totalFetched = 0;
 
+    // ✅ Fetch ALL cashflows in the specified date range
     while (hasMoreData) {
-      console.log(`Fetching cashflow page starting at item ${currentItem}...`);
+      console.log(
+        `📄 Fetching cashflow page starting at item ${currentItem}...`
+      );
 
       const response = await makeApiRequest({
         method: "GET",
@@ -1029,6 +1067,8 @@ const getCashflowByDate = async (daysAgo) => {
         params: {
           pageSize: pageSize,
           currentItem: currentItem,
+          startDate: formattedStartDate, // ✅ KEY FIX: Use calculated start date
+          endDate: formattedEndDate, // ✅ KEY FIX: Use calculated end date
           includeAccount: true,
           includeBranch: true,
           includeUser: true,
@@ -1040,7 +1080,7 @@ const getCashflowByDate = async (daysAgo) => {
       });
 
       console.log(
-        `API Response - Total: ${response.data?.total}, Current batch: ${response.data?.data?.length}`
+        `📊 API Response - Total available: ${response.data?.total}, Current batch: ${response.data?.data?.length}`
       );
 
       if (
@@ -1050,38 +1090,40 @@ const getCashflowByDate = async (daysAgo) => {
       ) {
         allCashflows.push(...response.data.data);
         currentItem += response.data.data.length;
-        totalFetched += response.data.data.length;
 
-        // Check if we have more data
+        // Check if we have more data based on total count
         hasMoreData =
           response.data.total > allCashflows.length &&
           response.data.data.length === pageSize;
 
         console.log(
-          `Fetched ${response.data.data.length} cashflows, total collected: ${allCashflows.length}/${response.data.total}`
+          `✅ Fetched ${response.data.data.length} cashflows, total collected: ${allCashflows.length}/${response.data.total}`
         );
 
-        await new Promise((resolve) => setTimeout(resolve, 200));
+        // Rate limiting
+        await new Promise((resolve) => setTimeout(resolve, 100));
       } else {
         console.log("No more cashflow data received");
         hasMoreData = false;
       }
 
       // Safety check to prevent infinite loops
-      if (currentItem > response.data?.total || totalFetched > 50000) {
+      if (currentItem > response.data?.total || currentItem > 100000) {
         console.log("Reached maximum items, stopping fetch...");
         break;
       }
     }
 
-    console.log(`Total cashflows fetched from API: ${allCashflows.length}`);
+    console.log(`🎉 Total cashflows fetched from API: ${allCashflows.length}`);
 
     if (allCashflows.length === 0) {
-      console.log("No cashflow data found in API");
+      console.log(
+        "⚠️ No cashflow data found in API for the specified date range"
+      );
       return [];
     }
 
-    // Now group by date in memory
+    // ✅ Group by individual dates for processing
     const cashflowsByDate = new Map();
 
     allCashflows.forEach((cashflow) => {
@@ -1097,10 +1139,11 @@ const getCashflowByDate = async (daysAgo) => {
     });
 
     console.log(
-      `Cashflows grouped into ${cashflowsByDate.size} different dates`
+      `📊 Cashflows grouped into ${cashflowsByDate.size} different dates`
     );
 
-    // Create results for the requested date range
+    // ✅ Create results for each day in the requested range
+    const results = [];
     for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
       const targetDate = new Date();
       targetDate.setDate(targetDate.getDate() - currentDaysAgo);
@@ -1109,7 +1152,7 @@ const getCashflowByDate = async (daysAgo) => {
       const cashflowsForDate = cashflowsByDate.get(formattedDate) || [];
 
       console.log(
-        `Date ${formattedDate}: Found ${cashflowsForDate.length} cashflows`
+        `📅 Date ${formattedDate} (${currentDaysAgo} days ago): Found ${cashflowsForDate.length} cashflows`
       );
 
       results.push({
@@ -1119,9 +1162,17 @@ const getCashflowByDate = async (daysAgo) => {
       });
     }
 
+    const totalProcessed = results.reduce(
+      (sum, r) => sum + r.data.data.length,
+      0
+    );
+    console.log(
+      `🎯 Final summary: ${results.length} days processed, ${totalProcessed} total cashflows`
+    );
+
     return results;
   } catch (error) {
-    console.error(`Error getting cashflows by date:`, error.message);
+    console.error(`❌ Error getting cashflows by date:`, error.message);
     throw error;
   }
 };
