@@ -2,33 +2,60 @@ const { getPool } = require("../db.js");
 
 // Validate and sanitize cashflow data based on actual API response
 function validateAndSanitizeCashflow(cashflow) {
+  // Helper function to clean strings and handle emojis safely
+  const sanitizeString = (str, maxLength) => {
+    if (!str) return null;
+
+    // Convert to string and handle emojis
+    let cleaned = String(str);
+
+    // Option 1: Keep emojis but truncate safely (RECOMMENDED)
+    if (cleaned.length > maxLength) {
+      // Safely truncate at character boundary, not byte boundary
+      cleaned = cleaned.substring(0, maxLength);
+    }
+
+    return cleaned;
+  };
+
+  // Alternative helper function to remove emojis (if you prefer)
+  const sanitizeStringNoEmoji = (str, maxLength) => {
+    if (!str) return null;
+
+    let cleaned = String(str);
+
+    // Remove emojis and other 4-byte UTF-8 characters
+    cleaned = cleaned.replace(
+      /[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/gu,
+      ""
+    );
+
+    // Remove other problematic characters
+    cleaned = cleaned.replace(/[\u{10000}-\u{10FFFF}]/gu, "");
+
+    if (cleaned.length > maxLength) {
+      cleaned = cleaned.substring(0, maxLength);
+    }
+
+    return cleaned;
+  };
+
   return {
     ...cashflow,
-    code: cashflow.code ? String(cashflow.code).substring(0, 50) : "",
-    address: cashflow.address ? String(cashflow.address).substring(0, 500) : "",
-    locationName: cashflow.locationName
-      ? String(cashflow.locationName).substring(0, 100)
-      : null,
-    wardName: cashflow.wardName
-      ? String(cashflow.wardName).substring(0, 100)
-      : null,
-    contactNumber: cashflow.contactNumber
-      ? String(cashflow.contactNumber).substring(0, 20)
-      : null,
-    partnerName: cashflow.partnerName
-      ? String(cashflow.partnerName).substring(0, 255)
-      : "",
-    statusValue: cashflow.statusValue
-      ? String(cashflow.statusValue).substring(0, 50)
-      : null,
-    method: cashflow.method ? String(cashflow.method).substring(0, 50) : "",
-    partnerType: cashflow.partnerType
-      ? String(cashflow.partnerType).substring(0, 10)
-      : "O",
-    origin: cashflow.origin ? String(cashflow.origin).substring(0, 50) : null,
-    cashGroup: cashflow.cashGroup
-      ? String(cashflow.cashGroup).substring(0, 100)
-      : null,
+    // ✅ SAFE STRING HANDLING WITH EMOJI SUPPORT:
+    code: sanitizeString(cashflow.code, 50) || "",
+    address: sanitizeString(cashflow.address, 500) || "", // ✅ Key fix for emoji addresses
+    locationName: sanitizeString(cashflow.locationName, 100),
+    wardName: sanitizeString(cashflow.wardName, 100),
+    contactNumber: sanitizeString(cashflow.contactNumber, 20),
+    partnerName: sanitizeString(cashflow.partnerName, 255) || "", // ✅ Another field that might have emojis
+    statusValue: sanitizeString(cashflow.statusValue, 50),
+    method: sanitizeString(cashflow.method, 50) || "",
+    partnerType: sanitizeString(cashflow.partnerType, 10) || "O",
+    origin: sanitizeString(cashflow.origin, 50),
+    cashGroup: sanitizeString(cashflow.cashGroup, 100),
+
+    // Numeric fields (unchanged)
     amount: isNaN(Number(cashflow.amount)) ? 0 : Number(cashflow.amount),
     usedForFinancialReporting:
       cashflow.usedForFinancialReporting !== undefined
@@ -148,6 +175,9 @@ async function saveCashflow(cashflow, connection = null) {
   }
 
   try {
+    // ✅ Enhanced validation and sanitization
+    const sanitizedCashflow = validateAndSanitizeCashflow(cashflow);
+
     const {
       id,
       code,
@@ -172,7 +202,7 @@ async function saveCashflow(cashflow, connection = null) {
       transDate,
       amount,
       partnerName = "",
-    } = cashflow;
+    } = sanitizedCashflow;
 
     // Validate required fields
     if (
@@ -190,7 +220,7 @@ async function saveCashflow(cashflow, connection = null) {
     }
 
     const isReceipt = amount > 0 ? 1 : 0;
-    const jsonData = JSON.stringify(cashflow);
+    const jsonData = JSON.stringify(sanitizedCashflow);
 
     const query = `
       INSERT INTO cashflows 
@@ -253,10 +283,26 @@ async function saveCashflow(cashflow, connection = null) {
 
     return { success: true };
   } catch (error) {
+    // ✅ Enhanced error logging with data details
     console.error(
-      `Error saving cashflow ${cashflow.code || cashflow.id}:`,
-      error
+      `❌ Error saving cashflow ${cashflow.code || cashflow.id}:`,
+      error.message
     );
+
+    // Log problematic data for debugging
+    if (error.code === "ER_TRUNCATED_WRONG_VALUE_FOR_FIELD") {
+      console.error("📝 Problematic cashflow data:", {
+        id: cashflow.id,
+        code: cashflow.code,
+        address: cashflow.address
+          ? `"${cashflow.address.substring(0, 50)}..."`
+          : null,
+        partnerName: cashflow.partnerName
+          ? `"${cashflow.partnerName.substring(0, 50)}..."`
+          : null,
+      });
+    }
+
     return { success: false, error: error.message };
   } finally {
     if (shouldReleaseConnection) {

@@ -36,13 +36,15 @@
 const mysql = require("mysql2/promise");
 require("dotenv").config();
 
-// Cập nhật thông tin kết nối đến MariaDB trên NAS Synology
 const dbConfig = {
   host: process.env.DB_HOST || "14.224.212.102",
   port: process.env.DB_PORT || 3306,
   user: process.env.DB_USER || "root",
   password: process.env.DB_PASSWORD || "Dieptra@123",
   database: process.env.DB_NAME || "kiotviet_data",
+  // ✅ ADD THESE LINES:
+  charset: "utf8mb4",
+  collation: "utf8mb4_unicode_ci",
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
