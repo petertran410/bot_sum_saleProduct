@@ -952,15 +952,14 @@ const getCashflow = async () => {
     let currentItem = 0;
     let hasMoreData = true;
 
-    // ✅ TIME-FILTERED: Get last 7 days for current sync
     const today = new Date();
     const yesterday = new Date();
     const tomorrow = new Date();
 
-    yesterday.setDate(today.getDate() - 7); // ✅ Yesterday
-    tomorrow.setDate(today.getDate() + 1); // ✅ Tomorrow (+1 day from today)
+    yesterday.setDate(today.getDate() - 7);
+    tomorrow.setDate(today.getDate() + 1);
 
-    const startDate = yesterday.toISOString().split("T")[0]; // Yesterday
+    const startDate = yesterday.toISOString().split("T")[0];
     const endDate = tomorrow.toISOString().split("T")[0];
 
     console.log(
@@ -1040,13 +1039,14 @@ const getCashflowByDate = async (daysAgo) => {
       `🗓️ Starting cashflow historical sync for ${daysAgo} days back...`
     );
 
-    // ✅ Calculate the actual date range from INITIAL_SCAN_DAYS
-    const endDate = new Date(); // Today
+    const endDate = new Date();
     const startDate = new Date();
-    startDate.setDate(endDate.getDate() - daysAgo); // Go back daysAgo days
+    const tomorrow = new Date();
+    startDate.setDate(endDate.getDate() - daysAgo);
+    tomorrow.setDate(endDate.getDate() + 1);
 
     const formattedStartDate = startDate.toISOString().split("T")[0];
-    const formattedEndDate = endDate.toISOString().split("T")[0];
+    const formattedEndDate = tomorrow.toISOString().split("T")[0];
 
     console.log(
       `📅 Fetching cashflows from ${formattedStartDate} to ${formattedEndDate}`
