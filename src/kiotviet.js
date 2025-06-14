@@ -954,10 +954,14 @@ const getCashflow = async () => {
 
     // ✅ TIME-FILTERED: Get last 7 days for current sync
     const today = new Date();
-    const fromDate = new Date();
-    fromDate.setDate(today.getDate() - 7); // 7 days buffer for current sync
-    const startDate = fromDate.toISOString().split("T")[0];
-    const endDate = today.toISOString().split("T")[0];
+    const yesterday = new Date();
+    const tomorrow = new Date();
+
+    yesterday.setDate(today.getDate() - 7); // ✅ Yesterday
+    tomorrow.setDate(today.getDate() + 1); // ✅ Tomorrow (+1 day from today)
+
+    const startDate = yesterday.toISOString().split("T")[0]; // Yesterday
+    const endDate = tomorrow.toISOString().split("T")[0];
 
     console.log(
       `📅 Fetching current cashflows from ${startDate} to ${endDate}...`
