@@ -20,8 +20,12 @@ const runCustomerSyncDual = async (options = {}) => {
     skipMySQL = false,
     skipLark = false,
     forceLarkSync = false,
-    daysAgo = parseInt(process.env.INITIAL_SCAN_DAYS) || 200,
+    daysAgo = parseInt(process.env.INITIAL_SCAN_DAYS) || 176,
   } = options;
+
+  console.log(
+    `⚙️ Sync Configuration: skipMySQL=${skipMySQL}, skipLark=${skipLark}, forceLarkSync=${forceLarkSync}`
+  );
 
   const results = {
     mysql: {},
@@ -30,12 +34,12 @@ const runCustomerSyncDual = async (options = {}) => {
   };
 
   try {
-    // ✅ CRITICAL: Check sync status ONCE for both MySQL and Lark
+    // ✅ CRITICAL: Check sync status for smart sync decisions
     const customerService = require("../db/customerService");
     const syncStatus = await customerService.getSyncStatus();
 
     console.log(
-      `📊 Sync Status Check: historicalCompleted = ${syncStatus.historicalCompleted}`
+      `📊 Database Sync Status: historicalCompleted=${syncStatus.historicalCompleted}, lastSync=${syncStatus.lastSync}`
     );
 
     // 1. MySQL Database Sync
@@ -54,42 +58,46 @@ const runCustomerSyncDual = async (options = {}) => {
         results.mysql = currentMysqlResult;
       }
     } else {
-      console.log("⏭️ Skipping MySQL sync as requested");
-      results.mysql = { success: true, skipped: true };
+      console.log("⏭️ SKIPPING MySQL sync (lark-only mode)");
+      results.mysql = {
+        success: true,
+        skipped: true,
+        message: "MySQL skipped for lark-only mode",
+      };
     }
 
-    // 2. Lark Base Sync - ✅ FIXED: Respect the same sync_status
+    // 2. Lark Base Sync - ✅ FIXED: Respect sync_status for resume capability
     if (!skipLark) {
       console.log("📋 Phase 2: Lark Base Sync...");
 
-      // ✅ CRITICAL FIX: Use the same historicalCompleted check for Lark!
+      // ✅ CRITICAL FIX: Use the same historicalCompleted logic for Lark
       if (!syncStatus.historicalCompleted || forceLarkSync) {
         console.log(
           `📅 Running historical Lark sync (${daysAgo} days) - RESUMING WHERE LEFT OFF...`
         );
         const larkResult = await customerLarkScheduler(daysAgo);
         results.lark = larkResult;
+
+        // ✅ Mark historical sync as completed ONLY if both phases succeed
+        if (larkResult.success && results.mysql.success) {
+          console.log("🎉 Historical sync completed! Updating sync_status...");
+          await customerService.updateSyncStatus(true, new Date());
+        }
       } else {
         console.log("🔄 Running current Lark sync (historical completed)...");
         const currentLarkResult = await customerLarkSchedulerCurrent();
         results.lark = currentLarkResult;
       }
     } else {
-      console.log("⏭️ Skipping Lark sync as requested");
-      results.lark = { success: true, skipped: true };
+      console.log("⏭️ SKIPPING Lark sync as requested");
+      results.lark = {
+        success: true,
+        skipped: true,
+        message: "Lark sync skipped",
+      };
     }
 
-    // 3. Update sync status when historical sync completes
-    if (
-      !syncStatus.historicalCompleted &&
-      results.mysql.success &&
-      results.lark.success
-    ) {
-      console.log("🎉 Historical sync completed! Updating sync_status...");
-      await customerService.updateSyncStatus(true, new Date());
-    }
-
-    // Rest of the function remains the same...
+    // 3. Overall Result Assessment
     const mysqlSuccess = results.mysql.success || results.mysql.skipped;
     const larkSuccess = results.lark.success || results.lark.skipped;
 
@@ -102,13 +110,15 @@ const runCustomerSyncDual = async (options = {}) => {
         mysqlRecords: results.mysql.savedCount || 0,
         larkRecords: results.lark.stats?.newRecords || 0,
         larkUpdated: results.lark.stats?.updated || 0,
+        skippedMySQL: results.mysql.skipped || false,
+        skippedLark: results.lark.skipped || false,
       },
     };
 
     if (results.overall.success) {
       console.log("🎉 Enhanced Customer Sync completed successfully!");
       console.log(
-        `📊 Summary: MySQL: ${results.overall.summary.mysqlRecords} records, Lark: ${results.overall.summary.larkRecords} new + ${results.overall.summary.larkUpdated} updated`
+        `📊 Summary: MySQL: ${results.overall.summary.mysqlRecords} records (skipped: ${results.overall.summary.skippedMySQL}), Lark: ${results.overall.summary.larkRecords} new + ${results.overall.summary.larkUpdated} updated (skipped: ${results.overall.summary.skippedLark})`
       );
     } else {
       console.log("⚠️ Enhanced Customer Sync completed with some issues");

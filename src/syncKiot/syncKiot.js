@@ -184,55 +184,65 @@ const runProductSync = async () => {
   }
 };
 
-const runCustomerSync = async (syncConfig = {}) => {
-  // ✅ FLEXIBLE: Get configuration with smart defaults
+const runCustomerSync = async (options = {}) => {
+  // ✅ FIXED: Default to lark-only mode for your priority
   const {
-    skipMySQL = false, // Default: Don't skip MySQL
-    skipLark = false, // Default: Don't skip Lark
-    forceLarkSync = false, // Default: Smart sync logic
-    syncMode = "lark-only", // Options: 'lark-only', 'mysql-only', 'both', 'lark-first'
-  } = syncConfig;
+    syncMode = process.env.CUSTOMER_SYNC_MODE || "lark-only", // ✅ Default to lark-only
+    skipMySQL = true, // ✅ Default skip MySQL for lark priority
+    skipLark = false, // ✅ Never skip Lark
+    forceLarkSync = false,
+    daysAgo = parseInt(process.env.INITIAL_SCAN_DAYS) || 176,
+  } = options;
 
   console.log(`🚀 Starting Customer Sync - Mode: ${syncMode}`);
+  console.log(
+    `⚙️ Configuration: skipMySQL=${skipMySQL}, skipLark=${skipLark}, daysAgo=${daysAgo}`
+  );
 
   try {
-    let results = { mysql: {}, lark: {}, overall: {} };
+    let results;
 
     switch (syncMode) {
       case "lark-only":
-        console.log("📋 LARK-ONLY: Syncing to Lark Base only...");
+        console.log("📋 LARK-ONLY MODE: Syncing ONLY to Lark Base...");
         results = await runCustomerSyncDual({
-          skipMySQL: true,
-          skipLark: false,
+          skipMySQL: true, // ✅ FORCE skip MySQL
+          skipLark: false, // ✅ ALWAYS sync to Lark
           forceLarkSync,
+          daysAgo,
         });
         break;
 
       case "mysql-only":
-        console.log("🗄️ MySQL-ONLY: Syncing to MySQL only...");
+        console.log("🗄️ MySQL-ONLY MODE: Syncing ONLY to MySQL...");
         results = await runCustomerSyncDual({
-          skipMySQL: false,
-          skipLark: true,
+          skipMySQL: false, // ✅ Sync to MySQL
+          skipLark: true, // ✅ Skip Lark
           forceLarkSync: false,
+          daysAgo,
         });
         break;
 
       case "lark-first":
-        console.log("📋 LARK-FIRST: Lark priority, then MySQL...");
-        // Phase 1: Lark
+        console.log("📋 LARK-FIRST MODE: Lark priority, then MySQL...");
+        // Phase 1: Lark only
+        console.log("🔄 Phase 1: Syncing to Lark...");
         const larkResult = await runCustomerSyncDual({
           skipMySQL: true,
           skipLark: false,
           forceLarkSync,
+          daysAgo,
         });
 
         if (larkResult.overall.success) {
-          console.log("✅ Lark completed! Starting MySQL...");
-          // Phase 2: MySQL
+          console.log("✅ Lark sync completed! Starting MySQL...");
+          // Phase 2: MySQL only
+          console.log("🔄 Phase 2: Syncing to MySQL...");
           const mysqlResult = await runCustomerSyncDual({
             skipMySQL: false,
             skipLark: true,
             forceLarkSync: false,
+            daysAgo,
           });
 
           results = {
@@ -241,31 +251,67 @@ const runCustomerSync = async (syncConfig = {}) => {
             overall: {
               success:
                 larkResult.overall.success && mysqlResult.overall.success,
+              mysqlStatus: mysqlResult.overall.mysqlStatus,
+              larkStatus: larkResult.overall.larkStatus,
               sequence: "lark-first",
+              completedAt: new Date().toISOString(),
             },
           };
         } else {
+          console.error("❌ Lark sync failed, skipping MySQL");
           results = larkResult;
         }
         break;
 
       case "both":
-      default:
         console.log(
-          "🔄 DUAL: Syncing to both MySQL and Lark simultaneously..."
+          "🔄 DUAL MODE: Syncing to both MySQL and Lark simultaneously..."
         );
         results = await runCustomerSyncDual({
-          skipMySQL,
-          skipLark,
+          skipMySQL: false,
+          skipLark: false,
           forceLarkSync,
+          daysAgo,
+        });
+        break;
+
+      default:
+        console.log(
+          `⚠️ Unknown sync mode: ${syncMode}, defaulting to lark-only`
+        );
+        results = await runCustomerSyncDual({
+          skipMySQL: true,
+          skipLark: false,
+          forceLarkSync,
+          daysAgo,
         });
         break;
     }
 
+    if (results.overall.success) {
+      console.log(`✅ Customer sync (${syncMode}) completed successfully!`);
+      if (syncMode === "lark-only") {
+        console.log(
+          "📋 Lark-only sync stats:",
+          results.lark.stats || "No stats available"
+        );
+      }
+    } else {
+      console.log(
+        `⚠️ Customer sync (${syncMode}) completed with issues:`,
+        results.overall
+      );
+    }
+
     return results;
   } catch (error) {
-    console.error("❌ Customer sync failed:", error.message);
-    return { success: false, error: error.message };
+    console.error(`❌ Customer sync (${syncMode}) failed:`, error.message);
+    return {
+      success: false,
+      error: error.message,
+      syncMode: syncMode,
+      overall: { success: false, error: error.message },
+    };
   }
 };
 

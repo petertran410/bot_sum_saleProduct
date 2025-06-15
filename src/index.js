@@ -625,7 +625,7 @@ async function startServer() {
         await runSyncSafely(runSurchargeSync, "current surcharge");
         await runSyncSafely(
           () => runCustomerSync({ syncMode: "lark-only" }),
-          "current customer"
+          "lark-only customer"
         );
         await runSyncSafely(runPurchaseOrderSync, "current purchase order");
         await runSyncSafely(runOrderSync, "current order");
@@ -647,7 +647,7 @@ async function startServer() {
               runUserSync(),
               runProductSync(),
               runSurchargeSync(),
-              runCustomerSync({ syncMode: "both" }),
+              runCustomerSync({ syncMode: "lark-only" }),
               runPurchaseOrderSync(),
               runOrderSync(),
               runInvoiceSync(),
