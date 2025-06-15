@@ -13,10 +13,6 @@ const {
   customerLarkSchedulerCurrent,
 } = require("../../scheduler/customerLarkScheduler");
 
-/**
- * Enhanced customer sync that syncs to both MySQL and Lark Base
- * This replaces the original runCustomerSync with dual-target syncing
- */
 const runCustomerSyncDual = async (options = {}) => {
   console.log("🚀 Starting Enhanced Customer Sync Process...");
 
@@ -24,7 +20,7 @@ const runCustomerSyncDual = async (options = {}) => {
     skipMySQL = false,
     skipLark = false,
     forceLarkSync = false,
-    daysAgo = parseInt(process.env.INITIAL_SCAN_DAYS) || 200, // ✅ FIXED: Use environment variable
+    daysAgo = parseInt(process.env.INITIAL_SCAN_DAYS) || 200,
   } = options;
 
   const results = {
@@ -34,19 +30,26 @@ const runCustomerSyncDual = async (options = {}) => {
   };
 
   try {
-    // 1. MySQL Database Sync (existing logic)
+    // ✅ CRITICAL: Check sync status ONCE for both MySQL and Lark
+    const customerService = require("../db/customerService");
+    const syncStatus = await customerService.getSyncStatus();
+
+    console.log(
+      `📊 Sync Status Check: historicalCompleted = ${syncStatus.historicalCompleted}`
+    );
+
+    // 1. MySQL Database Sync
     if (!skipMySQL) {
       console.log("🗄️ Phase 1: MySQL Database Sync...");
 
-      const customerService = require("../db/customerService");
-      const syncStatus = await customerService.getSyncStatus();
-
       if (!syncStatus.historicalCompleted || forceLarkSync) {
-        console.log(`📅 Running historical MySQL sync (${daysAgo} days)...`);
+        console.log(
+          `📅 Running historical MySQL sync (${daysAgo} days) - RESUMING WHERE LEFT OFF...`
+        );
         const mysqlResult = await customerScheduler(daysAgo);
         results.mysql = mysqlResult;
       } else {
-        console.log("🔄 Running current MySQL sync...");
+        console.log("🔄 Running current MySQL sync (historical completed)...");
         const currentMysqlResult = await customerSchedulerCurrent();
         results.mysql = currentMysqlResult;
       }
@@ -55,18 +58,19 @@ const runCustomerSyncDual = async (options = {}) => {
       results.mysql = { success: true, skipped: true };
     }
 
-    // 2. Lark Base Sync (improved logic)
+    // 2. Lark Base Sync - ✅ FIXED: Respect the same sync_status
     if (!skipLark) {
       console.log("📋 Phase 2: Lark Base Sync...");
 
-      if (forceLarkSync) {
+      // ✅ CRITICAL FIX: Use the same historicalCompleted check for Lark!
+      if (!syncStatus.historicalCompleted || forceLarkSync) {
         console.log(
-          `🔧 Force sync enabled - running historical Lark sync (${daysAgo} days)...`
+          `📅 Running historical Lark sync (${daysAgo} days) - RESUMING WHERE LEFT OFF...`
         );
         const larkResult = await customerLarkScheduler(daysAgo);
         results.lark = larkResult;
       } else {
-        console.log("🔄 Running current customer sync to Lark...");
+        console.log("🔄 Running current Lark sync (historical completed)...");
         const currentLarkResult = await customerLarkSchedulerCurrent();
         results.lark = currentLarkResult;
       }
@@ -75,7 +79,17 @@ const runCustomerSyncDual = async (options = {}) => {
       results.lark = { success: true, skipped: true };
     }
 
-    // 3. Overall Result Assessment
+    // 3. Update sync status when historical sync completes
+    if (
+      !syncStatus.historicalCompleted &&
+      results.mysql.success &&
+      results.lark.success
+    ) {
+      console.log("🎉 Historical sync completed! Updating sync_status...");
+      await customerService.updateSyncStatus(true, new Date());
+    }
+
+    // Rest of the function remains the same...
     const mysqlSuccess = results.mysql.success || results.mysql.skipped;
     const larkSuccess = results.lark.success || results.lark.skipped;
 
@@ -115,10 +129,6 @@ const runCustomerSyncDual = async (options = {}) => {
   }
 };
 
-/**
- * Standalone Lark-only customer sync
- * Use this when you only want to sync to Lark without touching MySQL
- */
 const runCustomerSyncLarkOnly = async (options = {}) => {
   console.log("🚀 Starting Lark-Only Customer Sync Process...");
 

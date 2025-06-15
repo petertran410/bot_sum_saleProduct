@@ -184,29 +184,87 @@ const runProductSync = async () => {
   }
 };
 
-const runCustomerSync = async () => {
-  console.log("🚀 Starting Enhanced Customer Sync (MySQL + Lark)...");
-  try {
-    const result = await runCustomerSyncDual({
-      skipMySQL: false, // Keep existing MySQL sync
-      skipLark: false, // Add Lark sync
-      forceLarkSync: false, // Smart sync logic
-    });
+const runCustomerSync = async (syncConfig = {}) => {
+  // ✅ FLEXIBLE: Get configuration with smart defaults
+  const {
+    skipMySQL = false, // Default: Don't skip MySQL
+    skipLark = false, // Default: Don't skip Lark
+    forceLarkSync = false, // Default: Smart sync logic
+    syncMode = "lark-only", // Options: 'lark-only', 'mysql-only', 'both', 'lark-first'
+  } = syncConfig;
 
-    if (result.overall.success) {
-      console.log("✅ Enhanced customer sync completed successfully!");
-    } else {
-      console.log(
-        "⚠️ Customer sync issues - MySQL:",
-        result.overall.mysqlStatus,
-        "Lark:",
-        result.overall.larkStatus
-      );
+  console.log(`🚀 Starting Customer Sync - Mode: ${syncMode}`);
+
+  try {
+    let results = { mysql: {}, lark: {}, overall: {} };
+
+    switch (syncMode) {
+      case "lark-only":
+        console.log("📋 LARK-ONLY: Syncing to Lark Base only...");
+        results = await runCustomerSyncDual({
+          skipMySQL: true,
+          skipLark: false,
+          forceLarkSync,
+        });
+        break;
+
+      case "mysql-only":
+        console.log("🗄️ MySQL-ONLY: Syncing to MySQL only...");
+        results = await runCustomerSyncDual({
+          skipMySQL: false,
+          skipLark: true,
+          forceLarkSync: false,
+        });
+        break;
+
+      case "lark-first":
+        console.log("📋 LARK-FIRST: Lark priority, then MySQL...");
+        // Phase 1: Lark
+        const larkResult = await runCustomerSyncDual({
+          skipMySQL: true,
+          skipLark: false,
+          forceLarkSync,
+        });
+
+        if (larkResult.overall.success) {
+          console.log("✅ Lark completed! Starting MySQL...");
+          // Phase 2: MySQL
+          const mysqlResult = await runCustomerSyncDual({
+            skipMySQL: false,
+            skipLark: true,
+            forceLarkSync: false,
+          });
+
+          results = {
+            mysql: mysqlResult.mysql,
+            lark: larkResult.lark,
+            overall: {
+              success:
+                larkResult.overall.success && mysqlResult.overall.success,
+              sequence: "lark-first",
+            },
+          };
+        } else {
+          results = larkResult;
+        }
+        break;
+
+      case "both":
+      default:
+        console.log(
+          "🔄 DUAL: Syncing to both MySQL and Lark simultaneously..."
+        );
+        results = await runCustomerSyncDual({
+          skipMySQL,
+          skipLark,
+          forceLarkSync,
+        });
+        break;
     }
 
-    return result;
+    return results;
   } catch (error) {
-    console.error("❌ Enhanced customer sync failed:", error.message);
+    console.error("❌ Customer sync failed:", error.message);
     return { success: false, error: error.message };
   }
 };
