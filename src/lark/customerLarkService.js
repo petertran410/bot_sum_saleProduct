@@ -308,13 +308,16 @@ async function findCustomerInLarkBase(customerId) {
  * Sync multiple customers to Lark Base with batch processing
  */
 async function syncCustomersToLarkBase(customers) {
-  console.log(`🚀 Starting Lark sync for ${customers.length} customers...`);
+  console.log(
+    `🚀 Starting Lark sync for ${customers.length} customers with duplicate prevention...`
+  );
 
   let successCount = 0;
   let failCount = 0;
   let updateCount = 0;
   let newCount = 0;
-  const BATCH_SIZE = 10; // Process in smaller batches to avoid API limits
+  let skippedCount = 0;
+  const BATCH_SIZE = 10;
 
   try {
     for (let i = 0; i < customers.length; i += BATCH_SIZE) {
@@ -327,30 +330,44 @@ async function syncCustomersToLarkBase(customers) {
 
       for (const customer of batch) {
         try {
-          // Validate customer data
-          if (!customer.id || !customer.name) {
-            console.warn(
-              `Skipping invalid customer: ${customer.code || "unknown"}`
+          // ✅ FIXED: Check for duplicates before processing
+          const existsCheck = await checkCustomerExists(customer);
+
+          if (existsCheck.exists) {
+            console.log(
+              `⚠️ Customer ${customer.code} already exists (${existsCheck.matchType} match), updating...`
             );
-            failCount++;
-            continue;
-          }
 
-          const result = await addCustomerToLarkBase(customer);
+            const updateResult = await updateCustomerInLarkBase(
+              customer,
+              existsCheck.record
+            );
 
-          if (result.success) {
-            successCount++;
-            if (result.updated) {
+            if (updateResult.success) {
               updateCount++;
+              successCount++;
             } else {
-              newCount++;
+              console.error(
+                `Failed to update ${customer.code}:`,
+                updateResult.error
+              );
+              failCount++;
             }
           } else {
-            failCount++;
-          }
+            // Add new customer
+            const addResult = await addCustomerToLarkBase(customer);
 
-          // Small delay between requests to respect API limits
-          await new Promise((resolve) => setTimeout(resolve, 200));
+            if (addResult.success) {
+              newCount++;
+              successCount++;
+              console.log(
+                `✅ New customer ${customer.code} added successfully`
+              );
+            } else {
+              console.error(`Failed to add ${customer.code}:`, addResult.error);
+              failCount++;
+            }
+          }
         } catch (error) {
           console.error(
             `Error processing customer ${customer.code}:`,
@@ -358,28 +375,33 @@ async function syncCustomersToLarkBase(customers) {
           );
           failCount++;
         }
+
+        // Rate limiting delay
+        await new Promise((resolve) => setTimeout(resolve, 200));
       }
 
-      // Longer delay between batches
+      // Batch delay
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
 
-    console.log(
-      `📊 Lark sync completed: ${newCount} new, ${updateCount} updated, ${failCount} failed`
-    );
+    const stats = {
+      total: customers.length,
+      success: successCount,
+      newRecords: newCount,
+      updated: updateCount,
+      failed: failCount,
+      skipped: skippedCount,
+    };
+
+    console.log(`🎉 Lark sync completed:`, stats);
 
     return {
       success: failCount === 0,
-      stats: {
-        total: customers.length,
-        success: successCount,
-        newRecords: newCount,
-        updated: updateCount,
-        failed: failCount,
-      },
+      stats: stats,
+      message: `Processed ${successCount}/${customers.length} customers successfully`,
     };
   } catch (error) {
-    console.error("❌ Lark customer sync failed:", error.message);
+    console.error("❌ Error in Lark sync process:", error.message);
     return {
       success: false,
       error: error.message,
@@ -388,7 +410,8 @@ async function syncCustomersToLarkBase(customers) {
         success: successCount,
         newRecords: newCount,
         updated: updateCount,
-        failed: failCount,
+        failed: failCount + 1,
+        skipped: skippedCount,
       },
     };
   }
@@ -485,11 +508,65 @@ async function sendLarkSyncNotification(stats, syncType = "manual") {
   }
 }
 
+async function checkCustomerExists(customer) {
+  try {
+    const token = await getCustomerSyncLarkToken();
+
+    // Search by both ID and customer code for thorough duplicate checking
+    const response = await axios.post(
+      `${LARK_BASE_URL}/bitable/v1/apps/${CUSTOMER_SYNC_BASE_TOKEN}/tables/${CUSTOMER_SYNC_TABLE_ID}/records/search`,
+      {
+        filter: {
+          conditions: [
+            {
+              field_name: "Id",
+              operator: "is",
+              value: [customer.id.toString()],
+            },
+            {
+              field_name: "Mã Khách Hàng",
+              operator: "is",
+              value: [customer.code],
+            },
+          ],
+          conjunction: "or", // Match either ID or code
+        },
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 10000,
+      }
+    );
+
+    if (response.data.code === 0 && response.data.data.items.length > 0) {
+      return {
+        exists: true,
+        record: response.data.data.items[0],
+        matchType:
+          response.data.data.items[0].fields.Id === customer.id.toString()
+            ? "id"
+            : "code",
+      };
+    }
+
+    return { exists: false };
+  } catch (error) {
+    console.error(
+      `Error checking customer ${customer.code} exists:`,
+      error.message
+    );
+    return { exists: false, error: error.message };
+  }
+}
+
 module.exports = {
   addCustomerToLarkBase,
   updateCustomerInLarkBase,
   syncCustomersToLarkBase,
   sendLarkSyncNotification,
   mapCustomerToLarkFields,
-  getCustomerSyncLarkToken, // Export the new token function
+  getCustomerSyncLarkToken,
 };

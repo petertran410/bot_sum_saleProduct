@@ -327,8 +327,41 @@ app.post("/api/sync/salechannels", async (req, res) => {
 const larkSyncApi = require("./api/larkSyncApi");
 app.use("/api/lark-sync", larkSyncApi);
 
+function validateEnvironmentVariables() {
+  const required = [
+    "INITIAL_SCAN_DAYS",
+    "LARK_CUSTOMER_SYNC_APP_ID",
+    "LARK_CUSTOMER_SYNC_APP_SECRET",
+    "LARK_CUSTOMER_SYNC_BASE_TOKEN",
+    "LARK_CUSTOMER_SYNC_TABLE_ID",
+  ];
+
+  const missing = required.filter((key) => !process.env[key]);
+
+  if (missing.length > 0) {
+    console.error(
+      `❌ Missing required environment variables: ${missing.join(", ")}`
+    );
+    process.exit(1);
+  }
+
+  // Validate INITIAL_SCAN_DAYS is a number
+  const scanDays = parseInt(process.env.INITIAL_SCAN_DAYS);
+  if (isNaN(scanDays) || scanDays < 1 || scanDays > 365) {
+    console.error(
+      `❌ INITIAL_SCAN_DAYS must be a number between 1-365, got: ${process.env.INITIAL_SCAN_DAYS}`
+    );
+    process.exit(1);
+  }
+
+  console.log(
+    `✅ Environment validation passed. INITIAL_SCAN_DAYS: ${scanDays} days`
+  );
+}
+
 async function startServer() {
   try {
+    validateEnvironmentVariables();
     const dbConnected = await testConnection();
 
     if (!dbConnected) {

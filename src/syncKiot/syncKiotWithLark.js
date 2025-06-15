@@ -18,95 +18,57 @@ const {
  * This replaces the original runCustomerSync with dual-target syncing
  */
 const runCustomerSyncDual = async (options = {}) => {
-  console.log("🚀 Starting Enhanced Customer Sync Process (MySQL + Lark)...");
+  console.log("🚀 Starting Enhanced Customer Sync Process...");
 
   const {
     skipMySQL = false,
     skipLark = false,
     forceLarkSync = false,
-    daysAgo = 250,
+    daysAgo = parseInt(process.env.INITIAL_SCAN_DAYS) || 200, // ✅ FIXED: Use environment variable
   } = options;
 
   const results = {
-    mysql: { success: false },
-    lark: { success: false },
-    overall: { success: false },
+    mysql: {},
+    lark: {},
+    overall: {},
   };
 
   try {
-    // 1. MySQL Sync (existing functionality)
+    // 1. MySQL Database Sync (existing logic)
     if (!skipMySQL) {
-      console.log("📊 Phase 1: MySQL Database Sync...");
+      console.log("🗄️ Phase 1: MySQL Database Sync...");
 
-      const mysqlSyncStatus = await customerService.getSyncStatus();
-      console.log("MySQL Customer Sync Status:", mysqlSyncStatus);
+      const customerService = require("../db/customerService");
+      const syncStatus = await customerService.getSyncStatus();
 
-      if (!mysqlSyncStatus.historicalCompleted) {
-        console.log("📅 Running historical customer sync to MySQL...");
+      if (!syncStatus.historicalCompleted || forceLarkSync) {
+        console.log(`📅 Running historical MySQL sync (${daysAgo} days)...`);
         const mysqlResult = await customerScheduler(daysAgo);
-
-        if (mysqlResult.success) {
-          console.log("✅ Historical customers data saved to MySQL database");
-          results.mysql = mysqlResult;
-        } else {
-          console.error(
-            "❌ Error saving historical customers to MySQL:",
-            mysqlResult.error
-          );
-          results.mysql = { success: false, error: mysqlResult.error };
-        }
+        results.mysql = mysqlResult;
       } else {
-        console.log("🔄 Running current customer sync to MySQL...");
-        const currentMySQLResult = await customerSchedulerCurrent();
-
-        if (currentMySQLResult.success) {
-          console.log("✅ Current customers data synced to MySQL");
-          results.mysql = currentMySQLResult;
-        } else {
-          console.error(
-            "❌ Error syncing current customers to MySQL:",
-            currentMySQLResult.error
-          );
-          results.mysql = { success: false, error: currentMySQLResult.error };
-        }
+        console.log("🔄 Running current MySQL sync...");
+        const currentMysqlResult = await customerSchedulerCurrent();
+        results.mysql = currentMysqlResult;
       }
     } else {
       console.log("⏭️ Skipping MySQL sync as requested");
       results.mysql = { success: true, skipped: true };
     }
 
-    // 2. Lark Base Sync (new functionality)
+    // 2. Lark Base Sync (improved logic)
     if (!skipLark) {
       console.log("📋 Phase 2: Lark Base Sync...");
 
       if (forceLarkSync) {
-        console.log("🔧 Force sync enabled - running historical Lark sync...");
+        console.log(
+          `🔧 Force sync enabled - running historical Lark sync (${daysAgo} days)...`
+        );
         const larkResult = await customerLarkScheduler(daysAgo);
-
-        if (larkResult.success) {
-          console.log("✅ Historical customers data synced to Lark Base");
-          results.lark = larkResult;
-        } else {
-          console.error(
-            "❌ Error syncing historical customers to Lark:",
-            larkResult.error
-          );
-          results.lark = { success: false, error: larkResult.error };
-        }
+        results.lark = larkResult;
       } else {
         console.log("🔄 Running current customer sync to Lark...");
         const currentLarkResult = await customerLarkSchedulerCurrent();
-
-        if (currentLarkResult.success) {
-          console.log("✅ Current customers data synced to Lark Base");
-          results.lark = currentLarkResult;
-        } else {
-          console.error(
-            "❌ Error syncing current customers to Lark:",
-            currentLarkResult.error
-          );
-          results.lark = { success: false, error: currentLarkResult.error };
-        }
+        results.lark = currentLarkResult;
       }
     } else {
       console.log("⏭️ Skipping Lark sync as requested");
@@ -122,10 +84,18 @@ const runCustomerSyncDual = async (options = {}) => {
       mysqlStatus: mysqlSuccess ? "success" : "failed",
       larkStatus: larkSuccess ? "success" : "failed",
       completedAt: new Date().toISOString(),
+      summary: {
+        mysqlRecords: results.mysql.savedCount || 0,
+        larkRecords: results.lark.stats?.newRecords || 0,
+        larkUpdated: results.lark.stats?.updated || 0,
+      },
     };
 
     if (results.overall.success) {
       console.log("🎉 Enhanced Customer Sync completed successfully!");
+      console.log(
+        `📊 Summary: MySQL: ${results.overall.summary.mysqlRecords} records, Lark: ${results.overall.summary.larkRecords} new + ${results.overall.summary.larkUpdated} updated`
+      );
     } else {
       console.log("⚠️ Enhanced Customer Sync completed with some issues");
     }

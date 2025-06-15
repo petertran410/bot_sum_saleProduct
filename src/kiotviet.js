@@ -487,7 +487,6 @@ const getProductsByDate = async (daysAgo) => {
   }
 };
 
-// CUSTOMERS with pagination
 const getCustomers = async () => {
   try {
     const token = await getToken();
@@ -496,12 +495,14 @@ const getCustomers = async () => {
     let currentItem = 0;
     let hasMoreData = true;
 
-    // 🎯 TIME-FILTERED: Get only customers modified in last 48 hours
+    // ✅ FIXED: Get only customers modified in last 48 hours for CURRENT sync
     const fromDate = new Date();
-    fromDate.setDate(fromDate.getDate() - 176); // 48h buffer for safety
+    fromDate.setDate(fromDate.getDate() - 2); // ✅ CORRECT: 2 days for current sync
     const fromDateStr = fromDate.toISOString().split("T")[0];
 
-    console.log(`Fetching customers modified since ${fromDateStr}...`);
+    console.log(
+      `🔄 Fetching CURRENT customers modified since ${fromDateStr} (last 48h)...`
+    );
 
     while (hasMoreData) {
       const response = await makeApiRequest({
@@ -510,12 +511,12 @@ const getCustomers = async () => {
         params: {
           pageSize: pageSize,
           currentItem: currentItem,
-          lastModifiedFrom: fromDateStr, // 🔥 KEY CHANGE: Time filtering
-          orderBy: "modifiedDate", // Sort by modification date
+          lastModifiedFrom: fromDateStr, // ✅ CORRECT: 2 days for fast sync
+          orderBy: "modifiedDate",
           orderDirection: "DESC",
-          includeRemoveIds: true, // Include deleted customers
-          includeTotal: false, // Don't include heavy calculations
-          includeCustomerGroup: true, // Include group info
+          includeRemoveIds: true,
+          includeTotal: false,
+          includeCustomerGroup: true,
         },
         headers: {
           Retailer: process.env.KIOT_SHOP_NAME,
@@ -533,7 +534,7 @@ const getCustomers = async () => {
         hasMoreData = response.data.data.length === pageSize;
 
         console.log(
-          `Fetched ${response.data.data.length} customers (modified since ${fromDateStr}), total: ${allCustomers.length}`
+          `Fetched ${response.data.data.length} current customers, total: ${allCustomers.length}`
         );
         await new Promise((resolve) => setTimeout(resolve, 100));
       } else {
@@ -541,12 +542,10 @@ const getCustomers = async () => {
       }
     }
 
-    console.log(
-      `✅ Total time-filtered customers fetched: ${allCustomers.length}`
-    );
+    console.log(`✅ Total CURRENT customers fetched: ${allCustomers.length}`);
     return { data: allCustomers, total: allCustomers.length };
   } catch (error) {
-    console.error("Error getting time-filtered customers:", error.message);
+    console.error("Error getting current customers:", error.message);
     throw error;
   }
 };
@@ -555,141 +554,107 @@ const getCustomersByDate = async (daysAgo, specificDate = null) => {
   try {
     const results = [];
 
+    // ✅ FIXED: Use environment variable for historical scan days
+    const scanDays = daysAgo || parseInt(process.env.INITIAL_SCAN_DAYS) || 200;
+
+    console.log(`🗓️ Starting HISTORICAL customer sync for ${scanDays} days...`);
+
     if (specificDate) {
-      // Handle specific date format
-      const dateParts = specificDate.split("/");
-      const formattedDate = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`;
-      console.log(`Targeting specific date: ${formattedDate}`);
-
-      const token = await getToken();
-      const allCustomersForDate = [];
-      let hasMoreData = true;
-      let currentItem = 0;
-      const pageSize = 100;
-
-      while (hasMoreData) {
-        console.log(
-          `Fetching page at offset ${currentItem} for ${formattedDate}`
-        );
-
-        const response = await makeApiRequest({
-          method: "GET",
-          url: `${KIOTVIET_BASE_URL}/customers`,
-          params: {
-            pageSize,
-            currentItem,
-            orderBy: "id",
-            orderDirection: "ASC",
-            includeTotal: true,
-            includeCustomerGroup: true,
-            includeCustomerSocial: true,
-            createdDate: formattedDate,
-          },
-          headers: {
-            Retailer: process.env.KIOT_SHOP_NAME,
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        if (
-          response.data &&
-          response.data.data &&
-          response.data.data.length > 0
-        ) {
-          allCustomersForDate.push(...response.data.data);
-          currentItem += response.data.data.length;
-          console.log(
-            `Fetched ${response.data.data.length} customers, total: ${allCustomersForDate.length}`
-          );
-          hasMoreData = response.data.data.length === pageSize;
-
-          await new Promise((resolve) => setTimeout(resolve, 100));
-        } else {
-          hasMoreData = false;
-        }
-      }
-
-      results.push({
-        date: formattedDate,
-        daysAgo: 0,
-        data: { data: allCustomersForDate },
-      });
-
-      return results;
-    }
-
-    // Regular date range processing
-    for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
-      const targetDate = new Date();
-      targetDate.setDate(targetDate.getDate() - currentDaysAgo);
+      // Handle specific date sync
+      const targetDate = new Date(specificDate);
       const formattedDate = targetDate.toISOString().split("T")[0];
-      console.log(`Processing date: ${formattedDate}`);
 
-      const token = await getToken();
-      const allCustomersForDate = [];
-      let hasMoreData = true;
-      let currentItem = 0;
-      const pageSize = 100;
+      const dateData = await fetchCustomersForDate(formattedDate);
+      if (dateData.data.length > 0) {
+        results.push({
+          date: formattedDate,
+          data: { data: dateData.data },
+        });
+      }
+    } else {
+      // ✅ FIXED: Historical sync for specified days
+      for (
+        let currentDaysAgo = scanDays;
+        currentDaysAgo >= 0;
+        currentDaysAgo--
+      ) {
+        const targetDate = new Date();
+        targetDate.setDate(targetDate.getDate() - currentDaysAgo);
+        const formattedDate = targetDate.toISOString().split("T")[0];
 
-      while (hasMoreData) {
         console.log(
-          `Fetching page at offset ${currentItem} for ${formattedDate}`
+          `📅 Fetching historical customers for ${formattedDate} (${currentDaysAgo} days ago)...`
         );
 
-        const response = await makeApiRequest({
-          method: "GET",
-          url: `${KIOTVIET_BASE_URL}/customers`,
-          params: {
-            pageSize,
-            currentItem,
-            orderBy: "id",
-            orderDirection: "ASC",
-            includeTotal: true,
-            includeCustomerGroup: true,
-            includeCustomerSocial: true,
-            createdDate: formattedDate,
-          },
-          headers: {
-            Retailer: process.env.KIOT_SHOP_NAME,
-            Authorization: `Bearer ${token}`,
-          },
-        });
+        const dateData = await fetchCustomersForDate(formattedDate);
 
-        if (
-          response.data &&
-          response.data.data &&
-          response.data.data.length > 0
-        ) {
-          allCustomersForDate.push(...response.data.data);
-          currentItem += response.data.data.length;
+        if (dateData.data.length > 0) {
+          results.push({
+            date: formattedDate,
+            daysAgo: currentDaysAgo,
+            data: { data: dateData.data },
+          });
+
           console.log(
-            `Fetched ${response.data.data.length} customers, total: ${allCustomersForDate.length}`
+            `✅ Found ${dateData.data.length} customers for ${formattedDate}`
           );
-          hasMoreData = response.data.data.length === pageSize;
-
-          await new Promise((resolve) => setTimeout(resolve, 100));
-        } else {
-          hasMoreData = false;
         }
+
+        // Rate limiting delay
+        await new Promise((resolve) => setTimeout(resolve, 500));
       }
-
-      console.log(
-        `Found ${allCustomersForDate.length} customers for ${formattedDate}`
-      );
-      results.push({
-        date: formattedDate,
-        daysAgo: currentDaysAgo,
-        data: { data: allCustomersForDate },
-      });
-
-      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
 
+    console.log(
+      `🎉 Historical customer fetch completed: ${results.length} date(s) processed`
+    );
     return results;
   } catch (error) {
-    console.error(`Error getting customers:`, error.message);
+    console.error(`Error getting customers by date:`, error.message);
     throw error;
   }
+};
+
+// Helper function to fetch customers for a specific date
+const fetchCustomersForDate = async (dateStr) => {
+  const token = await getToken();
+  const pageSize = 100;
+  const allCustomersForDate = [];
+  let currentItem = 0;
+  let hasMoreData = true;
+
+  while (hasMoreData) {
+    const response = await makeApiRequest({
+      method: "GET",
+      url: `${KIOTVIET_BASE_URL}/customers`,
+      params: {
+        pageSize: pageSize,
+        currentItem: currentItem,
+        lastModifiedFrom: dateStr,
+        orderBy: "modifiedDate",
+        orderDirection: "ASC",
+        includeRemoveIds: true,
+        includeTotal: false,
+        includeCustomerGroup: true,
+      },
+      headers: {
+        Retailer: process.env.KIOT_SHOP_NAME,
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (response.data && response.data.data && response.data.data.length > 0) {
+      allCustomersForDate.push(...response.data.data);
+      currentItem += response.data.data.length;
+      hasMoreData = response.data.data.length === pageSize;
+    } else {
+      hasMoreData = false;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  return { data: allCustomersForDate };
 };
 
 const getUsers = async () => {
