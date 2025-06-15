@@ -38,32 +38,53 @@ async function getCustomerSyncLarkToken() {
   }
 }
 
+function parsePhoneNumber(phoneString) {
+  if (!phoneString) return null;
+
+  // Remove all non-digit characters
+  const cleanPhone = phoneString.replace(/\D/g, "");
+
+  // If empty after cleaning, return null
+  if (!cleanPhone) return null;
+
+  // Convert to number
+  const phoneNumber = parseInt(cleanPhone, 10);
+
+  // Validate it's a reasonable phone number (6-15 digits)
+  if (isNaN(phoneNumber) || cleanPhone.length < 6 || cleanPhone.length > 15) {
+    console.warn(`Invalid phone number format: ${phoneString}, using null`);
+    return null;
+  }
+
+  return phoneNumber;
+}
+
 /**
  * Map KiotViet customer data to Lark Base fields
  */
 function mapCustomerToLarkFields(customer) {
   return {
-    // Primary field - use KiotViet customer ID
+    // Primary field - use KiotViet customer ID (Text field)
     Id: customer.id?.toString() || "",
 
-    // Customer identification
+    // Customer identification (Text fields)
     "Mã Khách Hàng": customer.code || "",
     "Tên Khách Hàng": customer.name || "",
 
     // Contact information
-    "Số Điện Thoại": customer.contactNumber || "",
+    "Số Điện Thoại": parsePhoneNumber(customer.contactNumber), // ← FIX: Number field!
     Email: customer.email || "",
 
-    // Address information
+    // Address information (Text fields)
     "Địa Chỉ": customer.address || "",
     "Khu Vực": customer.locationName || "",
     "Phường Xã": customer.wardName || "",
 
-    // Business information
+    // Business information (Text fields)
     "Công Ty": customer.organization || "",
     "Mã Số Thuế": customer.taxCode || "",
 
-    // Financial information
+    // Financial information (Text fields - confirmed from Base structure)
     "Nợ Hiện Tại": customer.debt ? customer.debt.toString() : "0",
     "Tổng Bán": customer.totalInvoiced
       ? customer.totalInvoiced.toString()
@@ -72,10 +93,10 @@ function mapCustomerToLarkFields(customer) {
       ? customer.rewardPoint.toString()
       : "0",
 
-    // Store information
+    // Store information (Text field)
     "Id Cửa Hàng": customer.retailerId?.toString() || "",
 
-    // Dates - format for Lark datetime fields
+    // Dates - format for Lark datetime fields (DateTime fields)
     "Ngày Tạo": customer.createdDate
       ? formatDateForLark(customer.createdDate)
       : null,
@@ -83,10 +104,10 @@ function mapCustomerToLarkFields(customer) {
       ? formatDateForLark(customer.modifiedDate)
       : formatDateForLark(new Date()),
 
-    // Gender - map to Lark single select options
+    // Gender - map to Lark single select options (Single select field)
     "Giới tính": mapGenderToLarkOption(customer.gender),
 
-    // Notes
+    // Notes (Text field)
     "Ghi Chú": customer.comments || "",
   };
 }
