@@ -829,7 +829,6 @@ const getSurcharges = async () => {
 
     console.log("Fetching current surcharges...");
 
-    // Get only recent surcharges (last 24 hours) for current sync
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const fromDate = yesterday.toISOString().split("T")[0];
