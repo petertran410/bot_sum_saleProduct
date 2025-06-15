@@ -152,7 +152,7 @@ const runCustomerSyncDual = async (options = {}) => {
 const runCustomerSyncLarkOnly = async (options = {}) => {
   console.log("🚀 Starting Lark-Only Customer Sync Process...");
 
-  const { daysAgo = 1, forceHistoricalSync = false } = options;
+  const { daysAgo = 176, forceHistoricalSync = false } = options;
 
   try {
     let result;

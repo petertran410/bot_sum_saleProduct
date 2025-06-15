@@ -498,7 +498,7 @@ const getCustomers = async () => {
 
     // 🎯 TIME-FILTERED: Get only customers modified in last 48 hours
     const fromDate = new Date();
-    fromDate.setDate(fromDate.getDate() - 2); // 48h buffer for safety
+    fromDate.setDate(fromDate.getDate() - 176); // 48h buffer for safety
     const fromDateStr = fromDate.toISOString().split("T")[0];
 
     console.log(`Fetching customers modified since ${fromDateStr}...`);
