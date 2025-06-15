@@ -186,82 +186,6 @@ const customerLarkScheduler = async (daysAgo) => {
 };
 
 /**
- * Sync customers for a specific date to Lark Base
- * Useful for backfilling or fixing specific dates
- */
-const customerLarkSchedulerSpecificDate = async (specificDate) => {
-  try {
-    console.log(
-      `🚀 Starting customer Lark sync for specific date: ${specificDate}`
-    );
-
-    const customersByDate = await getCustomersByDate(0, specificDate);
-    let totalSynced = 0;
-    let totalProcessed = 0;
-    let totalFailed = 0;
-    let totalUpdated = 0;
-
-    for (const dateData of customersByDate) {
-      if (
-        dateData.data &&
-        dateData.data.data &&
-        Array.isArray(dateData.data.data) &&
-        dateData.data.data.length > 0
-      ) {
-        console.log(
-          `📅 Processing ${dateData.data.data.length} customers for ${dateData.date}...`
-        );
-
-        const larkResult = await syncCustomersToLarkBase(dateData.data.data);
-
-        totalProcessed += larkResult.stats.total;
-        totalSynced += larkResult.stats.newRecords;
-        totalUpdated += larkResult.stats.updated || 0;
-        totalFailed += larkResult.stats.failed;
-      }
-    }
-
-    const finalStats = {
-      total: totalProcessed,
-      newRecords: totalSynced,
-      updated: totalUpdated,
-      failed: totalFailed,
-    };
-
-    // Send completion notification
-    await sendLarkSyncNotification(finalStats, `specific-date-${specificDate}`);
-
-    console.log(
-      `🎉 Specific date customer Lark sync completed for ${specificDate}: ${totalSynced} new, ${totalUpdated} updated, ${totalFailed} failed`
-    );
-
-    return {
-      success: totalFailed === 0,
-      message: `Synced ${totalSynced} customers to Lark from ${specificDate}`,
-      stats: finalStats,
-    };
-  } catch (error) {
-    console.error(
-      `❌ Specific date (${specificDate}) customer Lark sync failed:`,
-      error.message
-    );
-
-    await sendLarkSyncNotification(
-      {
-        total: 0,
-        newRecords: 0,
-        updated: 0,
-        failed: 1,
-        error: error.message,
-      },
-      `specific-date-${specificDate}-failed`
-    );
-
-    return { success: false, error: error.message };
-  }
-};
-
-/**
  * Manual trigger for immediate customer sync to Lark
  * Can be called from API endpoints or admin interface
  */
@@ -276,9 +200,7 @@ const triggerManualCustomerLarkSync = async (options = {}) => {
 
     let result;
 
-    if (specificDate) {
-      result = await customerLarkSchedulerSpecificDate(specificDate);
-    } else if (forceFullSync) {
+    if (forceFullSync) {
       result = await customerLarkScheduler(daysAgo);
     } else {
       result = await customerLarkSchedulerCurrent();
@@ -303,6 +225,5 @@ const triggerManualCustomerLarkSync = async (options = {}) => {
 module.exports = {
   customerLarkScheduler,
   customerLarkSchedulerCurrent,
-  customerLarkSchedulerSpecificDate,
   triggerManualCustomerLarkSync,
 };

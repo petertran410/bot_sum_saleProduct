@@ -152,22 +152,12 @@ const runCustomerSyncDual = async (options = {}) => {
 const runCustomerSyncLarkOnly = async (options = {}) => {
   console.log("🚀 Starting Lark-Only Customer Sync Process...");
 
-  const {
-    daysAgo = 1,
-    forceHistoricalSync = false,
-    specificDate = null,
-  } = options;
+  const { daysAgo = 1, forceHistoricalSync = false } = options;
 
   try {
     let result;
 
-    if (specificDate) {
-      console.log(`📅 Syncing customers for specific date: ${specificDate}`);
-      const {
-        customerLarkSchedulerSpecificDate,
-      } = require("../../scheduler/customerLarkScheduler");
-      result = await customerLarkSchedulerSpecificDate(specificDate);
-    } else if (forceHistoricalSync) {
+    if (forceHistoricalSync) {
       console.log(`📅 Syncing historical customers (${daysAgo} days)...`);
       result = await customerLarkScheduler(daysAgo);
     } else {
@@ -188,97 +178,9 @@ const runCustomerSyncLarkOnly = async (options = {}) => {
   }
 };
 
-/**
- * Migration function to sync existing MySQL customers to Lark
- * Use this to backfill Lark Base with existing customer data
- */
-const migrateExistingCustomersToLark = async (batchSize = 100) => {
-  console.log("🔄 Starting migration of existing customers to Lark...");
-
-  try {
-    const { getPool } = require("../db");
-    const { syncCustomersToLarkBase } = require("../lark/customerLarkService");
-
-    const pool = getPool();
-    let offset = 0;
-    let totalMigrated = 0;
-    let hasMoreData = true;
-
-    while (hasMoreData) {
-      // Fetch customers from MySQL in batches
-      const [rows] = await pool.execute(
-        `SELECT * FROM customers ORDER BY id LIMIT ? OFFSET ?`,
-        [batchSize, offset]
-      );
-
-      if (rows.length === 0) {
-        hasMoreData = false;
-        break;
-      }
-
-      console.log(
-        `📦 Processing batch: ${rows.length} customers (offset: ${offset})`
-      );
-
-      // Convert MySQL data back to KiotViet format for Lark sync
-      const customersForLark = rows.map((row) => {
-        const jsonData = row.jsonData ? JSON.parse(row.jsonData) : {};
-        return {
-          id: row.id,
-          code: row.code,
-          name: row.name,
-          contactNumber: row.contactNumber,
-          email: row.email,
-          address: row.address,
-          gender: row.gender,
-          birthDate: row.birthDate,
-          locationName: row.locationName,
-          wardName: row.wardName,
-          organization: row.organizationName,
-          taxCode: row.taxCode,
-          comments: row.comments,
-          debt: row.debt,
-          rewardPoint: row.rewardPoint,
-          retailerId: row.retailerId,
-          createdDate: row.createdDate,
-          modifiedDate: row.modifiedDate,
-          ...jsonData, // Include any additional fields from JSON
-        };
-      });
-
-      // Sync batch to Lark
-      const larkResult = await syncCustomersToLarkBase(customersForLark);
-      totalMigrated += larkResult.stats.newRecords;
-
-      console.log(
-        `✅ Batch completed: ${larkResult.stats.newRecords} migrated, ${larkResult.stats.failed} failed`
-      );
-
-      offset += batchSize;
-
-      // Delay between batches to respect API limits
-      await new Promise((resolve) => setTimeout(resolve, 3000));
-    }
-
-    console.log(
-      `🎉 Migration completed: ${totalMigrated} customers migrated to Lark`
-    );
-
-    return {
-      success: true,
-      totalMigrated,
-      message: `Successfully migrated ${totalMigrated} customers to Lark Base`,
-    };
-  } catch (error) {
-    console.error("❌ Customer migration to Lark failed:", error.message);
-    return { success: false, error: error.message };
-  }
-};
-
 module.exports = {
   runCustomerSyncDual,
   runCustomerSyncLarkOnly,
-  migrateExistingCustomersToLark,
 
   // Export individual components for flexibility
   customerLarkScheduler,

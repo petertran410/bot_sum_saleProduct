@@ -24,6 +24,7 @@ const {
 const { testConnection } = require("./db");
 const { initializeDatabase } = require("./db/init");
 const { addRecordToCRMBase, getCRMStats, sendTestMessage } = require("./lark");
+const { runCustomerSyncDual } = require("./syncKiot/syncKiotWithLark");
 
 const app = express();
 const PORT = process.env.PORT || 3690;
@@ -123,17 +124,47 @@ app.get("/", (req, res) => {
   });
 });
 
-app.get("/api/health", (req, res) => {
-  res.json({
-    status: "OK",
-    timestamp: new Date().toISOString(),
-    services: {
-      database: "Connected",
-      larkSuite: "Available",
-      crm: "Ready",
-    },
-    version: "1.0.0",
-  });
+app.get("/api/health", async (req, res) => {
+  try {
+    // Add Lark sync status
+    const customerService = require("./db/customerService");
+    const mysqlCustomerStatus = await customerService.getSyncStatus();
+
+    res.json({
+      status: "OK",
+      timestamp: new Date().toISOString(),
+      services: {
+        database: "Connected",
+        larkSuite: "Available",
+        crm: "Ready",
+        customerSync: {
+          mysql: {
+            lastSync: mysqlCustomerStatus.lastSync,
+            historicalCompleted: mysqlCustomerStatus.historicalCompleted,
+          },
+          lark: {
+            enabled: process.env.LARK_CUSTOMER_SYNC_APP_ID ? true : false,
+            configured: process.env.LARK_CUSTOMER_SYNC_BASE_TOKEN
+              ? true
+              : false,
+          },
+        },
+      },
+      version: "1.0.0",
+      autoSync: {
+        interval: "10 minutes",
+        status: "running",
+        includesLarkSync: true,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Health check error:", error.message);
+    res.status(500).json({
+      status: "ERROR",
+      error: error.message,
+      timestamp: new Date().toISOString(),
+    });
+  }
 });
 
 app.post("/api/submit-registration", async (req, res) => {
@@ -293,21 +324,8 @@ app.post("/api/sync/salechannels", async (req, res) => {
   }
 });
 
-const initializeStaticData = async () => {
-  try {
-    console.log("🚀 Initializing static data...");
-
-    // Add location sync here
-    const { runLocationSync } = require("./syncKiot/syncKiot");
-    await runLocationSync();
-
-    console.log("✅ Static data initialization completed");
-  } catch (error) {
-    console.error("❌ Static data initialization failed:", error);
-  }
-};
-
-// initializeStaticData();
+const larkSyncApi = require("./api/larkSyncApi");
+app.use("/api/lark-sync", larkSyncApi);
 
 async function startServer() {
   try {
