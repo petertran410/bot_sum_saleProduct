@@ -13,6 +13,7 @@ const attributeService = require("../db/attributeService");
 const productOnHandsService = require("../db/productOnHandsService");
 const branchService = require("../db/branchService");
 const pricebookService = require("../db/pricebookService");
+const { runCustomerSyncDual } = require("./syncKiotWithLark");
 
 const {
   cashflowScheduler,
