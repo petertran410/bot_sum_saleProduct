@@ -232,6 +232,34 @@ app.post("/api/sync/customer-lark/historical", async (req, res) => {
   }
 });
 
+app.post("/api/sync/customer-lark/historical-chunked", async (req, res) => {
+  try {
+    const { daysAgo } = req.body;
+    console.log(
+      `🚀 Manual customer Lark CHUNKED historical sync triggered for ${daysAgo} days`
+    );
+
+    const {
+      saveCustomersByDateToLarkChunked,
+    } = require("./db/customerLarkService");
+
+    const result = await saveCustomersByDateToLarkChunked(daysAgo || 176);
+
+    res.json({
+      success: true,
+      message: "Customer Lark chunked historical sync completed",
+      data: result.stats,
+    });
+  } catch (error) {
+    console.error("❌ Manual customer Lark chunked sync failed:", error);
+    res.status(500).json({
+      success: false,
+      message: "Customer Lark chunked sync failed",
+      error: error.message,
+    });
+  }
+});
+
 const initializeStaticData = async () => {
   try {
     console.log("🚀 Initializing static data...");

@@ -41,22 +41,44 @@ const getCustomerSyncLarkToken = async () => {
 };
 
 const mapCustomerToField = (customer) => {
-  return {
+  console.log(`🔍 DEBUG: Raw customer data for ${customer.code}:`, {
+    id: customer.id,
+    code: customer.code,
+    name: customer.name,
+    contactNumber: customer.contactNumber,
+    email: customer.email,
+    address: customer.address,
+    locationName: customer.locationName,
+    wardName: customer.wardName,
+    organization: customer.organization,
+    taxCode: customer.taxCode,
+    debt: customer.debt,
+    totalInvoiced: customer.totalInvoiced,
+    totalRevenue: customer.totalRevenue,
+    rewardPoint: customer.rewardPoint, // 🔍 Check if this exists
+    createdDate: customer.createdDate,
+    modifiedDate: customer.modifiedDate,
+    birthDate: customer.birthDate,
+    gender: customer.gender,
+    comments: customer.comments,
+  });
+
+  const mappedFields = {
     Id: customer.id,
     "Mã Khách Hàng": customer.code || "",
     "Tên Khách Hàng": customer.name || "",
-    "Số Điện Thoại": customer.contactNumber,
+    "Số Điện Thoại": customer.contactNumber || "",
     "Email Khách Hàng": customer.email || "",
     "Địa Chỉ": customer.address || "",
-    "Khu Vực": customer.locationName || "",
+    "Khu Vực": customer.locationName || "", // ✅ This field exists
     "Phường Xã": customer.wardName || "",
     "Công Ty": customer.organization || "",
     "Mã Số Thuế": customer.taxCode || "",
-    "Nợ Hiện Tại": customer.debt || 0,
-    "Tổng Hoá Đơn": customer.totalInvoiced || 0,
-    "Tổng Doanh Thu": customer.totalRevenue || 0,
-    "Điểm Hiện Tại": customer.rewardPoint || 0,
-    "Cửa Hàng": "2svn",
+    "Nợ Hiện Tại": Number(customer.debt) || 0,
+    "Tổng Hoá Đơn": Number(customer.totalInvoiced) || 0,
+    "Tổng Doanh Thu": Number(customer.totalRevenue) || 0,
+    "Điểm Hiện Tại": Number(customer.rewardPoint) || 0, // ✅ This field exists
+    "Cửa Hàng": "2svn", // ✅ This field exists
     "Thời Gian Tạo": customer.createdDate
       ? formatDateForLark(customer.createdDate)
       : null,
@@ -66,9 +88,33 @@ const mapCustomerToField = (customer) => {
     "Ngày Sinh": customer.birthDate
       ? formatDateForLark(customer.birthDate)
       : null,
-    "Giới tính": mapGenderToLarkOption(customer.gender),
+    "Giới Tính": mapGenderToLarkOption(customer.gender),
     "Ghi Chú": customer.comments || "",
   };
+
+  console.log(`📤 DEBUG: Mapped fields for ${customer.code}:`, mappedFields);
+
+  // 🔍 Check for potential issues
+  const issues = [];
+  if (!customer.id) issues.push("Missing ID");
+  if (typeof customer.debt !== "undefined" && isNaN(Number(customer.debt)))
+    issues.push("Invalid debt value");
+  if (
+    typeof customer.totalInvoiced !== "undefined" &&
+    isNaN(Number(customer.totalInvoiced))
+  )
+    issues.push("Invalid totalInvoiced");
+  if (
+    typeof customer.totalRevenue !== "undefined" &&
+    isNaN(Number(customer.totalRevenue))
+  )
+    issues.push("Invalid totalRevenue");
+
+  if (issues.length > 0) {
+    console.warn(`⚠️ Potential issues for ${customer.code}:`, issues);
+  }
+
+  return mappedFields;
 };
 
 const mapGenderToLarkOption = (gender) => {
@@ -98,6 +144,11 @@ const addCustomerToLarkBase = async (customer) => {
     const mapFields = mapCustomerToField(customer);
     const recordData = { fields: mapFields };
 
+    console.log(
+      `📤 Sending to Lark for ${customer.code}:`,
+      JSON.stringify(recordData, null, 2)
+    );
+
     const response = await axios.post(
       `${LARK_BASE_URL}/bitable/v1/apps/${CUSTOMER_SYNC_BASE_TOKEN}/tables/${CUSTOMER_SYNC_TABLE_ID}/records`,
       recordData,
@@ -118,16 +169,99 @@ const addCustomerToLarkBase = async (customer) => {
         data: record,
       };
     } else {
+      console.error(`🔍 Lark API Error for ${customer.code}:`, {
+        code: response.data.code,
+        msg: response.data.msg,
+        data: response.data.data,
+      });
       throw new Error(
         `Failed to add customer: ${response.data.msg || "Unknown error"}`
       );
     }
   } catch (error) {
+    // 🔍 Enhanced error logging
+    console.error(`❌ Detailed error for customer ${customer.code}:`, {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
+      customerData: {
+        id: customer.id,
+        code: customer.code,
+        name: customer.name,
+      },
+    });
+
     if (error.response?.data?.code === 1254001) {
-      // Customer already exists - this is okay for current sync
       return { success: true, exists: true };
     }
     return { success: false, error: error.message };
+  }
+};
+
+const saveCustomersByDateToLarkChunked = async (totalDays) => {
+  console.log(`🚀 Starting chunked customer sync for ${totalDays} days...`);
+
+  const CHUNK_SIZE = 7; // Process 7 days at a time
+  let totalSaved = 0;
+  let totalDaysProcessed = 0;
+
+  try {
+    // Process in chunks of 7 days
+    for (let startDay = totalDays; startDay >= 0; startDay -= CHUNK_SIZE) {
+      const endDay = Math.max(0, startDay - CHUNK_SIZE + 1);
+      const chunkDays = startDay - endDay + 1;
+
+      console.log(
+        `📦 Processing chunk: Days ${endDay} to ${startDay} (${chunkDays} days)`
+      );
+
+      // Process this chunk
+      const result = await saveCustomersByDateToLark(chunkDays);
+
+      if (result.success) {
+        totalSaved += result.stats.success;
+        totalDaysProcessed += result.stats.daysProcessed;
+
+        console.log(
+          `✅ Chunk completed: ${result.stats.success} customers, ${result.stats.daysProcessed} days`
+        );
+        console.log(
+          `📊 Total progress: ${totalSaved} customers, ${totalDaysProcessed}/${totalDays} days`
+        );
+
+        // Longer delay between chunks to be gentle on APIs
+        if (startDay > CHUNK_SIZE) {
+          console.log("⏳ Waiting 30 seconds before next chunk...");
+          await new Promise((resolve) => setTimeout(resolve, 30000));
+        }
+      } else {
+        console.error(`❌ Chunk failed: Days ${endDay} to ${startDay}`);
+        // Continue with next chunk instead of failing completely
+      }
+    }
+
+    await updateSyncStatus(true, new Date());
+
+    console.log(
+      `🎉 MASSIVE SYNC COMPLETED: ${totalSaved} customers from ${totalDaysProcessed} days!`
+    );
+
+    return {
+      success: true,
+      stats: {
+        total: totalSaved,
+        success: totalSaved,
+        failed: 0,
+        daysProcessed: totalDaysProcessed,
+      },
+    };
+  } catch (error) {
+    console.error("❌ Chunked sync failed:", error.message);
+    return {
+      success: false,
+      error: error.message,
+      stats: { total: totalSaved, success: totalSaved, failed: 0 },
+    };
   }
 };
 
@@ -354,4 +488,5 @@ module.exports = {
   updateSyncStatus,
   mapCustomerToField,
   getCustomerSyncLarkToken,
+  saveCustomersByDateToLarkChunked,
 };
