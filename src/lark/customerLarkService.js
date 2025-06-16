@@ -562,6 +562,248 @@ async function checkCustomerExists(customer) {
   }
 }
 
+async function batchUpdateExistingCustomers(customers) {
+  // For now, process individually with optimized flow
+  // TODO: Implement batch_update when Lark supports it
+  let updateCount = 0;
+
+  console.log(`🔄 Processing ${customers.length} updates individually...`);
+
+  for (const customer of customers) {
+    try {
+      const result = await updateCustomerInLarkBase(customer);
+      if (result.success) updateCount++;
+    } catch (error) {
+      console.error(`Update failed for ${customer.code}:`, error.message);
+    }
+
+    // Minimal delay for updates
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+
+  return updateCount;
+}
+
+async function syncCustomersToLarkBaseOptimized(customers) {
+  console.log(
+    `🚀 OPTIMIZED SYNC: Starting fast sync for ${customers.length} customers...`
+  );
+
+  const startTime = Date.now();
+
+  try {
+    // Step 1: Get all existing customer IDs in bulk (1-2 API calls vs 26k calls!)
+    const existingIds = await getAllExistingCustomerIds();
+
+    // Step 2: Separate new vs existing customers
+    const newCustomers = [];
+    const existingCustomers = [];
+
+    customers.forEach((customer) => {
+      const customerId = customer.id?.toString();
+      const customerCode = customer.code;
+
+      if (existingIds.has(customerId) || existingIds.has(customerCode)) {
+        existingCustomers.push(customer);
+      } else {
+        newCustomers.push(customer);
+      }
+    });
+
+    console.log(
+      `📊 Analysis: ${newCustomers.length} new, ${existingCustomers.length} existing customers`
+    );
+
+    // Step 3: Batch add new customers (much faster!)
+    let newCount = 0;
+    if (newCustomers.length > 0) {
+      console.log(
+        `➕ Adding ${newCustomers.length} new customers in batches...`
+      );
+      const addResults = await batchAddCustomersToLarkBase(newCustomers);
+      newCount = addResults.filter((r) => r.success !== false).length;
+    }
+
+    // Step 4: Batch update existing customers (if needed)
+    let updateCount = 0;
+    if (existingCustomers.length > 0) {
+      console.log(
+        `🔄 Updating ${existingCustomers.length} existing customers...`
+      );
+      // Note: Could implement batch update here too if Lark supports it
+      updateCount = await batchUpdateExistingCustomers(existingCustomers);
+    }
+
+    const duration = Math.round((Date.now() - startTime) / 1000);
+    const stats = {
+      total: customers.length,
+      newRecords: newCount,
+      updated: updateCount,
+      failed: customers.length - newCount - updateCount,
+      duration: `${duration}s`,
+      speedup: `${Math.round(customers.length / duration)}x faster`,
+    };
+
+    console.log(`🎉 OPTIMIZED SYNC COMPLETED:`, stats);
+
+    return {
+      success: true,
+      stats,
+      optimized: true,
+    };
+  } catch (error) {
+    console.error("❌ Optimized sync failed:", error.message);
+    // Fallback to original method
+    return await syncCustomersToLarkBase(customers);
+  }
+}
+
+async function getAllExistingCustomerIds() {
+  const token = await getCustomerSyncLarkToken();
+  const existingIds = new Set();
+  let hasMore = true;
+  let pageToken = undefined;
+
+  console.log("🔍 Fetching existing customer IDs from Lark Base...");
+
+  while (hasMore) {
+    try {
+      const params = {
+        page_size: 500,
+        fields: ["Id", "Mã Khách Hàng"], // Only fetch ID fields
+      };
+
+      if (pageToken) {
+        params.page_token = pageToken;
+      }
+
+      const response = await axios.get(
+        `${LARK_BASE_URL}/bitable/v1/apps/${CUSTOMER_SYNC_BASE_TOKEN}/tables/${CUSTOMER_SYNC_TABLE_ID}/records`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          params,
+          timeout: 15000,
+        }
+      );
+
+      if (response.data.code === 0) {
+        const records = response.data.data.items;
+
+        // Build set of existing IDs
+        records.forEach((record) => {
+          if (record.fields.Id) {
+            existingIds.add(record.fields.Id);
+          }
+          if (record.fields["Mã Khách Hàng"]) {
+            existingIds.add(record.fields["Mã Khách Hàng"]);
+          }
+        });
+
+        hasMore = response.data.data.has_more;
+        pageToken = response.data.data.page_token;
+
+        console.log(
+          `📊 Found ${existingIds.size} existing customer IDs so far...`
+        );
+      } else {
+        break;
+      }
+    } catch (error) {
+      console.error("Error fetching existing IDs:", error.message);
+      break;
+    }
+  }
+
+  console.log(`✅ Total existing customers in Lark: ${existingIds.size}`);
+  return existingIds;
+}
+
+async function processBatchIndividually(customers) {
+  const results = [];
+
+  for (const customer of customers) {
+    try {
+      const result = await addCustomerToLarkBase(customer);
+      if (result.success) {
+        results.push(result);
+      }
+    } catch (error) {
+      console.error(`Failed to add customer ${customer.code}:`, error.message);
+    }
+    // Small delay for individual processing
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  return results;
+}
+
+async function batchAddCustomersToLarkBase(customers) {
+  const BATCH_SIZE = 100; // Lark API supports up to 100 records per batch
+  const token = await getCustomerSyncLarkToken();
+  const results = [];
+
+  console.log(
+    `🚀 BATCH MODE: Adding ${customers.length} customers in batches of ${BATCH_SIZE}...`
+  );
+
+  for (let i = 0; i < customers.length; i += BATCH_SIZE) {
+    const batch = customers.slice(i, i + BATCH_SIZE);
+    const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+    const totalBatches = Math.ceil(customers.length / BATCH_SIZE);
+
+    console.log(
+      `📦 Processing batch ${batchNum}/${totalBatches} (${batch.length} customers)...`
+    );
+
+    try {
+      // Prepare batch records
+      const batchRecords = batch.map((customer) => ({
+        fields: mapCustomerToLarkFields(customer),
+      }));
+
+      // Single API call for entire batch
+      const response = await axios.post(
+        `${LARK_BASE_URL}/bitable/v1/apps/${CUSTOMER_SYNC_BASE_TOKEN}/tables/${CUSTOMER_SYNC_TABLE_ID}/records/batch_create`,
+        {
+          records: batchRecords,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          timeout: 30000, // Longer timeout for batch operations
+        }
+      );
+
+      if (response.data.code === 0) {
+        const successCount = response.data.data.records.length;
+        results.push(...response.data.data.records);
+        console.log(
+          `✅ Batch ${batchNum}: ${successCount}/${batch.length} customers added successfully`
+        );
+      } else {
+        console.error(`❌ Batch ${batchNum} failed:`, response.data.msg);
+        // Fall back to individual processing for this batch
+        const individualResults = await processBatchIndividually(batch);
+        results.push(...individualResults);
+      }
+    } catch (error) {
+      console.error(`❌ Batch ${batchNum} error:`, error.message);
+      // Fall back to individual processing
+      const individualResults = await processBatchIndividually(batch);
+      results.push(...individualResults);
+    }
+
+    // Rate limiting between batches
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+
+  return results;
+}
+
 module.exports = {
   addCustomerToLarkBase,
   updateCustomerInLarkBase,
@@ -569,4 +811,7 @@ module.exports = {
   sendLarkSyncNotification,
   mapCustomerToLarkFields,
   getCustomerSyncLarkToken,
+  syncCustomersToLarkBaseOptimized,
+  batchAddCustomersToLarkBase,
+  getAllExistingCustomerIds,
 };

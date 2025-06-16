@@ -1,6 +1,7 @@
 // scheduler/customerLarkScheduler.js
 const { getCustomers, getCustomersByDate } = require("../src/kiotviet");
 const {
+  syncCustomersToLarkBaseOptimized,
   syncCustomersToLarkBase,
   sendLarkSyncNotification,
 } = require("../src/lark/customerLarkService");
@@ -49,7 +50,11 @@ const customerLarkSchedulerCurrent = async () => {
         );
 
         // Sync to Lark Base
-        const larkResult = await syncCustomersToLarkBase(currentCustomers.data);
+        // const larkResult = await syncCustomersToLarkBase(currentCustomers.data);
+
+        const larkResult = await syncCustomersToLarkBaseOptimized(
+          currentCustomers.data
+        );
 
         // Send notification about sync completion
         await sendLarkSyncNotification(larkResult.stats, "current");
