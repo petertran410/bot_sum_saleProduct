@@ -317,7 +317,7 @@ async function syncCustomersToLarkBase(customers) {
   let updateCount = 0;
   let newCount = 0;
   let skippedCount = 0;
-  const BATCH_SIZE = 10;
+  const BATCH_SIZE = 100;
 
   try {
     for (let i = 0; i < customers.length; i += BATCH_SIZE) {

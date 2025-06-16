@@ -52,7 +52,7 @@ router.post("/customers/dual-sync", async (req, res) => {
       skipMySQL = false,
       skipLark = false,
       forceLarkSync = false,
-      daysAgo = 250,
+      daysAgo = 176,
     } = req.body;
 
     console.log("🚀 API: Starting dual customer sync (MySQL + Lark)...");

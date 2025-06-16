@@ -492,30 +492,82 @@ const getCustomers = async () => {
     const token = await getToken();
     const pageSize = 100;
     const allCustomers = [];
-    let currentItem = 0;
-    let hasMoreData = true;
 
-    // ✅ FIXED: Get only customers modified in last 48 hours for CURRENT sync
+    // Get only customers modified in last 48 hours for CURRENT sync
     const fromDate = new Date();
-    fromDate.setDate(fromDate.getDate() - 2); // ✅ CORRECT: 2 days for current sync
+    fromDate.setDate(fromDate.getDate() - 176); // 2 days for current sync
     const fromDateStr = fromDate.toISOString().split("T")[0];
 
     console.log(
       `🔄 Fetching CURRENT customers modified since ${fromDateStr} (last 48h)...`
     );
 
-    while (hasMoreData) {
+    // ✅ STEP 1: First call gets total count + first 100 customers
+    const firstResponse = await makeApiRequest({
+      method: "GET",
+      url: `${KIOTVIET_BASE_URL}/customers`,
+      params: {
+        pageSize: pageSize,
+        currentItem: 0, // ✅ Always start at 0
+        lastModifiedFrom: fromDateStr,
+        orderBy: "modifiedDate",
+        orderDirection: "DESC",
+        includeRemoveIds: true,
+        includeTotal: true,
+        includeCustomerGroup: true,
+      },
+      headers: {
+        Retailer: process.env.KIOT_SHOP_NAME,
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    // ✅ STEP 2: Extract total and calculate exact number of calls needed
+    const totalCustomers = firstResponse.data.total;
+    const totalCalls = Math.ceil(totalCustomers / pageSize);
+    let currentCall = 1;
+
+    console.log(`📊 Total customers found: ${totalCustomers}`);
+    console.log(`📋 Total API calls needed: ${totalCalls}`);
+
+    // ✅ STEP 3: Add first batch to results
+    if (
+      firstResponse.data &&
+      firstResponse.data.data &&
+      firstResponse.data.data.length > 0
+    ) {
+      allCustomers.push(...firstResponse.data.data);
+      console.log(
+        `Progress: ${currentCall}/${totalCalls} - Fetched ${firstResponse.data.data.length} customers`
+      );
+    } else {
+      console.log("✅ No current customers found");
+      return { data: [], total: 0 };
+    }
+
+    // ✅ STEP 4: Sequential pagination for remaining data
+    for (
+      let currentItem = 100;
+      currentItem < totalCustomers;
+      currentItem += 100
+    ) {
+      currentCall++;
+
+      console.log(
+        `📄 API Call ${currentCall}/${totalCalls} - Starting at item ${currentItem}...`
+      );
+
       const response = await makeApiRequest({
         method: "GET",
         url: `${KIOTVIET_BASE_URL}/customers`,
         params: {
           pageSize: pageSize,
-          currentItem: currentItem,
-          lastModifiedFrom: fromDateStr, // ✅ CORRECT: 2 days for fast sync
+          currentItem: currentItem, // ✅ CORRECT: 100, 200, 300, 400...
+          lastModifiedFrom: fromDateStr,
           orderBy: "modifiedDate",
           orderDirection: "DESC",
           includeRemoveIds: true,
-          includeTotal: false,
+          includeTotal: true,
           includeCustomerGroup: true,
         },
         headers: {
@@ -530,22 +582,32 @@ const getCustomers = async () => {
         response.data.data.length > 0
       ) {
         allCustomers.push(...response.data.data);
-        currentItem += response.data.data.length;
-        hasMoreData = response.data.data.length === pageSize;
-
         console.log(
-          `Fetched ${response.data.data.length} current customers, total: ${allCustomers.length}`
+          `Progress: ${currentCall}/${totalCalls} - Fetched ${response.data.data.length} customers, total collected: ${allCustomers.length}/${totalCustomers}`
         );
-        await new Promise((resolve) => setTimeout(resolve, 100));
       } else {
-        hasMoreData = false;
+        console.log(
+          `Progress: ${currentCall}/${totalCalls} - No data returned`
+        );
       }
+
+      // Rate limiting
+      await new Promise((resolve) => setTimeout(resolve, 100));
     }
 
-    console.log(`✅ Total CURRENT customers fetched: ${allCustomers.length}`);
-    return { data: allCustomers, total: allCustomers.length };
+    console.log(
+      `✅ CURRENT customer fetch completed: ${allCustomers.length}/${totalCustomers} customers`
+    );
+
+    if (allCustomers.length !== totalCustomers) {
+      console.warn(
+        `⚠️ Mismatch: Expected ${totalCustomers}, got ${allCustomers.length}`
+      );
+    }
+
+    return { data: allCustomers, total: totalCustomers };
   } catch (error) {
-    console.error("Error getting current customers:", error.message);
+    console.error("❌ Error getting current customers:", error.message);
     throw error;
   }
 };
@@ -553,8 +615,6 @@ const getCustomers = async () => {
 const getCustomersByDate = async (daysAgo, specificDate = null) => {
   try {
     const results = [];
-
-    // ✅ FIXED: Use environment variable for historical scan days
     const scanDays = daysAgo || parseInt(process.env.INITIAL_SCAN_DAYS) || 200;
 
     console.log(`🗓️ Starting HISTORICAL customer sync for ${scanDays} days...`);
@@ -564,15 +624,20 @@ const getCustomersByDate = async (daysAgo, specificDate = null) => {
       const targetDate = new Date(specificDate);
       const formattedDate = targetDate.toISOString().split("T")[0];
 
+      console.log(`📅 Fetching customers for specific date: ${formattedDate}`);
       const dateData = await fetchCustomersForDate(formattedDate);
+
       if (dateData.data.length > 0) {
         results.push({
           date: formattedDate,
           data: { data: dateData.data },
         });
+        console.log(
+          `✅ Specific date ${formattedDate}: Found ${dateData.data.length} customers`
+        );
       }
     } else {
-      // ✅ FIXED: Historical sync for specified days
+      // ✅ FIXED: Historical sync for specified days using our methodology
       for (
         let currentDaysAgo = scanDays;
         currentDaysAgo >= 0;
@@ -583,9 +648,10 @@ const getCustomersByDate = async (daysAgo, specificDate = null) => {
         const formattedDate = targetDate.toISOString().split("T")[0];
 
         console.log(
-          `📅 Fetching historical customers for ${formattedDate} (${currentDaysAgo} days ago)...`
+          `📅 Processing date ${formattedDate} (${currentDaysAgo} days ago)...`
         );
 
+        // ✅ Use our corrected helper function
         const dateData = await fetchCustomersForDate(formattedDate);
 
         if (dateData.data.length > 0) {
@@ -596,45 +662,53 @@ const getCustomersByDate = async (daysAgo, specificDate = null) => {
           });
 
           console.log(
-            `✅ Found ${dateData.data.length} customers for ${formattedDate}`
+            `✅ ${formattedDate}: Found ${dateData.data.length} customers`
           );
+        } else {
+          console.log(`📅 ${formattedDate}: No customers found`);
         }
 
-        // Rate limiting delay
+        // Rate limiting delay between dates
         await new Promise((resolve) => setTimeout(resolve, 500));
       }
     }
 
-    console.log(
-      `🎉 Historical customer fetch completed: ${results.length} date(s) processed`
+    const totalCustomersProcessed = results.reduce(
+      (sum, result) => sum + result.data.data.length,
+      0
     );
+    console.log(
+      `🎉 Historical customer fetch completed: ${results.length} date(s) processed, ${totalCustomersProcessed} total customers`
+    );
+
     return results;
   } catch (error) {
-    console.error(`Error getting customers by date:`, error.message);
+    console.error(`❌ Error getting customers by date:`, error.message);
     throw error;
   }
 };
 
 // Helper function to fetch customers for a specific date
 const fetchCustomersForDate = async (dateStr) => {
-  const token = await getToken();
-  const pageSize = 100;
-  const allCustomersForDate = [];
-  let currentItem = 0;
-  let hasMoreData = true;
+  try {
+    const token = await getToken();
+    const pageSize = 100;
+    const allCustomersForDate = [];
 
-  while (hasMoreData) {
-    const response = await makeApiRequest({
+    console.log(`📅 Fetching customers for date: ${dateStr}`);
+
+    // ✅ STEP 1: First call gets total count + first 100 customers
+    const firstResponse = await makeApiRequest({
       method: "GET",
       url: `${KIOTVIET_BASE_URL}/customers`,
       params: {
         pageSize: pageSize,
-        currentItem: currentItem,
+        currentItem: 0, // ✅ Always start at 0
         lastModifiedFrom: dateStr,
         orderBy: "modifiedDate",
         orderDirection: "ASC",
         includeRemoveIds: true,
-        includeTotal: false,
+        includeTotal: true,
         includeCustomerGroup: true,
       },
       headers: {
@@ -643,18 +717,89 @@ const fetchCustomersForDate = async (dateStr) => {
       },
     });
 
-    if (response.data && response.data.data && response.data.data.length > 0) {
-      allCustomersForDate.push(...response.data.data);
-      currentItem += response.data.data.length;
-      hasMoreData = response.data.data.length === pageSize;
-    } else {
-      hasMoreData = false;
+    // ✅ STEP 2: Extract total and calculate exact number of calls needed
+    const totalCustomers = firstResponse.data.total || 0;
+    const totalCalls = Math.ceil(totalCustomers / pageSize);
+    let currentCall = 1;
+
+    if (totalCustomers === 0) {
+      console.log(`📅 ${dateStr}: No customers found`);
+      return { data: [] };
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
+    console.log(
+      `📅 ${dateStr}: Found ${totalCustomers} customers, need ${totalCalls} API calls`
+    );
 
-  return { data: allCustomersForDate };
+    // ✅ STEP 3: Add first batch to results
+    if (
+      firstResponse.data &&
+      firstResponse.data.data &&
+      firstResponse.data.data.length > 0
+    ) {
+      allCustomersForDate.push(...firstResponse.data.data);
+      console.log(
+        `📅 ${dateStr} - Progress: ${currentCall}/${totalCalls} - Fetched ${firstResponse.data.data.length} customers`
+      );
+    }
+
+    // ✅ STEP 4: Sequential pagination for remaining data
+    for (
+      let currentItem = 100;
+      currentItem < totalCustomers;
+      currentItem += 100
+    ) {
+      currentCall++;
+
+      const response = await makeApiRequest({
+        method: "GET",
+        url: `${KIOTVIET_BASE_URL}/customers`,
+        params: {
+          pageSize: pageSize,
+          currentItem: currentItem, // ✅ CORRECT: 100, 200, 300, 400...
+          lastModifiedFrom: dateStr,
+          orderBy: "modifiedDate",
+          orderDirection: "ASC",
+          includeRemoveIds: true,
+          includeTotal: true,
+          includeCustomerGroup: true,
+        },
+        headers: {
+          Retailer: process.env.KIOT_SHOP_NAME,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (
+        response.data &&
+        response.data.data &&
+        response.data.data.length > 0
+      ) {
+        allCustomersForDate.push(...response.data.data);
+        console.log(
+          `📅 ${dateStr} - Progress: ${currentCall}/${totalCalls} - Fetched ${response.data.data.length} customers, total: ${allCustomersForDate.length}/${totalCustomers}`
+        );
+      }
+
+      // Rate limiting
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    console.log(
+      `✅ ${dateStr}: Completed - ${allCustomersForDate.length}/${totalCustomers} customers fetched`
+    );
+
+    if (allCustomersForDate.length !== totalCustomers) {
+      console.warn(
+        `⚠️ ${dateStr}: Mismatch - Expected ${totalCustomers}, got ${allCustomersForDate.length}`
+      );
+    }
+
+    return { data: allCustomersForDate };
+  } catch (error) {
+    console.error(`❌ Error fetching customers for ${dateStr}:`, error.message);
+    return { data: [] };
+  }
 };
 
 const getUsers = async () => {
