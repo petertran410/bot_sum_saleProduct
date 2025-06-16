@@ -609,92 +609,89 @@ async function batchUpdateExistingCustomersSmartly(customers) {
   return updateCount;
 }
 
-async function syncCustomersToLarkBaseOptimized(customers) {
+async function checkSpecificCustomersExist(customerIds) {
+  const token = await getCustomerSyncLarkToken();
+  const batchSize = 100; // Check 100 customers per API call
+  const existingIds = new Set();
+
   console.log(
-    `🚀 OPTIMIZED SYNC: Starting smart sync for ${customers.length} customers...`
+    `🎯 Checking existence of ${customerIds.length} specific customers...`
   );
 
-  const startTime = Date.now();
+  for (let i = 0; i < customerIds.length; i += batchSize) {
+    const batch = customerIds.slice(i, i + batchSize);
 
-  try {
-    // Step 1: Get all existing customer IDs in bulk
-    const existingIds = await getAllExistingCustomerIds();
+    try {
+      // Use search API with OR conditions for specific IDs
+      const response = await axios.post(
+        `${LARK_BASE_URL}/bitable/v1/apps/${CUSTOMER_SYNC_BASE_TOKEN}/tables/${CUSTOMER_SYNC_TABLE_ID}/records/search`,
+        {
+          filter: {
+            conditions: batch.map((id) => ({
+              field_name: "Id",
+              operator: "is",
+              value: [id.toString()],
+            })),
+            conjunction: "or",
+          },
+          fields: ["Id", "Mã Khách Hàng"],
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          timeout: 15000,
+        }
+      );
 
-    // Step 2: Separate new vs existing customers
-    const newCustomers = [];
-    const existingCustomers = [];
-
-    customers.forEach((customer) => {
-      const customerId = customer.id?.toString();
-      const customerCode = customer.code;
-
-      if (existingIds.has(customerId) || existingIds.has(customerCode)) {
-        existingCustomers.push(customer);
-      } else {
-        newCustomers.push(customer);
+      if (response.data.code === 0) {
+        response.data.data.items.forEach((record) => {
+          if (record.fields.Id) existingIds.add(record.fields.Id);
+          if (record.fields["Mã Khách Hàng"])
+            existingIds.add(record.fields["Mã Khách Hàng"]);
+        });
       }
-    });
 
-    console.log(
-      `📊 Analysis: ${newCustomers.length} new, ${existingCustomers.length} existing customers`
-    );
-
-    // Step 3: Batch add new customers (fast)
-    let newCount = 0;
-    if (newCustomers.length > 0) {
       console.log(
-        `➕ Adding ${newCustomers.length} new customers in batches...`
+        `✅ Batch ${Math.floor(i / batchSize) + 1}: Found ${
+          existingIds.size
+        } existing customers so far`
       );
-      const addResults = await batchAddCustomersToLarkBase(newCustomers);
-      newCount = addResults.filter((r) => r.success !== false).length;
+    } catch (error) {
+      console.error(
+        `❌ Error checking batch ${Math.floor(i / batchSize) + 1}:`,
+        error.message
+      );
     }
 
-    // Step 4: SMART UPDATE - only update changed customers
-    let updateCount = 0;
-    if (existingCustomers.length > 0) {
-      console.log(
-        `🔍 Safe checking ${existingCustomers.length} existing customers...`
-      );
-      updateCount = await batchUpdateExistingCustomersSmartly(
-        existingCustomers
-      ); // ← Make sure this line exists
-    }
-
-    const duration = Math.round((Date.now() - startTime) / 1000);
-    const stats = {
-      total: customers.length,
-      newRecords: newCount,
-      updated: updateCount,
-      skipped: existingCustomers.length - updateCount,
-      failed:
-        customers.length -
-        newCount -
-        updateCount -
-        (existingCustomers.length - updateCount),
-      duration: `${duration}s`,
-    };
-
-    console.log(`🎉 SMART SYNC COMPLETED:`, stats);
-
-    return { success: true, stats, optimized: true };
-  } catch (error) {
-    console.error("❌ Smart sync failed:", error.message);
-    return await syncCustomersToLarkBase(customers);
+    // Small delay between batches
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
+
+  console.log(
+    `🎯 Targeted check completed: ${existingIds.size} existing out of ${customerIds.length} checked`
+  );
+  return existingIds;
 }
 
-async function syncCustomersToLarkBaseOptimized(customers) {
+async function syncCustomersToLarkBaseOptimizedV2(customers) {
   console.log(
-    `🚀 OPTIMIZED SYNC: Starting fast sync for ${customers.length} customers...`
+    `🚀 ULTRA-FAST SYNC: Starting targeted sync for ${customers.length} customers...`
   );
 
   const startTime = Date.now();
 
   try {
-    // Step 1: Get all existing customer IDs in bulk (1-2 API calls vs 26k calls!)
-    const existingIds = await getAllExistingCustomerIds();
+    // Extract customer IDs for targeted checking
+    const customerIds = customers
+      .map((c) => c.id?.toString() || c.code)
+      .filter(Boolean);
 
-    // Step 2: Separate new vs existing customers
+    // 🎯 OPTIMIZATION: Only check specific customer IDs (not all 52K!)
+    const existingIds = await checkSpecificCustomersExist(customerIds);
+
+    // Separate new vs existing customers
     const newCustomers = [];
     const existingCustomers = [];
 
@@ -713,7 +710,7 @@ async function syncCustomersToLarkBaseOptimized(customers) {
       `📊 Analysis: ${newCustomers.length} new, ${existingCustomers.length} existing customers`
     );
 
-    // Step 3: Batch add new customers (much faster!)
+    // Step 3: Batch add new customers
     let newCount = 0;
     if (newCustomers.length > 0) {
       console.log(
@@ -723,13 +720,12 @@ async function syncCustomersToLarkBaseOptimized(customers) {
       newCount = addResults.filter((r) => r.success !== false).length;
     }
 
-    // Step 4: Batch update existing customers (if needed)
+    // Step 4: Smart update existing customers
     let updateCount = 0;
     if (existingCustomers.length > 0) {
       console.log(
         `🔄 Updating ${existingCustomers.length} existing customers...`
       );
-      // Note: Could implement batch update here too if Lark supports it
       updateCount = await batchUpdateExistingCustomersSmartly(
         existingCustomers
       );
@@ -742,18 +738,16 @@ async function syncCustomersToLarkBaseOptimized(customers) {
       updated: updateCount,
       failed: customers.length - newCount - updateCount,
       duration: `${duration}s`,
-      speedup: `${Math.round(customers.length / duration)}x faster`,
+      speedImprovement: `${Math.round(
+        52156 / customers.length
+      )}x less data fetched`,
     };
 
-    console.log(`🎉 OPTIMIZED SYNC COMPLETED:`, stats);
+    console.log(`🎉 ULTRA-FAST SYNC COMPLETED:`, stats);
 
-    return {
-      success: true,
-      stats,
-      optimized: true,
-    };
+    return { success: true, stats, optimized: true };
   } catch (error) {
-    console.error("❌ Optimized sync failed:", error.message);
+    console.error("❌ Ultra-fast sync failed:", error.message);
     // Fallback to original method
     return await syncCustomersToLarkBase(customers);
   }
@@ -912,7 +906,7 @@ module.exports = {
   sendLarkSyncNotification,
   mapCustomerToLarkFields,
   getCustomerSyncLarkToken,
-  syncCustomersToLarkBaseOptimized,
+  syncCustomersToLarkBaseOptimizedV2,
   batchAddCustomersToLarkBase,
   getAllExistingCustomerIds,
 };
