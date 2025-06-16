@@ -611,7 +611,7 @@ async function batchUpdateExistingCustomersSmartly(customers) {
 
 async function checkSpecificCustomersExist(customerIds) {
   const token = await getCustomerSyncLarkToken();
-  const batchSize = 100; // Check 100 customers per API call
+  const batchSize = 10; // ✅ REDUCED from 100 to 10 to avoid API limits
   const existingIds = new Set();
 
   console.log(
@@ -622,7 +622,7 @@ async function checkSpecificCustomersExist(customerIds) {
     const batch = customerIds.slice(i, i + batchSize);
 
     try {
-      // Use search API with OR conditions for specific IDs
+      // ✅ FIXED: Use smaller batches with proper OR conjunction
       const response = await axios.post(
         `${LARK_BASE_URL}/bitable/v1/apps/${CUSTOMER_SYNC_BASE_TOKEN}/tables/${CUSTOMER_SYNC_TABLE_ID}/records/search`,
         {
@@ -663,10 +663,15 @@ async function checkSpecificCustomersExist(customerIds) {
         `❌ Error checking batch ${Math.floor(i / batchSize) + 1}:`,
         error.message
       );
+
+      // ✅ ADD: More detailed error logging for debugging
+      if (error.response?.data) {
+        console.error("❌ Lark API Error Details:", error.response.data);
+      }
     }
 
     // Small delay between batches
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 200)); // ✅ Increased delay
   }
 
   console.log(
@@ -908,5 +913,6 @@ module.exports = {
   getCustomerSyncLarkToken,
   syncCustomersToLarkBaseOptimizedV2,
   batchAddCustomersToLarkBase,
-  getAllExistingCustomerIds,
+  // getAllExistingCustomerIds,
+  checkSpecificCustomersExist,
 };
