@@ -559,13 +559,25 @@ const getCustomersByDate = async (daysAgo, specificDate = null) => {
       // Handle specific date format
       const dateParts = specificDate.split("/");
       const formattedDate = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`;
-      console.log(`Targeting specific date: ${formattedDate}`);
+      console.log(`🎯 Targeting specific date: ${formattedDate}`);
 
       const token = await getToken();
-      const allCustomersForDate = [];
+      let allCustomersForDate = [];
       let hasMoreData = true;
       let currentItem = 0;
       const pageSize = 100;
+
+      // Calculate date range for filtering
+      const targetDate = new Date(formattedDate);
+      const nextDay = new Date(targetDate);
+      nextDay.setDate(nextDay.getDate() + 1);
+
+      const targetDateStart = targetDate.toISOString().split("T")[0];
+      const targetDateEnd = nextDay.toISOString().split("T")[0];
+
+      console.log(
+        `📅 Date range: ${targetDateStart} to ${targetDateEnd} (exclusive)`
+      );
 
       while (hasMoreData) {
         console.log(
@@ -578,7 +590,109 @@ const getCustomersByDate = async (daysAgo, specificDate = null) => {
           params: {
             pageSize,
             currentItem,
-            orderBy: "id",
+            orderBy: "modifiedDate", // ✅ Sort by modification date for better filtering
+            orderDirection: "DESC",
+            includeTotal: true,
+            includeCustomerGroup: true,
+            includeCustomerSocial: true,
+            lastModifiedFrom: formattedDate, // Get from this date onwards
+          },
+          headers: {
+            Retailer: process.env.KIOT_SHOP_NAME,
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (
+          response.data &&
+          response.data.data &&
+          response.data.data.length > 0
+        ) {
+          const rawCustomers = response.data.data;
+
+          // ✅ CLIENT-SIDE DATE FILTERING: Only keep customers modified ON the target date
+          const filteredCustomers = rawCustomers.filter((customer) => {
+            if (!customer.modifiedDate) return false;
+
+            const customerModDate = new Date(customer.modifiedDate)
+              .toISOString()
+              .split("T")[0];
+            return customerModDate === targetDateStart;
+          });
+
+          allCustomersForDate.push(...filteredCustomers);
+          currentItem += rawCustomers.length; // Increment by raw count for pagination
+
+          console.log(
+            `📊 Fetched ${rawCustomers.length} raw customers, filtered to ${filteredCustomers.length} for ${formattedDate}`
+          );
+          console.log(
+            `📈 Total filtered customers so far: ${allCustomersForDate.length}`
+          );
+
+          // ✅ SMART STOPPING: If we get no filtered results from recent pages,
+          // we've likely passed the target date
+          if (
+            filteredCustomers.length === 0 &&
+            allCustomersForDate.length > 0
+          ) {
+            console.log(
+              `🛑 No more customers for ${formattedDate}, stopping pagination`
+            );
+            hasMoreData = false;
+          } else {
+            hasMoreData = rawCustomers.length === pageSize;
+          }
+
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        } else {
+          hasMoreData = false;
+        }
+      }
+
+      console.log(
+        `✅ Final result: ${allCustomersForDate.length} customers for ${formattedDate}`
+      );
+
+      results.push({
+        date: formattedDate,
+        daysAgo: 0,
+        data: { data: allCustomersForDate },
+      });
+
+      return results;
+    }
+
+    // ✅ For historical range sync (daysAgo parameter)
+    for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() - currentDaysAgo);
+      const formattedDate = targetDate.toISOString().split("T")[0];
+
+      console.log(
+        `🔄 Processing date: ${formattedDate} (${currentDaysAgo} days ago)`
+      );
+
+      const token = await getToken();
+      let allCustomersForDate = [];
+      let hasMoreData = true;
+      let currentItem = 0;
+      const pageSize = 100;
+
+      // Calculate next day for filtering
+      const nextDay = new Date(targetDate);
+      nextDay.setDate(nextDay.getDate() + 1);
+      const targetDateStart = formattedDate;
+      const targetDateEnd = nextDay.toISOString().split("T")[0];
+
+      while (hasMoreData) {
+        const response = await makeApiRequest({
+          method: "GET",
+          url: `${KIOTVIET_BASE_URL}/customers`,
+          params: {
+            pageSize,
+            currentItem,
+            orderBy: "modifiedDate",
             orderDirection: "DESC",
             includeTotal: true,
             includeCustomerGroup: true,
@@ -596,75 +710,33 @@ const getCustomersByDate = async (daysAgo, specificDate = null) => {
           response.data.data &&
           response.data.data.length > 0
         ) {
-          allCustomersForDate.push(...response.data.data);
-          currentItem += response.data.data.length;
+          const rawCustomers = response.data.data;
+
+          // ✅ CLIENT-SIDE DATE FILTERING
+          const filteredCustomers = rawCustomers.filter((customer) => {
+            if (!customer.modifiedDate) return false;
+            const customerModDate = new Date(customer.modifiedDate)
+              .toISOString()
+              .split("T")[0];
+            return customerModDate === targetDateStart;
+          });
+
+          allCustomersForDate.push(...filteredCustomers);
+          currentItem += rawCustomers.length;
+
           console.log(
-            `Fetched ${response.data.data.length} customers, total: ${allCustomersForDate.length}`
+            `Date ${formattedDate}: Fetched ${rawCustomers.length} raw, filtered to ${filteredCustomers.length}`
           );
-          hasMoreData = response.data.data.length === pageSize;
 
-          await new Promise((resolve) => setTimeout(resolve, 100));
-        } else {
-          hasMoreData = false;
-        }
-      }
-
-      results.push({
-        date: formattedDate,
-        daysAgo: 0,
-        data: { data: allCustomersForDate },
-      });
-
-      return results;
-    }
-
-    for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
-      const targetDate = new Date();
-      targetDate.setDate(targetDate.getDate() - currentDaysAgo);
-      const formattedDate = targetDate.toISOString().split("T")[0];
-      console.log(`Processing date: ${formattedDate}`);
-
-      const token = await getToken();
-      const allCustomersForDate = [];
-      let hasMoreData = true;
-      let currentItem = 0;
-      const pageSize = 100;
-
-      while (hasMoreData) {
-        console.log(
-          `Fetching page at offset ${currentItem} for ${formattedDate}`
-        );
-
-        const response = await makeApiRequest({
-          method: "GET",
-          url: `${KIOTVIET_BASE_URL}/customers`,
-          params: {
-            pageSize,
-            currentItem,
-            orderBy: "id",
-            orderDirection: "DESC",
-            includeTotal: true,
-            includeCustomerGroup: true,
-            includeCustomerSocial: true,
-            createdDate: formattedDate,
-          },
-          headers: {
-            Retailer: process.env.KIOT_SHOP_NAME,
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        if (
-          response.data &&
-          response.data.data &&
-          response.data.data.length > 0
-        ) {
-          allCustomersForDate.push(...response.data.data);
-          currentItem += response.data.data.length;
-          console.log(
-            `Fetched ${response.data.data.length} customers, total: ${allCustomersForDate.length}`
-          );
-          hasMoreData = response.data.data.length === pageSize;
+          // Smart stopping logic
+          if (
+            filteredCustomers.length === 0 &&
+            allCustomersForDate.length > 0
+          ) {
+            hasMoreData = false;
+          } else {
+            hasMoreData = rawCustomers.length === pageSize;
+          }
 
           await new Promise((resolve) => setTimeout(resolve, 100));
         } else {
@@ -673,8 +745,9 @@ const getCustomersByDate = async (daysAgo, specificDate = null) => {
       }
 
       console.log(
-        `Found ${allCustomersForDate.length} customers for ${formattedDate}`
+        `📊 Found ${allCustomersForDate.length} customers for ${formattedDate}`
       );
+
       results.push({
         date: formattedDate,
         daysAgo: currentDaysAgo,
@@ -686,7 +759,7 @@ const getCustomersByDate = async (daysAgo, specificDate = null) => {
 
     return results;
   } catch (error) {
-    console.error(`Error getting customers:`, error.message);
+    console.error(`❌ Error getting customers by date:`, error.message);
     throw error;
   }
 };

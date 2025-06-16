@@ -206,6 +206,32 @@ app.get("/api/sync/customer-lark/status", async (req, res) => {
   }
 });
 
+app.post("/api/sync/customer-lark/historical", async (req, res) => {
+  try {
+    const { daysAgo } = req.body;
+    console.log(
+      `🚀 Manual customer Lark historical sync triggered for ${daysAgo} days`
+    );
+
+    const { saveCustomersByDateToLark } = require("./db/customerLarkService");
+
+    const result = await saveCustomersByDateToLark(daysAgo || 176);
+
+    res.json({
+      success: true,
+      message: "Customer Lark historical sync completed",
+      data: result.stats,
+    });
+  } catch (error) {
+    console.error("❌ Manual customer Lark historical sync failed:", error);
+    res.status(500).json({
+      success: false,
+      message: "Customer Lark historical sync failed",
+      error: error.message,
+    });
+  }
+});
+
 const initializeStaticData = async () => {
   try {
     console.log("🚀 Initializing static data...");
