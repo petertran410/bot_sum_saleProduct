@@ -2329,4 +2329,6 @@ module.exports = {
   getBranches,
   getBranchesByDate,
   getPricebooks,
+  getToken,
+  makeApiRequest,
 };

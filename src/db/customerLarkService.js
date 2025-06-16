@@ -253,7 +253,8 @@ const syncAllCustomersToLarkPaginated = async (
   );
 
   try {
-    const { getToken: getKiotToken, makeApiRequest } = require("../kiotviet");
+    // ✅ FIX: Correct function import - it's just "getToken", not "getKiotToken"
+    const { getToken, makeApiRequest } = require("../kiotviet");
     const KIOTVIET_BASE_URL = "https://public.kiotapi.com";
 
     let totalSynced = 0;
@@ -269,7 +270,8 @@ const syncAllCustomersToLarkPaginated = async (
     // 🎯 STEP 1: Get first page to determine total count
     console.log("📊 Getting first page to determine total customer count...");
 
-    const kiotToken = await getKiotToken();
+    // ✅ FIX: Use correct function name
+    const kiotToken = await getToken();
     const firstResponse = await makeApiRequest({
       method: "GET",
       url: `${KIOTVIET_BASE_URL}/customers`,
@@ -398,8 +400,10 @@ const syncAllCustomersToLarkPaginated = async (
       }
     }
 
-    // 🎯 STEP 4: Mark as completed
+    // 🎯 STEP 4: Mark as completed (ALWAYS update status)
+    console.log("📊 Updating sync status to completed...");
     await updateSyncStatus(true, new Date());
+    console.log("✅ Sync status updated successfully");
 
     console.log(`🎉 PAGINATION SYNC COMPLETED!`);
     console.log(`📊 Final Results:`);
@@ -435,6 +439,17 @@ const syncAllCustomersToLarkPaginated = async (
     };
   } catch (error) {
     console.error("❌ Pagination sync failed:", error.message);
+    console.error("🔍 Full error details:", error);
+
+    // ✅ FIX: ALWAYS update status even if sync fails
+    try {
+      console.log("📊 Updating sync status due to error...");
+      await updateSyncStatus(true, new Date()); // Mark as completed to prevent infinite loop
+      console.log("✅ Sync status updated after error");
+    } catch (statusError) {
+      console.error("❌ Could not update sync status:", statusError.message);
+    }
+
     return {
       success: false,
       error: error.message,
@@ -626,16 +641,46 @@ const getDuplicateCustomersReport = async () => {
 // Legacy functions (kept for backward compatibility)
 const saveCustomersByDateToLark = async (daysAgo) => {
   console.log(
-    "⚠️ DEPRECATED: Using legacy date-based sync, consider switching to pagination-based sync"
+    "⚠️ DEPRECATED: Using legacy date-based sync, redirecting to pagination-based sync"
   );
-  return await syncAllCustomersToLarkPaginated(true);
+
+  try {
+    const result = await syncAllCustomersToLarkPaginated(true);
+    return result;
+  } catch (error) {
+    console.error("❌ Legacy sync failed:", error.message);
+
+    // ✅ FIX: Always update status
+    try {
+      await updateSyncStatus(true, new Date());
+    } catch (statusError) {
+      console.error("❌ Could not update sync status:", statusError.message);
+    }
+
+    throw error;
+  }
 };
 
 const saveCustomersByDateToLarkChunked = async (totalDays) => {
   console.log(
-    "⚠️ DEPRECATED: Using legacy chunked sync, consider switching to pagination-based sync"
+    "⚠️ DEPRECATED: Using legacy chunked sync, redirecting to pagination-based sync"
   );
-  return await syncAllCustomersToLarkPaginated(true);
+
+  try {
+    const result = await syncAllCustomersToLarkPaginated(true);
+    return result;
+  } catch (error) {
+    console.error("❌ Legacy chunked sync failed:", error.message);
+
+    // ✅ FIX: Always update status
+    try {
+      await updateSyncStatus(true, new Date());
+    } catch (statusError) {
+      console.error("❌ Could not update sync status:", statusError.message);
+    }
+
+    throw error;
+  }
 };
 
 // Sync status functions

@@ -333,10 +333,32 @@ async function startServer() {
         const runSyncSafely = async (syncFunction, entityName) => {
           try {
             console.log(`Starting ${entityName} sync...`);
-            await syncFunction();
-            console.log(`✅ ${entityName} sync completed`);
+            const result = await syncFunction();
+            console.log(`✅ ${entityName} sync completed`, result?.stats || "");
+            return result;
           } catch (error) {
             console.error(`❌ ${entityName} sync failed:`, error.message);
+
+            // ✅ FIX: For customer lark sync, always update status to prevent infinite loop
+            if (entityName.includes("Customer→Lark")) {
+              try {
+                console.log(
+                  `📊 Force updating ${entityName} status due to error...`
+                );
+                const {
+                  updateSyncStatus,
+                } = require("./db/customerLarkService");
+                await updateSyncStatus(true, new Date());
+                console.log(`✅ ${entityName} status updated after error`);
+              } catch (statusError) {
+                console.error(
+                  `❌ Could not update ${entityName} status:`,
+                  statusError.message
+                );
+              }
+            }
+
+            return { success: false, error: error.message };
           }
         };
 
