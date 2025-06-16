@@ -1,8 +1,5 @@
 const { getPool } = require("../db");
 
-/**
- * Validate and sanitize productOnHands data
- */
 function validateAndSanitizeProductOnHands(item) {
   return {
     ...item,
@@ -14,10 +11,6 @@ function validateAndSanitizeProductOnHands(item) {
   };
 }
 
-/**
- * Save individual productOnHands to database
- * Follows the same pattern as other services
- */
 async function saveProductOnHands(productOnHandsData, connection = null) {
   const shouldReleaseConnection = !connection;
   if (!connection) {

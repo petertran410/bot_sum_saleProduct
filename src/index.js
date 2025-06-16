@@ -1,5 +1,3 @@
-// Fix for src/index.js - Prevent EventEmitter memory leak
-
 require("dotenv").config();
 const express = require("express");
 const {
@@ -26,51 +24,20 @@ const { initializeDatabase } = require("./db/init");
 const { addRecordToCRMBase, getCRMStats, sendTestMessage } = require("./lark");
 
 const app = express();
-const PORT = process.env.PORT || 3690;
+const PORT = process.env.PORT || 3000;
 
-process.setMaxListeners(30);
+let server;
 
-let syncInterval = null;
-let server = null;
-
-function cleanup() {
-  console.log("🛑 Cleaning up resources...");
-
-  if (syncInterval) {
-    clearInterval(syncInterval);
-    syncInterval = null;
-  }
-
-  if (server) {
-    server.close(() => {
-      console.log("🛑 Server stopped");
-      process.exit(0);
-    });
-  } else {
-    process.exit(0);
-  }
-}
-
-process.on("SIGINT", cleanup);
-process.on("SIGTERM", cleanup);
-process.on("uncaughtException", (error) => {
-  console.error("❌ Uncaught Exception:", error);
-  cleanup();
-});
-process.on("unhandledRejection", (reason, promise) => {
-  console.error("❌ Unhandled Rejection at:", promise, "reason:", reason);
-  cleanup();
-});
-
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 app.use((req, res, next) => {
   req.clientIP =
     req.headers["x-forwarded-for"] ||
-    req.connection.remoteAddress ||
-    req.socket.remoteAddress ||
-    (req.connection.socket ? req.connection.socket.remoteAddress : null);
+    req.headers["x-real-ip"] ||
+    req.connection?.remoteAddress ||
+    req.socket?.remoteAddress ||
+    (req.connection?.socket ? req.connection.socket.remoteAddress : null);
   next();
 });
 
@@ -108,7 +75,8 @@ app.use((req, res, next) => {
 
 app.get("/", (req, res) => {
   res.json({
-    message: "KiotViet API Sync Server with CRM Integration",
+    message:
+      "KiotViet API Sync Server with CRM Integration & Lark Customer Sync",
     endpoints: {
       health: "/api/health",
       registration: "/api/submit-registration",
@@ -118,6 +86,8 @@ app.get("/", (req, res) => {
       saleChannelStatus: "GET /api/sync/salechannels/status",
       syncTrademarks: "POST /api/sync/trademarks",
       trademarkStatus: "GET /api/sync/trademarks/status",
+      syncCustomerLark: "POST /api/sync/customer-lark",
+      customerLarkStatus: "GET /api/sync/customer-lark/status",
     },
     timestamp: new Date().toISOString(),
   });
@@ -176,150 +146,16 @@ app.post("/api/submit-registration", async (req, res) => {
       success: false,
       message: "Lỗi hệ thống, vui lòng thử lại sau",
       code: "INTERNAL_ERROR",
-      details:
-        process.env.NODE_ENV === "development" ? error.message : undefined,
-    });
-  }
-});
-
-app.get("/api/crm/stats", async (req, res) => {
-  try {
-    console.log("📊 CRM stats requested");
-    const stats = await getCRMStats();
-
-    if (stats) {
-      res.json({
-        success: true,
-        data: stats,
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        message: "Could not retrieve CRM statistics",
-      });
-    }
-  } catch (error) {
-    console.error("❌ Error getting CRM stats:", error.message);
-    res.status(500).json({
-      success: false,
-      message: "Error retrieving statistics",
-      error: error.message,
-    });
-  }
-});
-
-app.get("/api/test-lark", async (req, res) => {
-  try {
-    console.log("🔧 LarkSuite test requested");
-    const result = await sendTestMessage();
-    res.json({
-      success: true,
-      message: "LarkSuite connection test successful",
-      data: result,
-    });
-  } catch (error) {
-    console.error("❌ LarkSuite test failed:", error.message);
-    res.status(500).json({
-      success: false,
-      message: "LarkSuite connection test failed",
-      error: error.message,
-    });
-  }
-});
-
-app.post("/api/webhook/lark", (req, res) => {
-  try {
-    console.log("📨 LarkSuite webhook received:", req.body);
-
-    res.json({
-      success: true,
-      message: "Webhook processed",
-    });
-  } catch (error) {
-    console.error("❌ Webhook error:", error.message);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
-
-app.post("/api/sync/salechannels", async (req, res) => {
-  try {
-    console.log("🚀 Manual sale channel sync requested");
-
-    // Import the scheduler function
-    const {
-      salechannelSchedulerCurrent,
-    } = require("../scheduler/salechannelScheduler");
-
-    // Execute the sync
-    const result = await salechannelSchedulerCurrent();
-
-    if (result.success) {
-      console.log(`✅ Manual sale channel sync completed successfully`);
-
-      res.json({
-        success: true,
-        message: "Sale channels synchronized successfully",
-        data: {
-          totalProcessed: result.savedCount || 0,
-          hasNewData: result.hasNewData || false,
-          syncTimestamp: new Date().toISOString(),
-          operation: "manual_sync",
-        },
-      });
-    } else {
-      console.error(`❌ Manual sale channel sync failed: ${result.error}`);
-
-      res.status(500).json({
-        success: false,
-        message: "Sale channel synchronization failed",
-        error: result.error || "Unknown error occurred",
-        operation: "manual_sync",
-      });
-    }
-  } catch (error) {
-    console.error("❌ Manual sale channel sync endpoint error:", error.message);
-    console.error("Stack trace:", error.stack);
-
-    res.status(500).json({
-      success: false,
-      message: "Internal server error during sale channel sync",
-      error: error.message,
-      operation: "manual_sync",
       details: process.env.NODE_ENV === "development" ? error.stack : undefined,
     });
   }
 });
-
-const initializeStaticData = async () => {
-  try {
-    console.log("🚀 Initializing static data...");
-
-    // Add location sync here
-    const { runLocationSync } = require("./syncKiot/syncKiot");
-    await runLocationSync();
-
-    console.log("✅ Static data initialization completed");
-  } catch (error) {
-    console.error("❌ Static data initialization failed:", error);
-  }
-};
-
-// initializeStaticData();
 
 async function startServer() {
   try {
     const dbConnected = await testConnection();
 
     if (!dbConnected) {
-      process.exit(1);
-    }
-
-    const dbInitialized = await initializeDatabase();
-
-    if (!dbInitialized) {
       process.exit(1);
     }
 
@@ -369,264 +205,192 @@ async function startServer() {
           "../src/db/orderService",
           "orders"
         );
-        const invoiceSyncStatus = await getSyncStatusSafely(
-          "../src/db/invoiceService",
-          "invoices"
-        );
-        const surchargeSyncStatus = await getSyncStatusSafely(
-          "../src/db/surchagesService",
-          "surcharges"
-        );
-        const cashflowSyncStatus = await getSyncStatusSafely(
-          "../src/db/cashflowService",
-          "cashflows"
-        );
-        const purchaseOrderSyncStatus = await getSyncStatusSafely(
-          "../src/db/purchaseOrderService",
-          "purchase_orders"
-        );
-        const transferSyncStatus = await getSyncStatusSafely(
-          "../src/db/transferService",
-          "transfers"
-        );
-        const returnSyncStatus = await getSyncStatusSafely(
-          "../src/db/returnService",
-          "returns"
-        );
-        const trademarkSyncStatus = await getSyncStatusSafely(
-          "../src/db/trademarkService",
-          "trademarks"
+
+        // ✅ NEW: Add customer Lark sync status check
+        const customerLarkSyncStatus = await getSyncStatusSafely(
+          "../src/db/customerLarkService",
+          "customer_lark"
         );
 
-        const orderSupplierSyncStatus = await getSyncStatusSafely(
-          "../src/db/orderSupplierService",
-          "order_suppliers"
+        console.log("📊 Sync Status Summary:");
+        console.log(
+          `   Users: Historical ${
+            userSyncStatus.historicalCompleted ? "✅" : "❌"
+          }, Last: ${userSyncStatus.lastSync || "Never"}`
         );
-
-        const productOnHandsSyncStatus = await getSyncStatusSafely(
-          "../src/db/productOnHandsService",
-          "product_on_hands"
+        console.log(
+          `   Customers: Historical ${
+            customerSyncStatus.historicalCompleted ? "✅" : "❌"
+          }, Last: ${customerSyncStatus.lastSync || "Never"}`
         );
-
-        const branchSyncStatus = await getSyncStatusSafely(
-          "../src/db/branchService",
-          "branches"
+        console.log(
+          `   Products: Historical ${
+            productSyncStatus.historicalCompleted ? "✅" : "❌"
+          }, Last: ${productSyncStatus.lastSync || "Never"}`
         );
-
-        const pricebookSyncStatus = await getSyncStatusSafely(
-          "../src/db/pricebookService",
-          "pricebook"
+        console.log(
+          `   Orders: Historical ${
+            orderSyncStatus.historicalCompleted ? "✅" : "❌"
+          }, Last: ${orderSyncStatus.lastSync || "Never"}`
+        );
+        // ✅ NEW: Add customer Lark status
+        console.log(
+          `   Customer→Lark: Historical ${
+            customerLarkSyncStatus.historicalCompleted ? "✅" : "❌"
+          }, Last: ${customerLarkSyncStatus.lastSync || "Never"}`
         );
 
         if (!userSyncStatus.historicalCompleted) {
-          await runSyncSafely(
-            () =>
-              require("../scheduler/userScheduler").userScheduler(
-                historicalDaysAgo
-              ),
-            "historical user"
-          );
-        }
-
-        if (!productSyncStatus.historicalCompleted) {
-          await runSyncSafely(
-            () =>
-              require("../scheduler/productScheduler").productScheduler(
-                historicalDaysAgo
-              ),
-            "historical product"
-          );
-        }
-
-        if (!surchargeSyncStatus.historicalCompleted) {
-          await runSyncSafely(
-            () =>
-              require("../scheduler/surchargeScheduler").surchargeScheduler(
-                historicalDaysAgo
-              ),
-            "historical surcharge"
-          );
+          await runSyncSafely(() => {
+            const { saveUsersByDate } = require("./db/userService");
+            return saveUsersByDate(historicalDaysAgo);
+          }, "Users Historical");
         }
 
         if (!customerSyncStatus.historicalCompleted) {
-          await runSyncSafely(
-            () =>
-              require("../scheduler/customerScheduler").customerScheduler(
-                historicalDaysAgo
-              ),
-            "historical customer"
-          );
+          await runSyncSafely(() => {
+            const { saveCustomersByDate } = require("./db/customerService");
+            return saveCustomersByDate(historicalDaysAgo);
+          }, "Customers Historical");
+        }
+
+        if (!productSyncStatus.historicalCompleted) {
+          await runSyncSafely(() => {
+            const { saveProductsByDate } = require("./db/productService");
+            return saveProductsByDate(historicalDaysAgo);
+          }, "Products Historical");
         }
 
         if (!orderSyncStatus.historicalCompleted) {
-          await runSyncSafely(
-            () =>
-              require("../scheduler/orderScheduler").orderScheduler(
-                historicalDaysAgo
-              ),
-            "historical order"
-          );
+          await runSyncSafely(() => {
+            const { saveOrdersByDate } = require("./db/orderService");
+            return saveOrdersByDate(historicalDaysAgo);
+          }, "Orders Historical");
         }
 
-        if (!invoiceSyncStatus.historicalCompleted) {
-          await runSyncSafely(
-            () =>
-              require("../scheduler/invoiceScheduler").invoiceScheduler(
-                historicalDaysAgo
-              ),
-            "historical invoice"
-          );
+        // ✅ NEW: Customer Lark historical sync
+        if (!customerLarkSyncStatus.historicalCompleted) {
+          await runSyncSafely(() => {
+            const {
+              saveSyncByDateCustomerIntoLark,
+            } = require("./db/customerLarkService");
+            return saveSyncByDateCustomerIntoLark();
+          }, "Customer→Lark Historical");
         }
 
-        if (!cashflowSyncStatus.historicalCompleted) {
-          await runSyncSafely(
-            () =>
-              require("../scheduler/cashflowScheduler").cashflowScheduler(
-                historicalDaysAgo
-              ),
-            "historical cashflow"
-          );
-        }
+        const syncIntervalSeconds = parseInt(
+          process.env.SCAN_INTERVAL_SECONDS || "15"
+        );
 
-        if (!purchaseOrderSyncStatus.historicalCompleted) {
-          await runSyncSafely(
-            () =>
-              require("../scheduler/purchaseOrderScheduler").purchaseOrderScheduler(
-                historicalDaysAgo
-              ),
-            "historical purchase order"
-          );
-        }
-
-        if (!transferSyncStatus.historicalCompleted) {
-          await runSyncSafely(
-            () =>
-              require("../scheduler/transferScheduler").transferScheduler(
-                historicalDaysAgo
-              ),
-            "historical transfer"
-          );
-        }
-
-        if (!returnSyncStatus.historicalCompleted) {
-          await runSyncSafely(
-            () =>
-              require("../scheduler/returnScheduler").returnScheduler(
-                historicalDaysAgo
-              ),
-            "historical return"
-          );
-        }
-
-        if (!orderSupplierSyncStatus.historicalCompleted) {
-          await runSyncSafely(
-            () =>
-              require("../scheduler/orderSupplierScheduler").orderSupplierScheduler(
-                historicalDaysAgo
-              ),
-            "historical order supplier"
-          );
-        }
-
-        if (!trademarkSyncStatus.historicalCompleted) {
-          await runSyncSafely(
-            () =>
-              require("../scheduler/trademarkScheduler").trademarkScheduler(
-                historicalDaysAgo
-              ),
-            "historical trademark"
-          );
-        }
-
-        if (!productOnHandsSyncStatus.historicalCompleted) {
-          await runSyncSafely(
-            () =>
-              require("../scheduler/productOnHandsScheduler").productOnHandsScheduler(
-                historicalDaysAgo
-              ),
-            "historical productOnHands"
-          );
-        }
-
-        if (!branchSyncStatus.historicalCompleted) {
-          await runSyncSafely(
-            () =>
-              require("../scheduler/branchScheduler").branchScheduler(
-                historicalDaysAgo
-              ),
-            "historical branches"
-          );
-        }
-
-        if (!pricebookSyncStatus.historicalCompleted) {
-          await runSyncSafely(
-            () =>
-              require("../scheduler/pricebookScheduler").pricebookScheduler(
-                historicalDaysAgo
-              ),
-            "historical pricebook"
-          );
-        }
-
-        console.log("🔄 Starting current sync cycle...");
-        await runSyncSafely(runUserSync, "current user");
-        await runSyncSafely(runProductSync, "current product");
-        await runSyncSafely(runSurchargeSync, "current surcharge");
-        await runSyncSafely(runCustomerSync, "current customer");
-        await runSyncSafely(runPurchaseOrderSync, "current purchase order");
-        await runSyncSafely(runOrderSync, "current order");
-        await runSyncSafely(runInvoiceSync, "current invoice");
-        await runSyncSafely(runCashflowSync, "current cashflow");
-        await runSyncSafely(runTransferSync, "current transfer");
-        await runSyncSafely(runSaleChannelSync, "current sale channel");
-        await runSyncSafely(runReturnSync, "current return");
-        await runSyncSafely(runOrderSupplierSync, "current order supplier");
-        await runSyncSafely(runTrademarkSync, "current trademark");
-        await runSyncSafely(runAttributeSync, "current attribute");
-        await runSyncSafely(runProductOnHandsSync, "current productOnHands");
-        await runSyncSafely(runBranchSync, "current branch");
-        await runSyncSafely(runPricebookSync, "current pricebook");
-
-        const runAllSyncs = async () => {
+        setInterval(async () => {
           try {
-            await Promise.allSettled([
-              runUserSync(),
-              runProductSync(),
-              runSurchargeSync(),
-              runCustomerSync(),
-              runPurchaseOrderSync(),
-              runOrderSync(),
-              runInvoiceSync(),
-              runCashflowSync(),
-              runTransferSync(),
-              runSaleChannelSync(),
-              runReturnSync(),
-              runOrderSupplierSync(),
-              runTrademarkSync(),
-              runAttributeSync(),
-              runProductOnHandsSync(),
-              runBranchSync(),
-              runPricebookSync(),
-            ]);
-          } catch (error) {
-            console.error("❌ Error during scheduled sync:", error.message);
-          }
-        };
+            console.log("🔄 Starting sync operations...");
 
-        syncInterval = setInterval(runAllSyncs, 10 * 60 * 1000);
-      } catch (startupError) {
-        console.error("❌ Error during startup:", startupError.message);
-        console.error("Stack trace:", startupError.stack);
-        console.log("⚠️ Server is running but some sync operations failed");
+            const currentUserSyncStatus = await getSyncStatusSafely(
+              "../src/db/userService",
+              "users"
+            );
+            const currentCustomerSyncStatus = await getSyncStatusSafely(
+              "../src/db/customerService",
+              "customers"
+            );
+            const currentProductSyncStatus = await getSyncStatusSafely(
+              "../src/db/productService",
+              "products"
+            );
+            const currentOrderSyncStatus = await getSyncStatusSafely(
+              "../src/db/orderService",
+              "orders"
+            );
+
+            // ✅ NEW: Get current customer Lark sync status
+            const currentCustomerLarkSyncStatus = await getSyncStatusSafely(
+              "../src/db/customerLarkService",
+              "customer_lark"
+            );
+
+            if (currentUserSyncStatus.historicalCompleted) {
+              await runSyncSafely(() => {
+                const { saveUsers } = require("./db/userService");
+                return saveUsers();
+              }, "Users Current");
+            }
+
+            if (currentCustomerSyncStatus.historicalCompleted) {
+              await runSyncSafely(() => {
+                const { saveCustomers } = require("./db/customerService");
+                return saveCustomers();
+              }, "Customers Current");
+            }
+
+            if (currentProductSyncStatus.historicalCompleted) {
+              await runSyncSafely(() => {
+                const { saveProducts } = require("./db/productService");
+                return saveProducts();
+              }, "Products Current");
+            }
+
+            if (currentOrderSyncStatus.historicalCompleted) {
+              await runSyncSafely(() => {
+                const { saveOrders } = require("./db/orderService");
+                return saveOrders();
+              }, "Orders Current");
+            }
+
+            // ✅ NEW: Customer Lark current sync
+            if (currentCustomerLarkSyncStatus.historicalCompleted) {
+              await runSyncSafely(() => {
+                const {
+                  saveSyncCustomerIntoLark,
+                } = require("./db/customerLarkService");
+                return saveSyncCustomerIntoLark(2); // 2 days back for current sync
+              }, "Customer→Lark Current");
+            }
+          } catch (error) {
+            console.error("❌ Error in sync interval:", error.message);
+          }
+        }, syncIntervalSeconds * 1000);
+
+        console.log(
+          `⏰ Sync operations will run every ${syncIntervalSeconds} seconds`
+        );
+        console.log(`🚀 Server running on port ${PORT}`);
+        console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
+        console.log(
+          `📋 Registration: http://localhost:${PORT}/api/submit-registration`
+        );
+      } catch (error) {
+        console.error("❌ Server startup error:", error);
       }
     });
-
-    return server;
   } catch (error) {
-    console.error("❌ Error starting server:", error.message);
-    console.error("Stack trace:", error.stack);
+    console.error("❌ Failed to start server:", error);
     process.exit(1);
   }
 }
+
+process.on("SIGTERM", () => {
+  console.log("\n🛑 SIGTERM received. Shutting down gracefully...");
+  if (server) {
+    server.close(() => {
+      console.log("✅ HTTP server closed");
+      process.exit(0);
+    });
+  } else {
+    process.exit(0);
+  }
+});
+
+process.on("SIGINT", () => {
+  console.log("\n🛑 SIGINT received. Shutting down gracefully...");
+  if (server) {
+    server.close(() => {
+      console.log("✅ HTTP server closed");
+      process.exit(0);
+    });
+  } else {
+    process.exit(0);
+  }
+});
 
 startServer();

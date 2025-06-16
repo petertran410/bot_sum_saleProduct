@@ -191,7 +191,7 @@ const runCustomerSync = async () => {
 
     if (!syncStatus.historicalCompleted) {
       console.log("📅 Running historical customer sync...");
-      const result = await customerScheduler(250);
+      const result = await customerScheduler(176);
 
       if (result.success) {
         console.log("✅ Historical customers data has been saved to database");

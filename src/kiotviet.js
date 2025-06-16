@@ -583,7 +583,7 @@ const getCustomersByDate = async (daysAgo, specificDate = null) => {
             includeTotal: true,
             includeCustomerGroup: true,
             includeCustomerSocial: true,
-            createdDate: formattedDate,
+            lastModifiedFrom: formattedDate,
           },
           headers: {
             Retailer: process.env.KIOT_SHOP_NAME,

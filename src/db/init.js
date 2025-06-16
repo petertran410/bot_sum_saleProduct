@@ -877,6 +877,7 @@ async function initializeDatabase() {
     const entities = [
       "users",
       "customers",
+      "customer_lark",
       "surcharges",
       "orders",
       "invoices",
