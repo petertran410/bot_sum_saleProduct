@@ -562,26 +562,241 @@ async function checkCustomerExists(customer) {
   }
 }
 
-async function batchUpdateExistingCustomers(customers) {
-  // For now, process individually with optimized flow
-  // TODO: Implement batch_update when Lark supports it
+async function batchUpdateExistingCustomersSmartly(customers) {
   let updateCount = 0;
+  let skippedCount = 0;
 
-  console.log(`🔄 Processing ${customers.length} updates individually...`);
+  console.log(
+    `🔍 Checking ${customers.length} existing customers for changes...`
+  );
+
+  // Get existing customers with their current data from Lark
+  const existingCustomersData = await getExistingCustomersWithData(customers);
 
   for (const customer of customers) {
     try {
-      const result = await updateCustomerInLarkBase(customer);
-      if (result.success) updateCount++;
+      // Find the existing record in Lark
+      const existingRecord = existingCustomersData.find(
+        (record) =>
+          record.fields.Id === customer.id?.toString() ||
+          record.fields["Mã Khách Hàng"] === customer.code
+      );
+
+      if (!existingRecord) {
+        console.log(
+          `⚠️ Customer ${customer.code} not found in existing data, skipping...`
+        );
+        continue;
+      }
+
+      // Check if customer data has changed
+      const hasChanged = hasCustomerDataChanged(
+        customer,
+        existingRecord.fields
+      );
+
+      if (hasChanged) {
+        console.log(`🔄 Updating customer ${customer.code} (data changed)...`);
+        const result = await updateCustomerInLarkBase(customer);
+        if (result.success) updateCount++;
+      } else {
+        console.log(`⏭️ Skipping customer ${customer.code} (no changes)`);
+        skippedCount++;
+      }
+
+      // Rate limiting
+      await new Promise((resolve) => setTimeout(resolve, 50));
     } catch (error) {
       console.error(`Update failed for ${customer.code}:`, error.message);
     }
-
-    // Minimal delay for updates
-    await new Promise((resolve) => setTimeout(resolve, 50));
   }
 
+  console.log(
+    `✅ Smart update completed: ${updateCount} updated, ${skippedCount} skipped`
+  );
   return updateCount;
+}
+
+/**
+ * Get existing customers with their current field data
+ */
+async function getExistingCustomersWithData(customers) {
+  const token = await getCustomerSyncLarkToken();
+  const customerIds = customers.map((c) => c.id?.toString()).filter(Boolean);
+  const customerCodes = customers.map((c) => c.code).filter(Boolean);
+
+  const existingData = [];
+
+  // Batch search for existing customers (much faster than individual lookups)
+  const BATCH_SIZE = 100;
+
+  for (let i = 0; i < customerIds.length; i += BATCH_SIZE) {
+    const idBatch = customerIds.slice(i, i + BATCH_SIZE);
+
+    try {
+      const response = await axios.post(
+        `${LARK_BASE_URL}/bitable/v1/apps/${CUSTOMER_SYNC_BASE_TOKEN}/tables/${CUSTOMER_SYNC_TABLE_ID}/records/search`,
+        {
+          filter: {
+            conditions: [
+              {
+                field_name: "Id",
+                operator: "in",
+                value: idBatch,
+              },
+            ],
+            conjunction: "and",
+          },
+          automatic_fields: false, // Get all fields
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          timeout: 15000,
+        }
+      );
+
+      if (response.data.code === 0) {
+        existingData.push(...response.data.data.items);
+      }
+    } catch (error) {
+      console.error(`Error fetching batch ${i}:`, error.message);
+    }
+
+    // Rate limiting between batches
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+
+  return existingData;
+}
+
+/**
+ * Check if customer data has actually changed
+ */
+function hasCustomerDataChanged(kiotVietCustomer, larkFields) {
+  // Compare key fields that might change
+  const fieldsToCheck = [
+    { kv: "name", lark: "Tên Khách Hàng" },
+    { kv: "contactNumber", lark: "Số Điện Thoại", transform: parsePhoneNumber },
+    { kv: "email", lark: "Email" },
+    { kv: "address", lark: "Địa Chỉ" },
+    {
+      kv: "debt",
+      lark: "Nợ Hiện Tại",
+      transform: (val) => val?.toString() || "0",
+    },
+    {
+      kv: "totalInvoiced",
+      lark: "Tổng Bán",
+      transform: (val) => val?.toString() || "0",
+    },
+    {
+      kv: "rewardPoint",
+      lark: "Điểm Hiện Tại",
+      transform: (val) => val?.toString() || "0",
+    },
+  ];
+
+  for (const field of fieldsToCheck) {
+    let kiotVietValue = kiotVietCustomer[field.kv];
+    if (field.transform) {
+      kiotVietValue = field.transform(kiotVietValue);
+    }
+
+    const larkValue = larkFields[field.lark];
+
+    // Convert both to strings for comparison
+    const kiotVietStr = (kiotVietValue || "").toString();
+    const larkStr = (larkValue || "").toString();
+
+    if (kiotVietStr !== larkStr) {
+      console.log(
+        `📝 Change detected in ${field.lark}: "${larkStr}" → "${kiotVietStr}"`
+      );
+      return true;
+    }
+  }
+
+  return false; // No changes detected
+}
+
+/**
+ * UPDATED: Main optimized sync with smart updates
+ */
+async function syncCustomersToLarkBaseOptimized(customers) {
+  console.log(
+    `🚀 OPTIMIZED SYNC: Starting smart sync for ${customers.length} customers...`
+  );
+
+  const startTime = Date.now();
+
+  try {
+    // Step 1: Get all existing customer IDs in bulk
+    const existingIds = await getAllExistingCustomerIds();
+
+    // Step 2: Separate new vs existing customers
+    const newCustomers = [];
+    const existingCustomers = [];
+
+    customers.forEach((customer) => {
+      const customerId = customer.id?.toString();
+      const customerCode = customer.code;
+
+      if (existingIds.has(customerId) || existingIds.has(customerCode)) {
+        existingCustomers.push(customer);
+      } else {
+        newCustomers.push(customer);
+      }
+    });
+
+    console.log(
+      `📊 Analysis: ${newCustomers.length} new, ${existingCustomers.length} existing customers`
+    );
+
+    // Step 3: Batch add new customers (fast)
+    let newCount = 0;
+    if (newCustomers.length > 0) {
+      console.log(
+        `➕ Adding ${newCustomers.length} new customers in batches...`
+      );
+      const addResults = await batchAddCustomersToLarkBase(newCustomers);
+      newCount = addResults.filter((r) => r.success !== false).length;
+    }
+
+    // Step 4: SMART UPDATE - only update changed customers
+    let updateCount = 0;
+    if (existingCustomers.length > 0) {
+      console.log(
+        `🔍 Smart-checking ${existingCustomers.length} existing customers...`
+      );
+      updateCount = await batchUpdateExistingCustomersSmartly(
+        existingCustomers
+      );
+    }
+
+    const duration = Math.round((Date.now() - startTime) / 1000);
+    const stats = {
+      total: customers.length,
+      newRecords: newCount,
+      updated: updateCount,
+      skipped: existingCustomers.length - updateCount,
+      failed:
+        customers.length -
+        newCount -
+        updateCount -
+        (existingCustomers.length - updateCount),
+      duration: `${duration}s`,
+    };
+
+    console.log(`🎉 SMART SYNC COMPLETED:`, stats);
+
+    return { success: true, stats, optimized: true };
+  } catch (error) {
+    console.error("❌ Smart sync failed:", error.message);
+    return await syncCustomersToLarkBase(customers);
+  }
 }
 
 async function syncCustomersToLarkBaseOptimized(customers) {
@@ -631,7 +846,9 @@ async function syncCustomersToLarkBaseOptimized(customers) {
         `🔄 Updating ${existingCustomers.length} existing customers...`
       );
       // Note: Could implement batch update here too if Lark supports it
-      updateCount = await batchUpdateExistingCustomers(existingCustomers);
+      updateCount = await batchUpdateExistingCustomersSmartly(
+        existingCustomers
+      );
     }
 
     const duration = Math.round((Date.now() - startTime) / 1000);
