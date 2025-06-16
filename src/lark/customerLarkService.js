@@ -611,71 +611,68 @@ async function batchUpdateExistingCustomersSmartly(customers) {
 
 async function checkSpecificCustomersExist(customerIds) {
   const token = await getCustomerSyncLarkToken();
-  const batchSize = 10; // ✅ REDUCED from 100 to 10 to avoid API limits
   const existingIds = new Set();
 
   console.log(
-    `🎯 Checking existence of ${customerIds.length} specific customers...`
+    `🎯 Checking existence of ${customerIds.length} specific customers individually...`
   );
 
-  for (let i = 0; i < customerIds.length; i += batchSize) {
-    const batch = customerIds.slice(i, i + batchSize);
+  // ✅ SOLUTION: Check customers ONE BY ONE (guaranteed to work)
+  for (let i = 0; i < customerIds.length; i++) {
+    const customerId = customerIds[i];
 
     try {
-      // ✅ FIXED: Use smaller batches with proper OR conjunction
+      // Check this specific customer ID
       const response = await axios.post(
         `${LARK_BASE_URL}/bitable/v1/apps/${CUSTOMER_SYNC_BASE_TOKEN}/tables/${CUSTOMER_SYNC_TABLE_ID}/records/search`,
         {
           filter: {
-            conditions: batch.map((id) => ({
-              field_name: "Id",
-              operator: "is",
-              value: [id.toString()],
-            })),
-            conjunction: "or",
+            conditions: [
+              {
+                field_name: "Id",
+                operator: "is",
+                value: [customerId.toString()],
+              },
+            ],
+            conjunction: "and",
           },
           fields: ["Id", "Mã Khách Hàng"],
+          page_size: 1, // ✅ CRITICAL: Only return 1 result max
         },
         {
           headers: {
             Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
-          timeout: 15000,
+          timeout: 10000,
         }
       );
 
-      if (response.data.code === 0) {
-        response.data.data.items.forEach((record) => {
-          if (record.fields.Id) existingIds.add(record.fields.Id);
-          if (record.fields["Mã Khách Hàng"])
-            existingIds.add(record.fields["Mã Khách Hàng"]);
-        });
+      if (response.data.code === 0 && response.data.data.items.length > 0) {
+        const record = response.data.data.items[0];
+        if (record.fields.Id) existingIds.add(record.fields.Id);
+        if (record.fields["Mã Khách Hàng"])
+          existingIds.add(record.fields["Mã Khách Hàng"]);
       }
 
-      console.log(
-        `✅ Batch ${Math.floor(i / batchSize) + 1}: Found ${
-          existingIds.size
-        } existing customers so far`
-      );
+      // Progress logging every 100 checks
+      if ((i + 1) % 100 === 0 || i === customerIds.length - 1) {
+        console.log(
+          `✅ Progress: ${i + 1}/${customerIds.length} checked, ${
+            existingIds.size
+          } found existing`
+        );
+      }
+
+      // Rate limiting
+      await new Promise((resolve) => setTimeout(resolve, 50));
     } catch (error) {
-      console.error(
-        `❌ Error checking batch ${Math.floor(i / batchSize) + 1}:`,
-        error.message
-      );
-
-      // ✅ ADD: More detailed error logging for debugging
-      if (error.response?.data) {
-        console.error("❌ Lark API Error Details:", error.response.data);
-      }
+      console.error(`❌ Error checking customer ${customerId}:`, error.message);
     }
-
-    // Small delay between batches
-    await new Promise((resolve) => setTimeout(resolve, 200)); // ✅ Increased delay
   }
 
   console.log(
-    `🎯 Targeted check completed: ${existingIds.size} existing out of ${customerIds.length} checked`
+    `🎯 Individual check completed: ${existingIds.size} existing out of ${customerIds.length} checked`
   );
   return existingIds;
 }
@@ -904,6 +901,369 @@ async function batchAddCustomersToLarkBase(customers) {
   return results;
 }
 
+async function getAllCustomersFromLarkBase() {
+  const token = await getCustomerSyncLarkToken();
+  const allCustomers = [];
+  let hasMore = true;
+  let pageToken = undefined;
+  let pageCount = 0;
+
+  console.log(
+    "📊 Fetching ALL customers from Lark Base for duplicate analysis..."
+  );
+
+  while (hasMore) {
+    try {
+      const params = {
+        page_size: 500,
+        fields: ["Mã Khách Hàng", "Tên Khách Hàng", "Ngày Tạo"], // Only fields we need
+      };
+
+      if (pageToken) {
+        params.page_token = pageToken;
+      }
+
+      const response = await axios.get(
+        `${LARK_BASE_URL}/bitable/v1/apps/${CUSTOMER_SYNC_BASE_TOKEN}/tables/${CUSTOMER_SYNC_TABLE_ID}/records`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          params,
+          timeout: 15000,
+        }
+      );
+
+      if (response.data.code === 0) {
+        const records = response.data.data.items;
+        allCustomers.push(...records);
+
+        hasMore = response.data.data.has_more;
+        pageToken = response.data.data.page_token;
+        pageCount++;
+
+        console.log(
+          `📄 Page ${pageCount}: Found ${records.length} customers, total: ${allCustomers.length}`
+        );
+      } else {
+        console.error("❌ Lark API Error:", response.data);
+        break;
+      }
+    } catch (error) {
+      console.error("❌ Error fetching customers:", error.message);
+      break;
+    }
+
+    // Rate limiting
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  console.log(`✅ Total customers fetched: ${allCustomers.length}`);
+  return allCustomers;
+}
+
+/**
+ * Find duplicate customers by Customer Code only
+ */
+async function findDuplicateCustomersByCode() {
+  console.log("🔍 Starting duplicate customer analysis by Customer Code...");
+
+  const allCustomers = await getAllCustomersFromLarkBase();
+  const duplicateGroups = [];
+
+  console.log(
+    `📊 Analyzing ${allCustomers.length} customers for code duplicates...`
+  );
+
+  // Group customers by Customer Code
+  const codeGroups = {};
+
+  allCustomers.forEach((record) => {
+    const code = record.fields["Mã Khách Hàng"];
+    if (code && code.trim() !== "") {
+      const cleanCode = code.trim();
+      if (!codeGroups[cleanCode]) {
+        codeGroups[cleanCode] = [];
+      }
+      codeGroups[cleanCode].push(record);
+    }
+  });
+
+  // Find groups with duplicates
+  Object.entries(codeGroups).forEach(([code, records]) => {
+    if (records.length > 1) {
+      duplicateGroups.push({
+        customerCode: code,
+        records: records,
+        count: records.length,
+      });
+    }
+  });
+
+  const summary = {
+    totalCustomers: allCustomers.length,
+    duplicateGroups: duplicateGroups.length,
+    totalDuplicateRecords: duplicateGroups.reduce(
+      (sum, group) => sum + group.count,
+      0
+    ),
+    recordsToDelete: duplicateGroups.reduce(
+      (sum, group) => sum + (group.count - 1),
+      0
+    ), // Keep 1, delete the rest
+  };
+
+  console.log("📊 DUPLICATE ANALYSIS BY CUSTOMER CODE:");
+  console.log(`📋 Total customers: ${summary.totalCustomers}`);
+  console.log(`🔄 Duplicate groups: ${summary.duplicateGroups}`);
+  console.log(`📝 Total duplicate records: ${summary.totalDuplicateRecords}`);
+  console.log(`🗑️ Records to delete: ${summary.recordsToDelete}`);
+
+  return {
+    duplicateGroups: duplicateGroups,
+    summary: summary,
+  };
+}
+
+/**
+ * Show detailed duplicate analysis
+ */
+async function analyzeDuplicatesByCode() {
+  console.log("🔍 Starting detailed duplicate analysis by Customer Code...");
+
+  const result = await findDuplicateCustomersByCode();
+  const { duplicateGroups, summary } = result;
+
+  console.log("\n📊 DETAILED DUPLICATE ANALYSIS:");
+
+  if (duplicateGroups.length > 0) {
+    console.log(
+      `\n📝 DUPLICATES BY CUSTOMER CODE (${duplicateGroups.length} groups):`
+    );
+
+    duplicateGroups.slice(0, 10).forEach((group, index) => {
+      console.log(
+        `\n   Group ${index + 1}: Code "${group.customerCode}" - ${
+          group.count
+        } records`
+      );
+      group.records.forEach((record, recordIndex) => {
+        const createdDate = new Date(record.created_time).toLocaleString(
+          "vi-VN"
+        );
+        console.log(
+          `     ${recordIndex + 1}. ${
+            record.fields["Tên Khách Hàng"]
+          } | Created: ${createdDate} | ID: ${record.record_id}`
+        );
+      });
+    });
+
+    if (duplicateGroups.length > 10) {
+      console.log(
+        `\n   ... and ${duplicateGroups.length - 10} more duplicate groups`
+      );
+    }
+  } else {
+    console.log("\n✅ No duplicates found by Customer Code!");
+  }
+
+  return result;
+}
+
+/**
+ * Delete duplicate customers by code (keep the newest record)
+ */
+async function deleteDuplicateCustomersByCode(dryRun = true) {
+  console.log(
+    `🗑️ Starting duplicate customer deletion by Customer Code (dryRun: ${dryRun})...`
+  );
+
+  if (!dryRun) {
+    console.log(
+      "⚠️ WARNING: This will permanently delete duplicate customer records!"
+    );
+    console.log(
+      "⚠️ Make sure you have a backup of your Lark Base before proceeding!"
+    );
+  }
+
+  const result = await findDuplicateCustomersByCode();
+  const { duplicateGroups, summary } = result;
+
+  if (duplicateGroups.length === 0) {
+    console.log("✅ No duplicate customers found by Customer Code!");
+    return {
+      success: true,
+      message: "No duplicates found",
+      deletedCount: 0,
+    };
+  }
+
+  const deletionPlan = [];
+
+  // Plan deletions for each group (keep newest, delete older ones)
+  duplicateGroups.forEach((group, groupIndex) => {
+    // Sort by creation time - newest first
+    const sortedRecords = group.records.sort((a, b) => {
+      return (
+        new Date(b.created_time).getTime() - new Date(a.created_time).getTime()
+      );
+    });
+
+    const recordToKeep = sortedRecords[0]; // Keep the newest
+    const recordsToDelete = sortedRecords.slice(1); // Delete the rest
+
+    deletionPlan.push({
+      groupIndex: groupIndex + 1,
+      customerCode: group.customerCode,
+      totalRecords: group.count,
+      recordToKeep: recordToKeep,
+      recordsToDelete: recordsToDelete,
+      deletionCount: recordsToDelete.length,
+    });
+  });
+
+  // Show deletion plan
+  console.log(`\n📋 DELETION PLAN (keep newest record):`);
+  let totalDeletions = 0;
+
+  deletionPlan.forEach((plan) => {
+    console.log(
+      `\nGroup ${plan.groupIndex}: Customer Code "${plan.customerCode}"`
+    );
+    console.log(`  📊 Total records: ${plan.totalRecords}`);
+
+    const keepCreated = new Date(plan.recordToKeep.created_time).toLocaleString(
+      "vi-VN"
+    );
+    console.log(
+      `  ✅ Keep: ${plan.recordToKeep.fields["Tên Khách Hàng"]} (Created: ${keepCreated}) [${plan.recordToKeep.record_id}]`
+    );
+
+    console.log(`  🗑️ Delete: ${plan.deletionCount} older records`);
+    plan.recordsToDelete.forEach((record, index) => {
+      const deleteCreated = new Date(record.created_time).toLocaleString(
+        "vi-VN"
+      );
+      console.log(
+        `     ${index + 1}. ${
+          record.fields["Tên Khách Hàng"]
+        } (Created: ${deleteCreated}) [${record.record_id}]`
+      );
+    });
+
+    totalDeletions += plan.deletionCount;
+  });
+
+  console.log(`\n📊 DELETION SUMMARY:`);
+  console.log(`🗑️ Total records to delete: ${totalDeletions}`);
+  console.log(`✅ Total records to keep: ${duplicateGroups.length}`);
+
+  if (dryRun) {
+    console.log("\n🔍 DRY RUN MODE - No records will be actually deleted");
+    console.log("💡 Set dryRun: false to perform actual deletions");
+    return {
+      success: true,
+      dryRun: true,
+      deletionPlan: deletionPlan,
+      totalDeletions: totalDeletions,
+    };
+  }
+
+  // Perform actual deletions
+  console.log(
+    `\n🗑️ Starting actual deletion of ${totalDeletions} duplicate records...`
+  );
+
+  let successCount = 0;
+  let failCount = 0;
+
+  for (const plan of deletionPlan) {
+    console.log(
+      `\n🗑️ Processing group ${plan.groupIndex}: ${plan.customerCode}`
+    );
+
+    for (const recordToDelete of plan.recordsToDelete) {
+      try {
+        const deleteResult = await deleteLarkBaseRecord(
+          recordToDelete.record_id
+        );
+
+        if (deleteResult.success) {
+          successCount++;
+          console.log(
+            `  ✅ Deleted: ${recordToDelete.fields["Tên Khách Hàng"]} (${recordToDelete.record_id})`
+          );
+        } else {
+          failCount++;
+          console.log(
+            `  ❌ Failed: ${recordToDelete.fields["Tên Khách Hàng"]} (${recordToDelete.record_id}) - ${deleteResult.error}`
+          );
+        }
+
+        // Rate limiting
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      } catch (error) {
+        failCount++;
+        console.log(
+          `  ❌ Error deleting ${recordToDelete.record_id}: ${error.message}`
+        );
+      }
+    }
+  }
+
+  console.log(`\n📊 DELETION COMPLETED:`);
+  console.log(`✅ Successfully deleted: ${successCount} records`);
+  console.log(`❌ Failed to delete: ${failCount} records`);
+  console.log(`📊 Total processed: ${successCount + failCount} records`);
+
+  return {
+    success: failCount === 0,
+    dryRun: false,
+    deletionPlan: deletionPlan,
+    totalDeletions: totalDeletions,
+    successCount: successCount,
+    failCount: failCount,
+  };
+}
+
+/**
+ * Delete a single record from Lark Base
+ */
+async function deleteLarkBaseRecord(recordId) {
+  try {
+    const token = await getCustomerSyncLarkToken();
+
+    const response = await axios.delete(
+      `${LARK_BASE_URL}/bitable/v1/apps/${CUSTOMER_SYNC_BASE_TOKEN}/tables/${CUSTOMER_SYNC_TABLE_ID}/records/${recordId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        timeout: 10000,
+      }
+    );
+
+    if (response.data.code === 0) {
+      return { success: true };
+    } else {
+      return { success: false, error: response.data.msg || "Unknown error" };
+    }
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Quick check for duplicates by customer code
+ */
+async function quickDuplicateCheckByCode() {
+  console.log("🔍 Quick duplicate check by Customer Code...");
+  const result = await findDuplicateCustomersByCode();
+  return result.summary;
+}
+
 module.exports = {
   addCustomerToLarkBase,
   updateCustomerInLarkBase,
@@ -915,4 +1275,10 @@ module.exports = {
   batchAddCustomersToLarkBase,
   // getAllExistingCustomerIds,
   checkSpecificCustomersExist,
+  getAllCustomersFromLarkBase,
+  findDuplicateCustomersByCode,
+  analyzeDuplicatesByCode,
+  deleteDuplicateCustomersByCode,
+  deleteLarkBaseRecord,
+  quickDuplicateCheckByCode,
 };

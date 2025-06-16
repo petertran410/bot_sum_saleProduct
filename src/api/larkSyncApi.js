@@ -9,8 +9,95 @@ const {
 } = require("../syncKiot/syncKiotWithLark");
 
 const {
+  quickDuplicateCheckByCode,
+  analyzeDuplicatesByCode,
+  deleteDuplicateCustomersByCode,
+} = require("../lark/customerLarkService");
+
+const {
   triggerManualCustomerLarkSync,
 } = require("../../scheduler/customerLarkScheduler");
+
+router.get("/customers/duplicates/check", async (req, res) => {
+  try {
+    console.log("🔍 API: Starting duplicate check...");
+
+    const result = await quickDuplicateCheckByCode();
+
+    res.json({
+      success: true,
+      message:
+        result.duplicateGroups > 0
+          ? `Found ${result.duplicateGroups} duplicate groups`
+          : "No duplicates found",
+      data: result,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("❌ API Error - Duplicate check:", error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
+/**
+ * GET /api/lark-sync/customers/duplicates/analyze
+ * Detailed analysis of duplicate customers
+ */
+router.get("/customers/duplicates/analyze", async (req, res) => {
+  try {
+    console.log("🔍 API: Starting detailed duplicate analysis...");
+
+    const result = await analyzeDuplicatesByCode();
+
+    res.json({
+      success: true,
+      message: `Analysis completed. Found ${result.summary.duplicateGroups} duplicate groups.`,
+      data: result,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("❌ API Error - Duplicate analysis:", error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
+/**
+ * POST /api/lark-sync/customers/duplicates/cleanup
+ * Clean up duplicate customers (with dry run option)
+ */
+router.post("/customers/duplicates/cleanup", async (req, res) => {
+  try {
+    const { dryRun = true } = req.body;
+
+    console.log(`🗑️ API: Starting duplicate cleanup (dryRun: ${dryRun})...`);
+
+    const result = await deleteDuplicateCustomersByCode(dryRun);
+
+    res.json({
+      success: result.success,
+      message: dryRun
+        ? `Dry run completed. Would delete ${result.totalDeletions} duplicate records.`
+        : `Cleanup completed. Deleted ${result.successCount} duplicate records.`,
+      data: result,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("❌ API Error - Duplicate cleanup:", error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
 
 /**
  * POST /api/lark-sync/customers/current
