@@ -44,7 +44,7 @@ const dbConfig = {
   database: process.env.DB_NAME || "kiotviet_data",
   // ✅ ADD THESE LINES:
   charset: "utf8mb4",
-  collation: "utf8mb4_unicode_ci",
+  // collation: "utf8mb4_unicode_ci",
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,

@@ -1,3 +1,4 @@
+// File: src/index.js - FIXED VERSION following original structure
 require("dotenv").config();
 const express = require("express");
 const {
@@ -20,7 +21,7 @@ const {
   runPricebookSync,
 } = require("./syncKiot/syncKiot");
 const { testConnection } = require("./db");
-const { initializeDatabase } = require("./db/init");
+const { initializeDatabase } = require("./db/init"); // ✅ RESTORED: This was missing!
 const { addRecordToCRMBase, getCRMStats, sendTestMessage } = require("./lark");
 
 const app = express();
@@ -86,6 +87,7 @@ app.get("/", (req, res) => {
       saleChannelStatus: "GET /api/sync/salechannels/status",
       syncTrademarks: "POST /api/sync/trademarks",
       trademarkStatus: "GET /api/sync/trademarks/status",
+      // ✅ NEW: Customer Lark sync endpoints
       syncCustomerLark: "POST /api/sync/customer-lark",
       customerLarkStatus: "GET /api/sync/customer-lark/status",
     },
@@ -151,11 +153,76 @@ app.post("/api/submit-registration", async (req, res) => {
   }
 });
 
+// ✅ NEW: Customer Lark sync endpoints
+app.post("/api/sync/customer-lark", async (req, res) => {
+  try {
+    console.log("🚀 Manual customer Lark current sync triggered");
+
+    const { saveSyncCustomerIntoLark } = require("./db/customerLarkService");
+    const result = await saveSyncCustomerIntoLark(2);
+
+    res.json({
+      success: true,
+      message: "Customer Lark sync completed",
+      data: result.stats,
+    });
+  } catch (error) {
+    console.error("❌ Manual customer Lark sync failed:", error);
+    res.status(500).json({
+      success: false,
+      message: "Customer Lark sync failed",
+      error: error.message,
+    });
+  }
+});
+
+app.get("/api/sync/customer-lark/status", async (req, res) => {
+  try {
+    const { getSyncStatus } = require("./db/customerLarkService");
+    const status = await getSyncStatus();
+
+    res.json({
+      success: true,
+      data: status,
+    });
+  } catch (error) {
+    console.error("❌ Error getting customer Lark sync status:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to get customer Lark sync status",
+      error: error.message,
+    });
+  }
+});
+
+const initializeStaticData = async () => {
+  try {
+    console.log("🚀 Initializing static data...");
+
+    // Add location sync here
+    const { runLocationSync } = require("./syncKiot/syncKiot");
+    await runLocationSync();
+
+    console.log("✅ Static data initialization completed");
+  } catch (error) {
+    console.error("❌ Static data initialization failed:", error);
+  }
+};
+
+// initializeStaticData();
+
 async function startServer() {
   try {
     const dbConnected = await testConnection();
 
     if (!dbConnected) {
+      process.exit(1);
+    }
+
+    // ✅ RESTORED: This was missing!
+    const dbInitialized = await initializeDatabase();
+
+    if (!dbInitialized) {
       process.exit(1);
     }
 
