@@ -511,10 +511,10 @@ const getCustomers = async () => {
           pageSize: pageSize,
           currentItem: currentItem,
           lastModifiedFrom: fromDateStr, // 🔥 KEY CHANGE: Time filtering
-          orderBy: "modifiedDate", // Sort by modification date
+          orderBy: "id", // Sort by modification date
           orderDirection: "DESC",
           includeRemoveIds: true, // Include deleted customers
-          includeTotal: false, // Don't include heavy calculations
+          includeTotal: true, // Don't include heavy calculations
           includeCustomerGroup: true, // Include group info
         },
         headers: {
@@ -579,7 +579,7 @@ const getCustomersByDate = async (daysAgo, specificDate = null) => {
             pageSize,
             currentItem,
             orderBy: "id",
-            orderDirection: "ASC",
+            orderDirection: "DESC",
             includeTotal: true,
             includeCustomerGroup: true,
             includeCustomerSocial: true,
@@ -618,7 +618,6 @@ const getCustomersByDate = async (daysAgo, specificDate = null) => {
       return results;
     }
 
-    // Regular date range processing
     for (let currentDaysAgo = daysAgo; currentDaysAgo >= 0; currentDaysAgo--) {
       const targetDate = new Date();
       targetDate.setDate(targetDate.getDate() - currentDaysAgo);
@@ -643,7 +642,7 @@ const getCustomersByDate = async (daysAgo, specificDate = null) => {
             pageSize,
             currentItem,
             orderBy: "id",
-            orderDirection: "ASC",
+            orderDirection: "DESC",
             includeTotal: true,
             includeCustomerGroup: true,
             includeCustomerSocial: true,
