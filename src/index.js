@@ -1,4 +1,4 @@
-// File: src/index.js - FIXED VERSION following original structure
+// File: src/index.js - COMPLETE FILE with Option 1 implemented
 require("dotenv").config();
 const express = require("express");
 const {
@@ -21,7 +21,7 @@ const {
   runPricebookSync,
 } = require("./syncKiot/syncKiot");
 const { testConnection } = require("./db");
-const { initializeDatabase } = require("./db/init"); // ✅ RESTORED: This was missing!
+const { initializeDatabase } = require("./db/init");
 const { addRecordToCRMBase, getCRMStats, sendTestMessage } = require("./lark");
 
 const app = express();
@@ -87,7 +87,7 @@ app.get("/", (req, res) => {
       saleChannelStatus: "GET /api/sync/salechannels/status",
       syncTrademarks: "POST /api/sync/trademarks",
       trademarkStatus: "GET /api/sync/trademarks/status",
-      // ✅ NEW: Customer Lark sync endpoints
+      // Customer Lark sync endpoints
       syncCustomerLark: "POST /api/sync/customer-lark",
       customerLarkStatus: "GET /api/sync/customer-lark/status",
     },
@@ -153,19 +153,30 @@ app.post("/api/submit-registration", async (req, res) => {
   }
 });
 
-// ✅ NEW: Customer Lark sync endpoints
+// Customer Lark sync endpoints
 app.post("/api/sync/customer-lark", async (req, res) => {
   try {
     console.log("🚀 Manual customer Lark current sync triggered");
 
-    const { saveSyncCustomerIntoLark } = require("./db/customerLarkService");
-    const result = await saveSyncCustomerIntoLark(2);
+    const { syncCustomersToLark } = require("./db/customerLarkService");
+    const { getCustomers } = require("./kiotviet");
 
-    res.json({
-      success: true,
-      message: "Customer Lark sync completed",
-      data: result.stats,
-    });
+    // Get current customers and sync to Lark
+    const customers = await getCustomers();
+    if (customers && customers.data && Array.isArray(customers.data)) {
+      const result = await syncCustomersToLark(customers.data);
+      res.json({
+        success: true,
+        message: "Customer Lark sync completed",
+        data: result.stats,
+      });
+    } else {
+      res.json({
+        success: true,
+        message: "No customers to sync",
+        data: { total: 0, success: 0, failed: 0 },
+      });
+    }
   } catch (error) {
     console.error("❌ Manual customer Lark sync failed:", error);
     res.status(500).json({
@@ -219,7 +230,6 @@ async function startServer() {
       process.exit(1);
     }
 
-    // ✅ RESTORED: This was missing!
     const dbInitialized = await initializeDatabase();
 
     if (!dbInitialized) {
@@ -273,7 +283,7 @@ async function startServer() {
           "orders"
         );
 
-        // ✅ NEW: Add customer Lark sync status check
+        // Customer Lark sync status check
         const customerLarkSyncStatus = await getSyncStatusSafely(
           "../src/db/customerLarkService",
           "customer_lark"
@@ -300,13 +310,13 @@ async function startServer() {
             orderSyncStatus.historicalCompleted ? "✅" : "❌"
           }, Last: ${orderSyncStatus.lastSync || "Never"}`
         );
-        // ✅ NEW: Add customer Lark status
         console.log(
           `   Customer→Lark: Historical ${
             customerLarkSyncStatus.historicalCompleted ? "✅" : "❌"
           }, Last: ${customerLarkSyncStatus.lastSync || "Never"}`
         );
 
+        // Historical syncs - run if not completed
         if (!userSyncStatus.historicalCompleted) {
           await runSyncSafely(() => {
             const { saveUsersByDate } = require("./db/userService");
@@ -335,13 +345,13 @@ async function startServer() {
           }, "Orders Historical");
         }
 
-        // ✅ NEW: Customer Lark historical sync
+        // Customer Lark historical sync
         if (!customerLarkSyncStatus.historicalCompleted) {
           await runSyncSafely(() => {
             const {
-              saveSyncByDateCustomerIntoLark,
+              saveCustomersByDateToLark,
             } = require("./db/customerLarkService");
-            return saveSyncByDateCustomerIntoLark();
+            return saveCustomersByDateToLark(historicalDaysAgo);
           }, "Customer→Lark Historical");
         }
 
@@ -349,9 +359,32 @@ async function startServer() {
           process.env.SCAN_INTERVAL_SECONDS || "15"
         );
 
+        // ✅ OPTION 1 IMPLEMENTATION: Current sync with customer_lark protection
         setInterval(async () => {
           try {
             console.log("🔄 Starting sync operations...");
+
+            // ✅ CRITICAL CHECK: Get customer_lark status first
+            const currentCustomerLarkSyncStatus = await getSyncStatusSafely(
+              "../src/db/customerLarkService",
+              "customer_lark"
+            );
+
+            // ✅ PAUSE ALL CURRENT SYNCS if customer_lark historical is running
+            if (!currentCustomerLarkSyncStatus.historicalCompleted) {
+              console.log(
+                "⏸️ PAUSING all current syncs - Customer→Lark historical sync is running..."
+              );
+              console.log(
+                "📊 Current sync will resume automatically after Customer→Lark historical completes"
+              );
+              return; // Exit early, skip all current syncs
+            }
+
+            // ✅ Only run current syncs if customer_lark historical is completed
+            console.log(
+              "▶️ Customer→Lark historical completed - Running normal current syncs"
+            );
 
             const currentUserSyncStatus = await getSyncStatusSafely(
               "../src/db/userService",
@@ -370,47 +403,90 @@ async function startServer() {
               "orders"
             );
 
-            // ✅ NEW: Get current customer Lark sync status
-            const currentCustomerLarkSyncStatus = await getSyncStatusSafely(
-              "../src/db/customerLarkService",
-              "customer_lark"
-            );
-
+            // ✅ FIXED: Current syncs with proper data fetching
             if (currentUserSyncStatus.historicalCompleted) {
-              await runSyncSafely(() => {
+              await runSyncSafely(async () => {
+                const { getUsers } = require("./kiotviet");
                 const { saveUsers } = require("./db/userService");
-                return saveUsers();
+                const users = await getUsers();
+                if (users && users.data && Array.isArray(users.data)) {
+                  return await saveUsers(users.data);
+                }
+                return {
+                  success: true,
+                  stats: { total: 0, success: 0, failed: 0 },
+                };
               }, "Users Current");
             }
 
             if (currentCustomerSyncStatus.historicalCompleted) {
-              await runSyncSafely(() => {
+              await runSyncSafely(async () => {
+                const { getCustomers } = require("./kiotviet");
                 const { saveCustomers } = require("./db/customerService");
-                return saveCustomers();
+                const customers = await getCustomers();
+                if (
+                  customers &&
+                  customers.data &&
+                  Array.isArray(customers.data)
+                ) {
+                  return await saveCustomers(customers.data);
+                }
+                return {
+                  success: true,
+                  stats: { total: 0, success: 0, failed: 0 },
+                };
               }, "Customers Current");
             }
 
             if (currentProductSyncStatus.historicalCompleted) {
-              await runSyncSafely(() => {
+              await runSyncSafely(async () => {
+                const { getProducts } = require("./kiotviet");
                 const { saveProducts } = require("./db/productService");
-                return saveProducts();
+                const products = await getProducts();
+                if (products && products.data && Array.isArray(products.data)) {
+                  return await saveProducts(products.data);
+                }
+                return {
+                  success: true,
+                  stats: { total: 0, success: 0, failed: 0 },
+                };
               }, "Products Current");
             }
 
             if (currentOrderSyncStatus.historicalCompleted) {
-              await runSyncSafely(() => {
+              await runSyncSafely(async () => {
+                const { getOrders } = require("./kiotviet");
                 const { saveOrders } = require("./db/orderService");
-                return saveOrders();
+                const orders = await getOrders();
+                if (orders && orders.data && Array.isArray(orders.data)) {
+                  return await saveOrders(orders.data);
+                }
+                return {
+                  success: true,
+                  stats: { total: 0, success: 0, failed: 0 },
+                };
               }, "Orders Current");
             }
 
-            // ✅ NEW: Customer Lark current sync
+            // ✅ Customer Lark current sync (only runs after historical is complete)
             if (currentCustomerLarkSyncStatus.historicalCompleted) {
-              await runSyncSafely(() => {
+              await runSyncSafely(async () => {
+                const { getCustomers } = require("./kiotviet");
                 const {
-                  saveSyncCustomerIntoLark,
+                  syncCustomersToLark,
                 } = require("./db/customerLarkService");
-                return saveSyncCustomerIntoLark(2); // 2 days back for current sync
+                const customers = await getCustomers();
+                if (
+                  customers &&
+                  customers.data &&
+                  Array.isArray(customers.data)
+                ) {
+                  return await syncCustomersToLark(customers.data);
+                }
+                return {
+                  success: true,
+                  stats: { total: 0, success: 0, failed: 0 },
+                };
               }, "Customer→Lark Current");
             }
           } catch (error) {

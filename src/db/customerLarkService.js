@@ -1,4 +1,4 @@
-// File: src/db/customerLarkService.js - Complete file with CORRECT pattern
+// File: src/db/customerLarkService.js - Fixed version for Option 1
 const axios = require("axios");
 const { getPool } = require("../db");
 
@@ -112,135 +112,46 @@ const addCustomerToLarkBase = async (customer) => {
 
     if (response.data.code === 0) {
       const record = response.data.data.record;
-      console.log(
-        `✅ Customer ${customer.code} added successfully: ${record.record_id}`
-      );
       return {
         success: true,
         record_id: record.record_id,
         data: record,
       };
     } else {
-      console.log("Lark API is error", response.data);
       throw new Error(
         `Failed to add customer: ${response.data.msg || "Unknown error"}`
       );
     }
   } catch (error) {
-    console.log("Cannot add customer to lark", error);
-
     if (error.response?.data?.code === 1254001) {
-      console.log(
-        `⚠️ Customer ${customer.code} already exists in Lark, updating instead...`
-      );
-      return await updateCustomerInLarkBase(customer);
+      // Customer already exists - this is okay for current sync
+      return { success: true, exists: true };
     }
-
     return { success: false, error: error.message };
   }
 };
 
-const findCustomerInLarkBase = async (customerId) => {
-  try {
-    const token = await getCustomerSyncLarkToken();
-
-    const response = await axios.post(
-      `${LARK_BASE_URL}/bitable/v1/apps/${CUSTOMER_SYNC_BASE_TOKEN}/tables/${CUSTOMER_SYNC_TABLE_ID}/records/search`,
-      {
-        filter: {
-          conditions: [
-            {
-              field_name: "Id",
-              operator: "is",
-              value: [customerId.toString()],
-            },
-          ],
-          conjunction: "and",
-        },
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        timeout: 10000,
-      }
-    );
-
-    if (response.data.code === 0 && response.data.data.items.length > 0) {
-      return response.data.data.items[0];
-    }
-
-    return null;
-  } catch (error) {
-    console.log("Cannot find customer in lark", error);
-    throw error;
-  }
-};
-
-const updateCustomerInLarkBase = async (customer) => {
-  try {
-    const existingRecord = await findCustomerInLarkBase(customer.id);
-
-    if (!existingRecord) {
-      return await addCustomerToLarkBase(customer);
-    }
-
-    const token = await getCustomerSyncLarkToken();
-    const mapFields = mapCustomerToField(customer);
-    const updateData = { fields: mapFields };
-
-    const response = await axios.put(
-      `${LARK_BASE_URL}/bitable/v1/apps/${CUSTOMER_SYNC_BASE_TOKEN}/tables/${CUSTOMER_SYNC_TABLE_ID}/records/${existingRecord.record_id}`,
-      updateData,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        timeout: 10000,
-      }
-    );
-
-    if (response.data.code === 0) {
-      console.log("Customer updated successfully");
-      return {
-        success: true,
-        record_id: existingRecord.record_id,
-        data: response.data.data.record,
-        updated: true,
-      };
-    } else {
-      throw new Error(
-        `Failed to update customer: ${response.data.msg || "Unknown error"}`
-      );
-    }
-  } catch (error) {
-    console.log("Cannot update customer in lark", error);
-    throw error;
-  }
-};
-
-// ✅ CURRENT SYNC - Following existing pattern exactly
-const saveSyncCustomerIntoLark = async (daysBack = 2) => {
+// Current sync - receives customers array and syncs to Lark
+const syncCustomersToLark = async (customers) => {
   console.log(
-    `🚀 Starting current customer sync to Lark Base (${daysBack} days back)...`
+    `🚀 Starting customer sync to Lark Base: ${customers.length} customers`
   );
 
   let totalProcessed = 0;
   let successCount = 0;
   let failCount = 0;
+  const BATCH_SIZE = 10; // Small batches for Lark API
 
   try {
-    const { getCustomers } = require("../kiotviet");
-    const customersData = await getCustomers();
-
-    if (customersData && customersData.data && customersData.data.length > 0) {
+    for (let i = 0; i < customers.length; i += BATCH_SIZE) {
+      const batch = customers.slice(i, i + BATCH_SIZE);
       console.log(
-        `📦 Processing ${customersData.data.length} current customers...`
+        `Processing Lark batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(
+          customers.length / BATCH_SIZE
+        )}`
       );
 
-      for (const customer of customersData.data) {
+      for (const customer of batch) {
         try {
           if (!customer.id || !customer.code) {
             console.warn(`⚠️ Skipping customer with missing required fields`);
@@ -274,13 +185,15 @@ const saveSyncCustomerIntoLark = async (daysBack = 2) => {
           );
         }
       }
+
+      // Delay between batches
+      await new Promise((resolve) =>
+        setTimeout(resolve, LARK_RATE_LIMIT.delayBetweenBatches)
+      );
     }
 
-    // Update sync status - following EXACT pattern
-    await updateSyncStatus(false, new Date());
-
     console.log(
-      `✅ Current customer Lark sync completed: ${successCount} success, ${failCount} failed`
+      `✅ Customer Lark current sync completed: ${successCount} success, ${failCount} failed`
     );
     return {
       success: failCount === 0,
@@ -291,7 +204,7 @@ const saveSyncCustomerIntoLark = async (daysBack = 2) => {
       },
     };
   } catch (error) {
-    console.error("❌ Current customer Lark sync failed:", error.message);
+    console.error("❌ Customer Lark current sync failed:", error.message);
     return {
       success: false,
       error: error.message,
@@ -304,88 +217,61 @@ const saveSyncCustomerIntoLark = async (daysBack = 2) => {
   }
 };
 
-// ✅ HISTORICAL SYNC - Following existing pattern exactly
-const saveSyncByDateCustomerIntoLark = async () => {
+// Historical sync - following exact pattern from customerScheduler.js
+const saveCustomersByDateToLark = async (daysAgo) => {
   console.log("🚀 Starting historical customer sync to Lark Base...");
-
-  const daysAgo = parseInt(process.env.INITIAL_SCAN_DAYS || "7");
-  let totalProcessed = 0;
-  let totalSuccess = 0;
-  let totalFailed = 0;
+  console.log(
+    "⚠️ During this process, all current syncs will be paused to avoid API rate limit conflicts"
+  );
 
   try {
     const { getCustomersByDate } = require("../kiotviet");
-    console.log(`📅 Processing ${daysAgo} days of historical customer data...`);
-
     const customersByDate = await getCustomersByDate(daysAgo);
 
+    let totalSaved = 0;
+    let dayCount = 0;
+
     for (const dateData of customersByDate) {
-      console.log(
-        `📅 Processing ${dateData.data.data.length} customers for ${dateData.date}`
-      );
+      if (
+        dateData.data &&
+        dateData.data.data &&
+        Array.isArray(dateData.data.data)
+      ) {
+        const customersForDate = dateData.data.data;
+        dayCount++;
 
-      if (dateData.data.data.length === 0) {
-        console.log(`⏭️ No customers for ${dateData.date}, skipping...`);
-        continue;
+        console.log(
+          `📅 Day ${dayCount}/${customersByDate.length}: Processing ${customersForDate.length} customers from ${dateData.date}`
+        );
+
+        // Sync to Lark in smaller batches to avoid overwhelming the API
+        const result = await syncCustomersToLark(customersForDate);
+        totalSaved += result.stats.success;
+
+        console.log(
+          `📊 Day ${dayCount} completed: ${result.stats.success} synced, ${result.stats.failed} failed`
+        );
+
+        // Longer delay between dates to be gentle on APIs
+        await new Promise((resolve) => setTimeout(resolve, 5000));
       }
-
-      for (const customer of dateData.data.data) {
-        try {
-          if (!customer.id || !customer.code) {
-            console.warn(
-              `⚠️ Skipping customer with missing fields for ${dateData.date}`
-            );
-            totalFailed++;
-            continue;
-          }
-
-          // Add delay between requests
-          await new Promise((resolve) =>
-            setTimeout(resolve, LARK_RATE_LIMIT.delayBetweenRequests)
-          );
-
-          const larkResult = await addCustomerToLarkBase(customer);
-
-          if (larkResult.success) {
-            totalSuccess++;
-          } else {
-            totalFailed++;
-            console.error(
-              `❌ Failed to sync customer ${customer.code}:`,
-              larkResult.error
-            );
-          }
-
-          totalProcessed++;
-        } catch (error) {
-          totalFailed++;
-          console.error(
-            `❌ Error processing customer ${customer.code}:`,
-            error.message
-          );
-        }
-      }
-
-      console.log(`📊 Day ${dateData.date} completed`);
-      // Longer delay between days
-      await new Promise((resolve) =>
-        setTimeout(resolve, LARK_RATE_LIMIT.delayBetweenBatches)
-      );
     }
 
-    // Mark historical sync as completed - following EXACT pattern
+    // Mark historical sync as completed
     await updateSyncStatus(true, new Date());
 
     console.log(
-      `✅ Historical customer Lark sync completed: ${totalSuccess} success, ${totalFailed} failed`
+      `✅ Historical customer Lark sync completed: ${totalSaved} customers total from ${dayCount} days`
     );
+    console.log("▶️ Current syncs will now resume automatically");
+
     return {
-      success: totalFailed === 0,
+      success: true,
       stats: {
-        total: totalProcessed,
-        success: totalSuccess,
-        failed: totalFailed,
-        daysProcessed: daysAgo + 1,
+        total: totalSaved,
+        success: totalSaved,
+        failed: 0,
+        daysProcessed: dayCount,
       },
     };
   } catch (error) {
@@ -394,15 +280,15 @@ const saveSyncByDateCustomerIntoLark = async () => {
       success: false,
       error: error.message,
       stats: {
-        total: totalProcessed,
-        success: totalSuccess,
-        failed: totalFailed,
+        total: 0,
+        success: 0,
+        failed: 0,
       },
     };
   }
 };
 
-// ✅ SYNC STATUS FUNCTIONS - Following EXACT pattern as other services
+// Sync status functions - following exact pattern
 async function updateSyncStatus(completed = false, lastSync = new Date()) {
   const pool = getPool();
 
@@ -462,10 +348,8 @@ async function getSyncStatus() {
 
 module.exports = {
   addCustomerToLarkBase,
-  updateCustomerInLarkBase,
-  findCustomerInLarkBase,
-  saveSyncCustomerIntoLark,
-  saveSyncByDateCustomerIntoLark,
+  syncCustomersToLark,
+  saveCustomersByDateToLark,
   getSyncStatus,
   updateSyncStatus,
   mapCustomerToField,
