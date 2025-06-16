@@ -495,7 +495,7 @@ const getCustomers = async () => {
 
     // Get only customers modified in last 48 hours for CURRENT sync
     const fromDate = new Date();
-    fromDate.setDate(fromDate.getDate() - 176); // 2 days for current sync
+    fromDate.setDate(fromDate.getDate() - 7); // 7 days for current sync
     const fromDateStr = fromDate.toISOString().split("T")[0];
 
     console.log(
