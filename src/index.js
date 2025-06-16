@@ -153,10 +153,67 @@ app.post("/api/submit-registration", async (req, res) => {
   }
 });
 
+app.post("/api/sync/customer-lark/paginated", async (req, res) => {
+  try {
+    const { enableDuplicationCheck = true } = req.body;
+    console.log(
+      `🚀 Manual customer Lark PAGINATION sync triggered (duplication check: ${enableDuplicationCheck})`
+    );
+
+    const {
+      syncAllCustomersToLarkPaginated,
+    } = require("./db/customerLarkService");
+
+    const result = await syncAllCustomersToLarkPaginated(
+      enableDuplicationCheck
+    );
+
+    res.json({
+      success: true,
+      message: "Customer Lark pagination sync completed",
+      data: result.stats,
+    });
+  } catch (error) {
+    console.error("❌ Manual customer Lark pagination sync failed:", error);
+    res.status(500).json({
+      success: false,
+      message: "Customer Lark pagination sync failed",
+      error: error.message,
+    });
+  }
+});
+
+// 🔍 DUPLICATION CHECK ENDPOINTS
+app.get("/api/sync/customer-lark/duplicates", async (req, res) => {
+  try {
+    console.log("🔍 Manual duplicate check triggered");
+
+    const { getDuplicateCustomersReport } = require("./db/customerLarkService");
+
+    const result = await getDuplicateCustomersReport();
+
+    res.json({
+      success: true,
+      message: "Duplicate check completed",
+      data: result,
+    });
+  } catch (error) {
+    console.error("❌ Duplicate check failed:", error);
+    res.status(500).json({
+      success: false,
+      message: "Duplicate check failed",
+      error: error.message,
+    });
+  }
+});
+
 // Customer Lark sync endpoints
 app.post("/api/sync/customer-lark", async (req, res) => {
   try {
-    console.log("🚀 Manual customer Lark current sync triggered");
+    const { enableDuplicationCheck = true } = req.body;
+    console.log(
+      `🚀 Manual customer Lark current sync triggered (duplication check: ${enableDuplicationCheck})`
+    );
 
     const { syncCustomersToLark } = require("./db/customerLarkService");
     const { getCustomers } = require("./kiotviet");
@@ -164,7 +221,10 @@ app.post("/api/sync/customer-lark", async (req, res) => {
     // Get current customers and sync to Lark
     const customers = await getCustomers();
     if (customers && customers.data && Array.isArray(customers.data)) {
-      const result = await syncCustomersToLark(customers.data);
+      const result = await syncCustomersToLark(
+        customers.data,
+        enableDuplicationCheck
+      );
       res.json({
         success: true,
         message: "Customer Lark sync completed",
@@ -208,18 +268,22 @@ app.get("/api/sync/customer-lark/status", async (req, res) => {
 
 app.post("/api/sync/customer-lark/historical", async (req, res) => {
   try {
-    const { daysAgo } = req.body;
+    const { enableDuplicationCheck = true } = req.body;
     console.log(
-      `🚀 Manual customer Lark historical sync triggered for ${daysAgo} days`
+      `🚀 Manual customer Lark historical sync triggered (pagination-based, duplication check: ${enableDuplicationCheck})`
     );
 
-    const { saveCustomersByDateToLark } = require("./db/customerLarkService");
+    const {
+      syncAllCustomersToLarkPaginated,
+    } = require("./db/customerLarkService");
 
-    const result = await saveCustomersByDateToLark(daysAgo || 176);
+    const result = await syncAllCustomersToLarkPaginated(
+      enableDuplicationCheck
+    );
 
     res.json({
       success: true,
-      message: "Customer Lark historical sync completed",
+      message: "Customer Lark historical sync completed (pagination-based)",
       data: result.stats,
     });
   } catch (error) {
@@ -231,50 +295,6 @@ app.post("/api/sync/customer-lark/historical", async (req, res) => {
     });
   }
 });
-
-app.post("/api/sync/customer-lark/historical-chunked", async (req, res) => {
-  try {
-    const { daysAgo } = req.body;
-    console.log(
-      `🚀 Manual customer Lark CHUNKED historical sync triggered for ${daysAgo} days`
-    );
-
-    const {
-      saveCustomersByDateToLarkChunked,
-    } = require("./db/customerLarkService");
-
-    const result = await saveCustomersByDateToLarkChunked(daysAgo || 176);
-
-    res.json({
-      success: true,
-      message: "Customer Lark chunked historical sync completed",
-      data: result.stats,
-    });
-  } catch (error) {
-    console.error("❌ Manual customer Lark chunked sync failed:", error);
-    res.status(500).json({
-      success: false,
-      message: "Customer Lark chunked sync failed",
-      error: error.message,
-    });
-  }
-});
-
-const initializeStaticData = async () => {
-  try {
-    console.log("🚀 Initializing static data...");
-
-    // Add location sync here
-    const { runLocationSync } = require("./syncKiot/syncKiot");
-    await runLocationSync();
-
-    console.log("✅ Static data initialization completed");
-  } catch (error) {
-    console.error("❌ Static data initialization failed:", error);
-  }
-};
-
-// initializeStaticData();
 
 async function startServer() {
   try {
@@ -403,10 +423,13 @@ async function startServer() {
         if (!customerLarkSyncStatus.historicalCompleted) {
           await runSyncSafely(() => {
             const {
-              saveCustomersByDateToLark,
+              syncAllCustomersToLarkPaginated, // ← NEW PAGINATION SYSTEM
             } = require("./db/customerLarkService");
-            return saveCustomersByDateToLark(historicalDaysAgo);
-          }, "Customer→Lark Historical");
+            console.log(
+              "🚀 Starting automatic Customer→Lark historical sync using PAGINATION + DUPLICATION"
+            );
+            return syncAllCustomersToLarkPaginated(true); // Enable duplication checking
+          }, "Customer→Lark Historical (Pagination + Duplication)");
         }
 
         const syncIntervalSeconds = parseInt(
@@ -535,13 +558,14 @@ async function startServer() {
                   customers.data &&
                   Array.isArray(customers.data)
                 ) {
-                  return await syncCustomersToLark(customers.data);
+                  // ✅ Enable duplication checking for current sync too
+                  return await syncCustomersToLark(customers.data, true);
                 }
                 return {
                   success: true,
                   stats: { total: 0, success: 0, failed: 0 },
                 };
-              }, "Customer→Lark Current");
+              }, "Customer→Lark Current (with Duplication Check)");
             }
           } catch (error) {
             console.error("❌ Error in sync interval:", error.message);
