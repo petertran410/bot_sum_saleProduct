@@ -572,9 +572,9 @@ async function startServer() {
                   };
                 }
 
-                // ✅ FIX 9: Get only RECENTLY MODIFIED customers (last 2 hours instead of 24 hours)
+                // ✅ FIX 9: Get only RECENTLY MODIFIED customers
                 const { getRecentlyModifiedCustomers } = require("./kiotviet");
-                const customers = await getRecentlyModifiedCustomers(2); // Last 2 hours only
+                const customers = await getRecentlyModifiedCustomers(48);
 
                 if (
                   customers &&
