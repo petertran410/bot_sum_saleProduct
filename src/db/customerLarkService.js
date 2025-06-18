@@ -293,14 +293,6 @@ const syncAllCustomersToLarkPaginated = async (
     totalCustomers = firstResponse.data.total || 0;
     totalPages = Math.ceil(totalCustomers / pageSize);
 
-    console.log(`📈 PAGINATION INFO:`);
-    console.log(`   Total customers: ${totalCustomers.toLocaleString()}`);
-    console.log(`   Page size: ${pageSize}`);
-    console.log(`   Total pages: ${totalPages.toLocaleString()}`);
-    console.log(
-      `   Estimated time: ${Math.ceil((totalPages * 2) / 60)} minutes`
-    );
-
     // 🎯 STEP 2: Process first page (already fetched)
     if (firstResponse.data.data && firstResponse.data.data.length > 0) {
       currentPage = 1;
@@ -395,35 +387,13 @@ const syncAllCustomersToLarkPaginated = async (
         }
       } catch (pageError) {
         console.error(`❌ Error on page ${currentPage}:`, pageError.message);
-        totalFailed += pageSize; // Assume all customers on this page failed
-        currentItem += pageSize; // Skip to next page
+        totalFailed += pageSize;
+        currentItem += pageSize;
       }
     }
 
     // 🎯 STEP 4: Mark as completed (ALWAYS update status)
-    console.log("📊 Updating sync status to completed...");
     await updateSyncStatus(true, new Date());
-    console.log("✅ Sync status updated successfully");
-
-    console.log(`🎉 PAGINATION SYNC COMPLETED!`);
-    console.log(`📊 Final Results:`);
-    console.log(
-      `   ✅ Successfully synced: ${totalSynced.toLocaleString()} customers`
-    );
-    console.log(
-      `   🆕 Created new: ${totalCreated.toLocaleString()} customers`
-    );
-    console.log(
-      `   🔄 Updated existing: ${totalUpdated.toLocaleString()} customers`
-    );
-    console.log(`   ❌ Failed: ${totalFailed.toLocaleString()} customers`);
-    console.log(`   📄 Pages processed: ${currentPage}/${totalPages}`);
-    console.log(
-      `   📈 Success rate: ${(
-        (totalSynced / (totalSynced + totalFailed)) *
-        100
-      ).toFixed(1)}%`
-    );
 
     return {
       success: totalFailed === 0,
@@ -477,7 +447,7 @@ const syncCustomersToLark = async (
   let createdCount = 0;
   let updatedCount = 0;
   let failCount = 0;
-  const BATCH_SIZE = 10; // Small batches for Lark API
+  const BATCH_SIZE = 100;
 
   try {
     for (let i = 0; i < customers.length; i += BATCH_SIZE) {
@@ -537,9 +507,6 @@ const syncCustomersToLark = async (
       );
     }
 
-    console.log(
-      `✅ Customer Lark sync completed: ${successCount} success (${createdCount} new, ${updatedCount} updated), ${failCount} failed`
-    );
     return {
       success: failCount === 0,
       stats: {
