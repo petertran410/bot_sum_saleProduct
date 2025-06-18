@@ -461,133 +461,159 @@ async function startServer() {
         // ✅ OPTION 1 IMPLEMENTATION: Current sync with customer_lark protection
         setInterval(async () => {
           try {
-            console.log("🔄 Starting sync operations...");
+            // Get sync statuses
+            const [
+              userSyncStatus,
+              customerSyncStatus,
+              productSyncStatus,
+              orderSyncStatus,
+              currentCustomerLarkSyncStatus,
+            ] = await Promise.all([
+              getSyncStatusSafely("./db/userService", "Users"),
+              getSyncStatusSafely("./db/customerService", "Customers"),
+              getSyncStatusSafely("./db/productService", "Products"),
+              getSyncStatusSafely("./db/orderService", "Orders"),
+              getSyncStatusSafely("./db/customerLarkService", "Customer→Lark"),
+            ]);
 
-            // ✅ CRITICAL CHECK: Get customer_lark status first
-            const currentCustomerLarkSyncStatus = await getSyncStatusSafely(
-              "../src/db/customerLarkService",
-              "customer_lark"
-            );
-
-            // ✅ PAUSE ALL CURRENT SYNCS if customer_lark historical is running
-            if (!currentCustomerLarkSyncStatus.historicalCompleted) {
-              console.log(
-                "⏸️ PAUSING all current syncs - Customer→Lark historical sync is running..."
-              );
-              console.log(
-                "📊 Current sync will resume automatically after Customer→Lark historical completes"
-              );
-              return; // Exit early, skip all current syncs
-            }
-
-            // ✅ Only run current syncs if customer_lark historical is completed
-            console.log(
-              "▶️ Customer→Lark historical completed - Running normal current syncs"
-            );
-
-            const currentUserSyncStatus = await getSyncStatusSafely(
-              "../src/db/userService",
-              "users"
-            );
-            const currentCustomerSyncStatus = await getSyncStatusSafely(
-              "../src/db/customerService",
-              "customers"
-            );
-            const currentProductSyncStatus = await getSyncStatusSafely(
-              "../src/db/productService",
-              "products"
-            );
-            const currentOrderSyncStatus = await getSyncStatusSafely(
-              "../src/db/orderService",
-              "orders"
-            );
-
-            // ✅ FIXED: Current syncs with proper data fetching
-            if (currentUserSyncStatus.historicalCompleted) {
-              await runSyncSafely(async () => {
-                const { getUsers } = require("./kiotviet");
+            // Current syncs - only run if historical is complete
+            if (userSyncStatus.historicalCompleted) {
+              await runSyncSafely(() => {
                 const { saveUsers } = require("./db/userService");
-                const users = await getUsers();
-                if (users && users.data && Array.isArray(users.data)) {
-                  return await saveUsers(users.data);
-                }
-                return {
-                  success: true,
-                  stats: { total: 0, success: 0, failed: 0 },
-                };
+                const { getUsers } = require("./kiotviet");
+                return getUsers().then((users) => {
+                  if (users && users.data && Array.isArray(users.data)) {
+                    return saveUsers(users.data);
+                  }
+                  return {
+                    success: true,
+                    stats: { total: 0, success: 0, failed: 0 },
+                  };
+                });
               }, "Users Current");
             }
 
-            if (currentCustomerSyncStatus.historicalCompleted) {
-              await runSyncSafely(async () => {
-                const { getCustomers } = require("./kiotviet");
+            if (customerSyncStatus.historicalCompleted) {
+              await runSyncSafely(() => {
                 const { saveCustomers } = require("./db/customerService");
-                const customers = await getCustomers();
-                if (
-                  customers &&
-                  customers.data &&
-                  Array.isArray(customers.data)
-                ) {
-                  return await saveCustomers(customers.data);
-                }
-                return {
-                  success: true,
-                  stats: { total: 0, success: 0, failed: 0 },
-                };
+                const { getCustomers } = require("./kiotviet");
+                return getCustomers().then((customers) => {
+                  if (
+                    customers &&
+                    customers.data &&
+                    Array.isArray(customers.data)
+                  ) {
+                    return saveCustomers(customers.data);
+                  }
+                  return {
+                    success: true,
+                    stats: { total: 0, success: 0, failed: 0 },
+                  };
+                });
               }, "Customers Current");
             }
 
-            if (currentProductSyncStatus.historicalCompleted) {
-              await runSyncSafely(async () => {
-                const { getProducts } = require("./kiotviet");
+            if (productSyncStatus.historicalCompleted) {
+              await runSyncSafely(() => {
                 const { saveProducts } = require("./db/productService");
-                const products = await getProducts();
-                if (products && products.data && Array.isArray(products.data)) {
-                  return await saveProducts(products.data);
-                }
-                return {
-                  success: true,
-                  stats: { total: 0, success: 0, failed: 0 },
-                };
+                const { getProducts } = require("./kiotviet");
+                return getProducts().then((products) => {
+                  if (
+                    products &&
+                    products.data &&
+                    Array.isArray(products.data)
+                  ) {
+                    return saveProducts(products.data);
+                  }
+                  return {
+                    success: true,
+                    stats: { total: 0, success: 0, failed: 0 },
+                  };
+                });
               }, "Products Current");
             }
 
-            if (currentOrderSyncStatus.historicalCompleted) {
-              await runSyncSafely(async () => {
-                const { getOrders } = require("./kiotviet");
+            if (orderSyncStatus.historicalCompleted) {
+              await runSyncSafely(() => {
                 const { saveOrders } = require("./db/orderService");
-                const orders = await getOrders();
-                if (orders && orders.data && Array.isArray(orders.data)) {
-                  return await saveOrders(orders.data);
-                }
-                return {
-                  success: true,
-                  stats: { total: 0, success: 0, failed: 0 },
-                };
+                const { getOrders } = require("./kiotviet");
+                return getOrders().then((orders) => {
+                  if (orders && orders.data && Array.isArray(orders.data)) {
+                    return saveOrders(orders.data);
+                  }
+                  return {
+                    success: true,
+                    stats: { total: 0, success: 0, failed: 0 },
+                  };
+                });
               }, "Orders Current");
             }
 
-            // ✅ Customer Lark current sync (only runs after historical is complete)
+            // ✅ FIXED Customer Lark current sync
             if (currentCustomerLarkSyncStatus.historicalCompleted) {
               await runSyncSafely(async () => {
-                const { getCustomers } = require("./kiotviet");
                 const {
                   syncCustomersToLark,
+                  isCurrentSyncRunning,
                 } = require("./db/customerLarkService");
-                const customers = await getCustomers();
+
+                // ✅ Check if sync is already running
+                const syncStatus = isCurrentSyncRunning();
+                if (syncStatus.running) {
+                  console.log(
+                    `⏭️ Customer→Lark sync already running for ${Math.round(
+                      syncStatus.duration / 1000
+                    )}s, skipping this interval`
+                  );
+                  return {
+                    success: true,
+                    skipped: true,
+                    stats: { total: 0, success: 0, failed: 0 },
+                  };
+                }
+
+                // ✅ FIX 9: Get only RECENTLY MODIFIED customers (last 2 hours instead of 24 hours)
+                const { getRecentlyModifiedCustomers } = require("./kiotviet");
+                const customers = await getRecentlyModifiedCustomers(2); // Last 2 hours only
+
                 if (
                   customers &&
                   customers.data &&
                   Array.isArray(customers.data)
                 ) {
-                  // ✅ Enable duplication checking for current sync too
-                  return await syncCustomersToLark(customers.data, true);
+                  // ✅ Filter out customers that haven't actually changed recently
+                  const recentCustomers = customers.data.filter((customer) => {
+                    if (!customer.modifiedDate) return false;
+
+                    const modifiedTime = new Date(
+                      customer.modifiedDate
+                    ).getTime();
+                    const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000; // 2 hours in milliseconds
+
+                    return modifiedTime > twoHoursAgo;
+                  });
+
+                  console.log(
+                    `🔄 Customer→Lark Current: Processing ${recentCustomers.length} recently modified customers (filtered from ${customers.data.length} total)`
+                  );
+
+                  if (recentCustomers.length === 0) {
+                    console.log("✅ No recently modified customers to sync");
+                    return {
+                      success: true,
+                      stats: { total: 0, success: 0, failed: 0 },
+                    };
+                  }
+
+                  // ✅ Enable duplication checking for current sync
+                  return await syncCustomersToLark(recentCustomers, true);
                 }
+
                 return {
                   success: true,
                   stats: { total: 0, success: 0, failed: 0 },
                 };
-              }, "Customer→Lark Current (with Duplication Check)");
+              }, "Customer→Lark Current (Recently Modified Only)");
             }
           } catch (error) {
             console.error("❌ Error in sync interval:", error.message);

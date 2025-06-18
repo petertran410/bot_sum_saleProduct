@@ -2297,6 +2297,98 @@ const getPricebooks = async () => {
   }
 };
 
+const getRecentlyModifiedCustomers = async (hoursAgo = 2) => {
+  try {
+    const token = await getToken();
+    const pageSize = 100;
+    const allCustomers = [];
+    let currentItem = 0;
+    let hasMoreData = true;
+
+    // Calculate the time threshold (default: last 2 hours)
+    const timeThreshold = new Date();
+    timeThreshold.setHours(timeThreshold.getHours() - hoursAgo);
+    const fromDateStr = timeThreshold.toISOString().split(".")[0] + "Z"; // ISO format
+
+    console.log(
+      `🔍 Fetching customers modified since: ${fromDateStr} (${hoursAgo} hours ago)`
+    );
+
+    while (hasMoreData) {
+      try {
+        const response = await makeApiRequest({
+          method: "GET",
+          url: `${KIOTVIET_BASE_URL}/customers`,
+          params: {
+            pageSize: pageSize,
+            currentItem: currentItem,
+            orderBy: "modifiedDate",
+            orderDirection: "DESC",
+            includeTotal: true,
+            includeCustomerGroup: false, // Reduce payload
+            includeCustomerSocial: false, // Reduce payload
+            lastModifiedFrom: fromDateStr, // Only get recently modified
+          },
+          headers: {
+            Retailer: process.env.KIOT_SHOP_NAME,
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (
+          response.data &&
+          response.data.data &&
+          response.data.data.length > 0
+        ) {
+          const fetchedCustomers = response.data.data;
+
+          // Additional client-side filtering to ensure we only get very recent modifications
+          const recentCustomers = fetchedCustomers.filter((customer) => {
+            if (!customer.modifiedDate) return false;
+
+            const customerModified = new Date(customer.modifiedDate);
+            return customerModified >= timeThreshold;
+          });
+
+          allCustomers.push(...recentCustomers);
+          currentItem += fetchedCustomers.length;
+
+          console.log(
+            `📄 Fetched ${fetchedCustomers.length} customers, ${recentCustomers.length} are recent (total recent: ${allCustomers.length})`
+          );
+
+          // Stop if no recent customers in this batch (since we're ordering by modifiedDate DESC)
+          if (recentCustomers.length === 0 && allCustomers.length > 0) {
+            console.log("🛑 No more recent customers found, stopping fetch");
+            hasMoreData = false;
+          } else {
+            hasMoreData = fetchedCustomers.length === pageSize;
+          }
+
+          await new Promise((resolve) => setTimeout(resolve, 200)); // Rate limiting
+        } else {
+          hasMoreData = false;
+        }
+      } catch (requestError) {
+        console.error(
+          "❌ Error fetching recent customers:",
+          requestError.message
+        );
+        hasMoreData = false;
+      }
+    }
+
+    console.log(`✅ Total recently modified customers: ${allCustomers.length}`);
+    return { data: allCustomers, total: allCustomers.length };
+  } catch (error) {
+    console.error(
+      "❌ Error getting recently modified customers:",
+      error.message
+    );
+    throw error;
+  }
+};
+
 module.exports = {
   getOrders,
   getOrdersByDate,
@@ -2331,4 +2423,5 @@ module.exports = {
   getPricebooks,
   getToken,
   makeApiRequest,
+  getRecentlyModifiedCustomers,
 };

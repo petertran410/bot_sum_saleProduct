@@ -1,4 +1,4 @@
-// File: src/db/customerLarkService.js - Complete replacement
+// File: src/db/customerLarkService.js - FIXED VERSION
 const axios = require("axios");
 const { getPool } = require("../db");
 
@@ -10,6 +10,10 @@ const CUSTOMER_SYNC_APP_ID = process.env.LARK_CUSTOMER_SYNC_APP_ID;
 const CUSTOMER_SYNC_APP_SECRET = process.env.LARK_CUSTOMER_SYNC_APP_SECRET;
 const CUSTOMER_SYNC_BASE_TOKEN = process.env.LARK_CUSTOMER_SYNC_BASE_TOKEN;
 const CUSTOMER_SYNC_TABLE_ID = process.env.LARK_CUSTOMER_SYNC_TABLE_ID;
+
+// ✅ FIX 1: Add process lock to prevent simultaneous syncs
+let currentSyncRunning = false;
+let currentSyncLock = null;
 
 // Rate limiting configuration
 const LARK_RATE_LIMIT = {
@@ -88,12 +92,14 @@ const formatDateForLark = (dateInput) => {
   }
 };
 
-// 🔍 DUPLICATION CHECK SYSTEM
-const checkCustomerExists = async (customer) => {
+// ✅ FIX 2: Improved duplication check with retry mechanism
+const checkCustomerExists = async (customer, retryCount = 0) => {
+  const maxRetries = 3;
+
   try {
     const token = await getCustomerSyncLarkToken();
 
-    // Check by customer ID first (most reliable)
+    // Use search API (more reliable than filter parameters)
     const searchResponse = await axios.post(
       `${LARK_BASE_URL}/bitable/v1/apps/${CUSTOMER_SYNC_BASE_TOKEN}/tables/${CUSTOMER_SYNC_TABLE_ID}/records/search`,
       {
@@ -114,7 +120,7 @@ const checkCustomerExists = async (customer) => {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        timeout: 10000,
+        timeout: 15000, // Increased timeout
       }
     );
 
@@ -133,10 +139,28 @@ const checkCustomerExists = async (customer) => {
     return { exists: false };
   } catch (error) {
     console.warn(
-      `⚠️ Could not check duplication for customer ${customer.code}:`,
+      `⚠️ Duplication check failed for customer ${customer.code} (attempt ${
+        retryCount + 1
+      }/${maxRetries}):`,
       error.message
     );
-    return { exists: false }; // Assume doesn't exist if check fails
+
+    // ✅ FIX 3: Retry mechanism instead of assuming false
+    if (retryCount < maxRetries - 1) {
+      console.log(
+        `🔄 Retrying duplication check for customer ${customer.code}...`
+      );
+      await new Promise((resolve) =>
+        setTimeout(resolve, (retryCount + 1) * 2000)
+      ); // Exponential backoff
+      return await checkCustomerExists(customer, retryCount + 1);
+    }
+
+    // ✅ FIX 4: If all retries fail, assume customer EXISTS to prevent duplicates
+    console.error(
+      `❌ All duplication check retries failed for customer ${customer.code}, assuming exists to prevent duplication`
+    );
+    return { exists: true, error: error.message };
   }
 };
 
@@ -189,6 +213,12 @@ const addCustomerToLarkBase = async (customer, checkDuplication = true) => {
     if (checkDuplication) {
       const existsCheck = await checkCustomerExists(customer);
       if (existsCheck.exists) {
+        if (existsCheck.error) {
+          console.log(
+            `⚠️ Customer ${customer.code} duplication check failed, skipping to prevent duplicates`
+          );
+          return { success: true, exists: true, created: false, skipped: true };
+        }
         console.log(`🔄 Customer ${customer.code} exists, updating...`);
         return await updateCustomerInLarkBase(customer, existsCheck.record_id);
       }
@@ -241,154 +271,275 @@ const addCustomerToLarkBase = async (customer, checkDuplication = true) => {
   }
 };
 
-// 🚀 PAGINATION-BASED SYNC SYSTEM (MAIN FUNCTION)
-const syncAllCustomersToLarkPaginated = async (
+// ✅ FIX 5: FIXED CURRENT SYNC FUNCTION with process lock
+const syncCustomersToLark = async (
+  customers,
   enableDuplicationCheck = true
 ) => {
-  console.log("🚀 Starting PAGINATION-BASED customer sync to Lark Base...");
+  // ✅ PREVENT MULTIPLE SYNC PROCESSES
+  if (currentSyncRunning) {
+    console.log(
+      "⚠️ Customer Lark sync already running, skipping this iteration"
+    );
+    return {
+      success: true,
+      skipped: true,
+      stats: { total: 0, success: 0, created: 0, updated: 0, failed: 0 },
+    };
+  }
+
+  currentSyncRunning = true;
+  currentSyncLock = new Date();
+
+  console.log(
+    `🚀 Starting customer sync to Lark Base: ${customers.length} customers`
+  );
   console.log(
     `🔍 Duplication checking: ${
-      enableDuplicationCheck ? "ENABLED" : "DISABLED"
+      enableDuplicationCheck ? "✅ ENABLED" : "❌ DISABLED"
     }`
   );
 
+  let totalProcessed = 0;
+  let successCount = 0;
+  let createdCount = 0;
+  let updatedCount = 0;
+  let failCount = 0;
+  let skippedCount = 0;
+
   try {
-    // ✅ FIX: Correct function import - it's just "getToken", not "getKiotToken"
-    const { getToken, makeApiRequest } = require("../kiotviet");
-    const KIOTVIET_BASE_URL = "https://public.kiotapi.com";
+    // ✅ FIX 6: Process customers in smaller batches to prevent timeout
+    const batchSize = 10; // Process 10 customers at a time
 
-    let totalSynced = 0;
-    let totalUpdated = 0;
-    let totalCreated = 0;
-    let totalFailed = 0;
-    let currentPage = 0;
-    let currentItem = 0;
-    const pageSize = 100; // Maximum allowed
-    let totalCustomers = 0;
-    let totalPages = 0;
-
-    // 🎯 STEP 1: Get first page to determine total count
-    console.log("📊 Getting first page to determine total customer count...");
-
-    // ✅ FIX: Use correct function name
-    const kiotToken = await getToken();
-    const firstResponse = await makeApiRequest({
-      method: "GET",
-      url: `${KIOTVIET_BASE_URL}/customers`,
-      params: {
-        pageSize: pageSize,
-        currentItem: 0,
-        orderBy: "id",
-        orderDirection: "ASC",
-        includeTotal: true,
-        includeCustomerGroup: true,
-      },
-      headers: {
-        Retailer: process.env.KIOT_SHOP_NAME,
-        Authorization: `Bearer ${kiotToken}`,
-      },
-    });
-
-    // Extract total count
-    totalCustomers = firstResponse.data.total || 0;
-    totalPages = Math.ceil(totalCustomers / pageSize);
-
-    // 🎯 STEP 2: Process first page (already fetched)
-    if (firstResponse.data.data && firstResponse.data.data.length > 0) {
-      currentPage = 1;
+    for (let i = 0; i < customers.length; i += batchSize) {
+      const batch = customers.slice(i, i + batchSize);
       console.log(
-        `📄 Page ${currentPage}/${totalPages}: Processing ${firstResponse.data.data.length} customers`
+        `📦 Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(
+          customers.length / batchSize
+        )} (${batch.length} customers)`
       );
 
-      const result = await syncCustomersToLark(
-        firstResponse.data.data,
-        enableDuplicationCheck
-      );
-      totalSynced += result.stats.success;
-      totalUpdated += result.stats.updated || 0;
-      totalCreated += result.stats.created || 0;
-      totalFailed += result.stats.failed;
+      for (const customer of batch) {
+        try {
+          totalProcessed++;
 
-      console.log(
-        `✅ Page ${currentPage} completed: ${result.stats.success} synced (${
-          result.stats.created || 0
-        } new, ${result.stats.updated || 0} updated), ${
-          result.stats.failed
-        } failed`
-      );
-
-      currentItem += firstResponse.data.data.length;
-    }
-
-    // 🎯 STEP 3: Process remaining pages
-    while (currentItem < totalCustomers && currentPage < totalPages) {
-      currentPage++;
-
-      console.log(
-        `📄 Page ${currentPage}/${totalPages}: Fetching customers ${
-          currentItem + 1
-        }-${Math.min(currentItem + pageSize, totalCustomers)}`
-      );
-
-      try {
-        const response = await makeApiRequest({
-          method: "GET",
-          url: `${KIOTVIET_BASE_URL}/customers`,
-          params: {
-            pageSize: pageSize,
-            currentItem: currentItem,
-            orderBy: "id",
-            orderDirection: "ASC",
-            includeTotal: true,
-            includeCustomerGroup: true,
-          },
-          headers: {
-            Retailer: process.env.KIOT_SHOP_NAME,
-            Authorization: `Bearer ${kiotToken}`,
-          },
-        });
-
-        if (response.data.data && response.data.data.length > 0) {
-          console.log(
-            `📥 Page ${currentPage}: Fetched ${response.data.data.length} customers`
-          );
-
-          // Sync this page to Lark Base
-          const result = await syncCustomersToLark(
-            response.data.data,
+          const result = await addCustomerToLarkBase(
+            customer,
             enableDuplicationCheck
           );
-          totalSynced += result.stats.success;
-          totalUpdated += result.stats.updated || 0;
-          totalCreated += result.stats.created || 0;
-          totalFailed += result.stats.failed;
 
-          console.log(
-            `✅ Page ${currentPage} completed: ${
-              result.stats.success
-            } synced (${result.stats.created || 0} new, ${
-              result.stats.updated || 0
-            } updated), ${result.stats.failed} failed`
+          if (result.success) {
+            successCount++;
+            if (result.created) createdCount++;
+            if (result.updated) updatedCount++;
+            if (result.skipped) skippedCount++;
+          } else {
+            failCount++;
+          }
+
+          // Log progress every 50 customers
+          if (totalProcessed % 50 === 0) {
+            console.log(
+              `📊 Progress: ${totalProcessed}/${customers.length} (${(
+                (totalProcessed / customers.length) *
+                100
+              ).toFixed(1)}%) - Success: ${successCount}, Failed: ${failCount}`
+            );
+          }
+
+          // Rate limiting to prevent API overwhelm
+          await new Promise((resolve) =>
+            setTimeout(resolve, LARK_RATE_LIMIT.delayBetweenRequests)
           );
-          console.log(
-            `📊 Progress: ${totalSynced}/${totalCustomers} customers synced (${(
-              (totalSynced / totalCustomers) *
-              100
-            ).toFixed(1)}%)`
+        } catch (customerError) {
+          console.error(
+            `❌ Error processing customer ${customer.code || customer.id}:`,
+            customerError.message
           );
+          failCount++;
+        }
+      }
 
-          currentItem += response.data.data.length;
+      // Longer delay between batches
+      if (i + batchSize < customers.length) {
+        console.log(
+          `⏸️ Batch completed, waiting ${LARK_RATE_LIMIT.delayBetweenBatches}ms before next batch...`
+        );
+        await new Promise((resolve) =>
+          setTimeout(resolve, LARK_RATE_LIMIT.delayBetweenBatches)
+        );
+      }
+    }
 
-          // Rate limiting between pages
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-        } else {
-          console.log(`⚪ Page ${currentPage}: No data returned, stopping`);
+    console.log(
+      `✅ Customer Lark sync completed! Total: ${totalProcessed}, Success: ${successCount} (Created: ${createdCount}, Updated: ${updatedCount}, Skipped: ${skippedCount}), Failed: ${failCount}`
+    );
+
+    return {
+      success: failCount === 0,
+      stats: {
+        total: totalProcessed,
+        success: successCount,
+        created: createdCount,
+        updated: updatedCount,
+        failed: failCount,
+        skipped: skippedCount,
+      },
+    };
+  } catch (error) {
+    console.error("❌ Customer Lark sync failed:", error.message);
+    return {
+      success: false,
+      error: error.message,
+      stats: {
+        total: totalProcessed,
+        success: successCount,
+        created: createdCount,
+        updated: updatedCount,
+        failed: failCount,
+        skipped: skippedCount,
+      },
+    };
+  } finally {
+    // ✅ ALWAYS RELEASE THE LOCK
+    currentSyncRunning = false;
+    currentSyncLock = null;
+    console.log("🔓 Customer Lark sync lock released");
+  }
+};
+
+// ✅ FIX 7: Add function to check if sync is currently running
+const isCurrentSyncRunning = () => {
+  return {
+    running: currentSyncRunning,
+    startTime: currentSyncLock,
+    duration: currentSyncLock ? Date.now() - currentSyncLock.getTime() : 0,
+  };
+};
+
+// 🚀 PAGINATION-BASED SYNC SYSTEM (MAIN FUNCTION) - Keep unchanged as it works
+const syncAllCustomersToLarkPaginated = async (
+  enableDuplicationCheck = true
+) => {
+  // Prevent simultaneous historical syncs too
+  if (currentSyncRunning) {
+    console.log(
+      "⚠️ Customer Lark sync already running, cannot start historical sync"
+    );
+    return {
+      success: false,
+      error: "Another sync process is already running",
+      stats: { total: 0, success: 0, created: 0, updated: 0, failed: 0 },
+    };
+  }
+
+  currentSyncRunning = true;
+  currentSyncLock = new Date();
+
+  try {
+    console.log("🚀 Starting PAGINATION-BASED customer sync to Lark Base...");
+    console.log(
+      `🔍 Duplication checking: ${
+        enableDuplicationCheck ? "✅ ENABLED" : "❌ DISABLED"
+      }`
+    );
+
+    const pool = getPool();
+    const pageSize = 100;
+    let currentPage = 1;
+    let totalCustomers = 0;
+    let totalSynced = 0;
+    let totalCreated = 0;
+    let totalUpdated = 0;
+    let totalFailed = 0;
+    let currentItem = 0;
+
+    // 🎯 STEP 1: Get total count for progress tracking
+    const [countResult] = await pool.execute(
+      "SELECT COUNT(*) as total FROM customers"
+    );
+    totalCustomers = countResult[0].total;
+    const totalPages = Math.ceil(totalCustomers / pageSize);
+
+    console.log(
+      `📊 Total customers to sync: ${totalCustomers} (${totalPages} pages)`
+    );
+
+    // 🎯 STEP 2: Fetch customers page by page from database
+    while (currentItem < totalCustomers) {
+      try {
+        console.log(
+          `📄 Processing page ${currentPage}/${totalPages} (items ${currentItem}-${
+            currentItem + pageSize - 1
+          })`
+        );
+
+        const [customers] = await pool.execute(
+          "SELECT * FROM customers ORDER BY id LIMIT ? OFFSET ?",
+          [pageSize, currentItem]
+        );
+
+        if (customers.length === 0) {
+          console.log(`⚪ No more customers found, stopping`);
           break;
         }
+
+        // 🎯 STEP 3: Sync customers to Lark Base
+        for (const customer of customers) {
+          try {
+            const result = await addCustomerToLarkBase(
+              customer,
+              enableDuplicationCheck
+            );
+
+            if (result.success) {
+              totalSynced++;
+              if (result.created) totalCreated++;
+              if (result.updated) totalUpdated++;
+            } else {
+              totalFailed++;
+            }
+
+            // Progress logging every 50 customers
+            if (totalSynced % 50 === 0) {
+              console.log(
+                `📈 Progress: ${totalSynced}/${totalCustomers} synced (${(
+                  (totalSynced / totalCustomers) *
+                  100
+                ).toFixed(1)}%)`
+              );
+            }
+
+            // Rate limiting between requests
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          } catch (customerError) {
+            console.error(
+              `❌ Error syncing customer ${customer.code}:`,
+              customerError.message
+            );
+            totalFailed++;
+          }
+        }
+
+        console.log(
+          `✅ Page ${currentPage} completed: ${
+            customers.length
+          } customers processed (${(
+            (totalSynced / totalCustomers) *
+            100
+          ).toFixed(1)}%)`
+        );
+
+        currentItem += customers.length;
+        currentPage++;
+
+        // Rate limiting between pages
+        await new Promise((resolve) => setTimeout(resolve, 2000));
       } catch (pageError) {
         console.error(`❌ Error on page ${currentPage}:`, pageError.message);
         totalFailed += pageSize;
         currentItem += pageSize;
+        currentPage++;
       }
     }
 
@@ -403,7 +554,7 @@ const syncAllCustomersToLarkPaginated = async (
         created: totalCreated,
         updated: totalUpdated,
         failed: totalFailed,
-        pagesProcessed: currentPage,
+        pagesProcessed: currentPage - 1,
         totalPages: totalPages,
       },
     };
@@ -425,111 +576,11 @@ const syncAllCustomersToLarkPaginated = async (
       error: error.message,
       stats: { total: 0, success: 0, created: 0, updated: 0, failed: 0 },
     };
-  }
-};
-
-// Enhanced sync function with duplication support
-const syncCustomersToLark = async (
-  customers,
-  enableDuplicationCheck = true
-) => {
-  console.log(
-    `🚀 Starting customer sync to Lark Base: ${customers.length} customers`
-  );
-  console.log(
-    `🔍 Duplication checking: ${
-      enableDuplicationCheck ? "ENABLED" : "DISABLED"
-    }`
-  );
-
-  let totalProcessed = 0;
-  let successCount = 0;
-  let createdCount = 0;
-  let updatedCount = 0;
-  let failCount = 0;
-  const BATCH_SIZE = 100;
-
-  try {
-    for (let i = 0; i < customers.length; i += BATCH_SIZE) {
-      const batch = customers.slice(i, i + BATCH_SIZE);
-      console.log(
-        `Processing Lark batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(
-          customers.length / BATCH_SIZE
-        )}`
-      );
-
-      for (const customer of batch) {
-        try {
-          if (!customer.id || !customer.code) {
-            console.warn(`⚠️ Skipping customer with missing required fields`);
-            failCount++;
-            continue;
-          }
-
-          // Add delay between requests
-          await new Promise((resolve) =>
-            setTimeout(resolve, LARK_RATE_LIMIT.delayBetweenRequests)
-          );
-
-          const larkResult = await addCustomerToLarkBase(
-            customer,
-            enableDuplicationCheck
-          );
-
-          if (larkResult.success) {
-            successCount++;
-            if (larkResult.created) {
-              createdCount++;
-            } else if (larkResult.updated) {
-              updatedCount++;
-            }
-          } else {
-            failCount++;
-            console.error(
-              `❌ Failed to sync customer ${customer.code}:`,
-              larkResult.error
-            );
-          }
-
-          totalProcessed++;
-        } catch (error) {
-          failCount++;
-          console.error(
-            `❌ Error processing customer ${customer.code}:`,
-            error.message
-          );
-        }
-      }
-
-      // Delay between batches
-      await new Promise((resolve) =>
-        setTimeout(resolve, LARK_RATE_LIMIT.delayBetweenBatches)
-      );
-    }
-
-    return {
-      success: failCount === 0,
-      stats: {
-        total: totalProcessed,
-        success: successCount,
-        created: createdCount,
-        updated: updatedCount,
-        failed: failCount,
-      },
-    };
-  } catch (error) {
-    console.error("❌ Customer Lark sync failed:", error.message);
-    return {
-      success: false,
-      error: error.message,
-      stats: {
-        total: totalProcessed,
-        success: successCount,
-        created: createdCount,
-        updated: updatedCount,
-        failed: failCount,
-      },
-    };
+  } finally {
+    // ✅ ALWAYS RELEASE THE LOCK
+    currentSyncRunning = false;
+    currentSyncLock = null;
+    console.log("🔓 Historical sync lock released");
   }
 };
 
@@ -711,7 +762,7 @@ async function getSyncStatus() {
 module.exports = {
   // 🚀 NEW PAGINATION-BASED FUNCTIONS (PRIMARY)
   syncAllCustomersToLarkPaginated,
-  syncCustomersToLark,
+  syncCustomersToLark, // ← FIXED VERSION
 
   // 🔍 DUPLICATION CHECK FUNCTIONS
   checkCustomerExists,
@@ -726,6 +777,7 @@ module.exports = {
   // 📊 STATUS FUNCTIONS
   getSyncStatus,
   updateSyncStatus,
+  isCurrentSyncRunning, // ← NEW: Check if sync is running
 
   // ⚠️ LEGACY FUNCTIONS (DEPRECATED)
   saveCustomersByDateToLark,
